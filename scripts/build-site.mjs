@@ -170,6 +170,8 @@ code {
 }
 .row:hover .logo-tile { transform: rotate(-4deg) scale(1.06); }
 .logo-tile img { width: 74%; height: 74%; object-fit: contain; }
+.logo-tile.cover { background: var(--ink-2); }
+.logo-tile.cover img { width: 100%; height: 100%; object-fit: cover; }
 .row .body h3 { font-family: var(--serif); font-weight: 500; font-size: 1.45rem; margin: 0 0 .15rem; letter-spacing: -.01em; }
 .row .body p { margin: 0 0 .4rem; color: var(--bone-dim); font-size: .95rem; max-width: 58ch; }
 .badges { display: flex; flex-wrap: wrap; gap: .4rem; }
@@ -278,8 +280,9 @@ ${content}
 }
 
 function logoTile(p) {
+  const cls = p.data.x_logo_style === 'cover' ? 'logo-tile cover' : 'logo-tile';
   return p.data.x_logo
-    ? `<span class="logo-tile"><img src="/${escapeHtml(p.data.x_logo)}" alt="${escapeHtml(p.data.name)} logo"></span>`
+    ? `<span class="${cls}"><img src="/${escapeHtml(p.data.x_logo)}" alt="${escapeHtml(p.data.name)} logo"></span>`
     : `<span class="logo-tile"></span>`;
 }
 

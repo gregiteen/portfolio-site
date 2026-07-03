@@ -14,7 +14,8 @@ x_tech:
   - "Flask"
   - "Automation"
 x_link: "https://festech.live"
-x_logo: "assets/logos/festech.svg"
+x_logo: "assets/logos/festech.png"
+x_logo_style: "cover"
 x_featured: false
 ---
 
