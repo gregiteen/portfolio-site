@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.ucw.json
+.DS_Store
+
+# agent-local state (contains tokens & personal memory)
+.agent/
+.claude/
+.remember/

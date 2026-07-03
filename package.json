@@ -1,0 +1,21 @@
+{
+  "name": "portfolio-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "An SSSS-native project — Markdown vault as source of truth.",
+  "scripts": {
+    "ssss": "ssss",
+    "build": "node scripts/build-site.mjs",
+    "dev": "node scripts/build-site.mjs && node scripts/serve.mjs",
+    "test": "node --test",
+    "export": "ssss export vault --profile sale --out dist/bundle.ucw.json",
+    "validate": "ssss conformance --engine"
+  },
+  "dependencies": {
+    "@ssss/cli": "github:gregiteen/ssss#v0.7.0"
+  },
+  "devDependencies": {
+    "total-recall-brain": "latest"
+  }
+}
