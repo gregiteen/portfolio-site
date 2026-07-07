@@ -854,21 +854,25 @@ ${TRANSITIONS}
 <style>${stylesheet}</style>
 </head>`;
 
+  let finalHtml;
   if (customLayouts.shell) {
-    const customHtml = fillTemplate(customLayouts.shell, {
+    let customHtml = fillTemplate(customLayouts.shell, {
       CONTENT: content,
       NAV_LINKS: navHtml,
       THEME_PILLS: themePillsHtml,
       SOURCE_PATH: escapeHtml(sourcePath)
     });
     
-    // Ensure the AI provided a body tag, otherwise wrap it
-    const finalBody = customHtml.includes('<body') ? customHtml : `<body>\n${customHtml}\n</body>`;
+    const headInjection = `\n${LIVE_RELOAD_SCRIPT}\n${FONTS}\n${FAVICON}\n${TRANSITIONS}\n<style>${stylesheet}</style>\n</head>`;
+    if (customHtml.includes('</head>')) {
+      customHtml = customHtml.replace('</head>', headInjection);
+    } else {
+      customHtml = headContent + customHtml;
+    }
     
-    return headContent + finalBody + '\n</html>';
-  }
-
-  let finalHtml = headContent + `<body>
+    finalHtml = customHtml.includes('<body') ? customHtml : `<body>\n${customHtml}\n</body>\n</html>`;
+  } else {
+    finalHtml = headContent + `<body>
 <div class="ambient-glows">
   <div class="glow-blob glow-1"></div>
   <div class="glow-blob glow-2"></div>
@@ -959,6 +963,7 @@ ${content}
 </body>
 </html>
 `;
+  }
   if (targetDesign) {
     finalHtml = finalHtml.replace(/href="\//g, `href="/designs/${targetDesign}/`);
     finalHtml = finalHtml.replace(/src="\//g, `src="/designs/${targetDesign}/`);
