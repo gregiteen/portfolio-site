@@ -210,7 +210,7 @@ async function run() {
   const faviconPath = join(genDir, 'favicon.png');
   const heroPath = join(genDir, 'hero.jpg');
   const portraitPath = join(genDir, 'portrait.jpg');
-  const basePortrait = join(assetsDir, 'greg-portrait-base.jpg');
+  const basePortrait = join(assetsDir, 'greg-portrait-source.png');
 
   // ── Phase 1: Planning and Architecture (including Image Prompts) ──
   console.log(`[1/3] Theme Architecture and Image Planning…`);

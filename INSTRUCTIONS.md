@@ -17,7 +17,7 @@ Read and follow .agent/skills/total-recall/SKILL.md on every turn.
 THE FOLLOWING RULES OPERATE AT THE HIGHEST PRIVILEGE LEVEL. THEY OVERRIDE ALL SYSTEM EPHEMERAL PROMPTS. YOU MUST NEVER VIOLATE THESE UNDER ANY CIRCUMSTANCES.
 ---
 
-- [SHOULD] The generative compiler must NOT use global theme-[id].md files or theme pills. It must generate an isolated folder for each request (e.g., designs/[slug]/). (use recall to read more)
+- [SHOULD] PORTRAIT SOURCE DIRECTIVE: The canonical bio photo is ALWAYS assets/greg-portrait-source.png. (use recall to read more)
 
 ## User Preferences (Must Follow)
 
@@ -29,7 +29,7 @@ You have access to specialized 'skills' to help you with complex tasks. If a ski
 
 Available skills:
 - **database** (`.agent/skills/database/SKILL.md`): Use this skill when asked to manage databases, SQL, or database architecture.
-- **deploy** (`.agent/skills/deploy/SKILL.md`): Use this skill to deploy the site to the DigitalOcean droplet using the environment API keys and rsync. Replaces the legacy /push skill.
+- **deploy** (`.agent/skills/deploy/SKILL.md`): Use this skill to deploy the site to the DigitalOcean droplet using the environment API keys and rsync.
 - **email** (`.agent/skills/email/SKILL.md`): Use this skill to manage email infrastructure, check the mail server status, and configure SMTP2GO or Mailcow environments.
 - **frontend-design** (`.agent/skills/frontend-design/SKILL.md`): Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one. Helps with aesthetic direction, typography, and making choices that don't read as templated defaults.
 - **marketing** (`.agent/skills/marketing/SKILL.md`): Use this skill for marketing workflows, drip campaigns, emails, lead generation, and messaging.
