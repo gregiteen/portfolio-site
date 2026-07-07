@@ -1,0 +1,459 @@
+#!/usr/bin/env node
+// Generate a bespoke SSSS theme (CSS + layout templates) via a headless CLI
+// agent, following the tr-cli-agents priority-fallback dispatch pattern.
+//
+// Reliability contract:
+//  - Agents are spawned with argument arrays (no shell, no injection/escaping).
+//  - The model outputs *templates with {{PLACEHOLDER}} slots*, never portfolio
+//    copy — the build script injects real vault content, so content can't drift.
+//  - Output is validated against the placeholder contract; one repair round
+//    asks the model to fix its own JSON before we give up.
+//  - The theme is stored as fenced sections in a normal SSSS page doc — no
+//    YAML block scalars, no bespoke frontmatter parser.
+import { writeFile, mkdir, copyFile } from 'node:fs/promises';
+import { statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { join, dirname, delimiter } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import os from 'node:os';
+import https from 'node:https';
+import {
+  LAYOUT_SPECS,
+  extractJson,
+  validateThemePayload,
+  serializeThemeDoc,
+} from './lib/theme.mjs';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const vaultDir = join(__dirname, '..', 'vault');
+const assetsDir = join(__dirname, '..', 'assets');
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
+
+const prompt = process.argv.slice(2).join(' ').trim();
+if (!prompt) {
+  console.error('Error: Prompt is required. Usage: node compile-theme.mjs "style description"');
+  process.exit(1);
+}
+if (prompt.length > 500) {
+  console.error('Error: Prompt too long (max 500 chars).');
+  process.exit(1);
+}
+
+// ─── Agent Registry (from agents.yml) ────────────────────────────────────────
+
+const AGENTS = [
+  {
+    name: 'antigravity', binary: 'antigravity', priority: 1,
+    args: (p) => ['-p', p, '-o', 'json'],
+  },
+  {
+    name: 'claude', binary: 'claude', priority: 2,
+    args: (p) => ['-p', p, '--output-format', 'json', '--permission-mode', 'bypassPermissions', '--setting-sources', 'local', '--tools', ''],
+  },
+  {
+    name: 'codex', binary: 'codex', priority: 3,
+    args: (p) => ['exec', p, '--full-auto', '--json', '--skip-git-repo-check'],
+  },
+];
+
+function findBinaryInPath(binaryName) {
+  for (const dir of (process.env.PATH || '').split(delimiter)) {
+    const fullPath = join(dir, binaryName);
+    try {
+      const stats = statSync(fullPath);
+      if (stats.isFile() && (os.platform() === 'win32' || (stats.mode & 0o111) !== 0)) return fullPath;
+    } catch {}
+  }
+  return null;
+}
+
+function parseAgentOutput(output) {
+  try {
+    const parsed = JSON.parse(output);
+    if (parsed.response) return parsed.response;
+    if (parsed.result) return parsed.result;
+    if (parsed.content) return parsed.content;
+    if (parsed.text) return parsed.text;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const last = parsed[parsed.length - 1];
+      return last.content || last.text || last.response || JSON.stringify(last);
+    }
+  } catch {}
+  return output;
+}
+
+// ─── Dispatch Engine ─────────────────────────────────────────────────────────
+
+function executeAgentCall(userPrompt) {
+  const availableAgents = [...AGENTS].sort((a, b) => a.priority - b.priority);
+  let lastError;
+
+  while (availableAgents.length) {
+    const spec = availableAgents[0];
+    const binaryPath = findBinaryInPath(spec.binary);
+    if (!binaryPath) { availableAgents.shift(); continue; }
+
+    console.log(`  → dispatching to ${spec.name}…`);
+    const result = spawnSync(binaryPath, spec.args(userPrompt), {
+      encoding: 'utf8',
+      timeout: 300_000,
+      maxBuffer: 32 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: process.env,
+    });
+
+    if (result.status === 0 && result.stdout?.trim()) {
+      return parseAgentOutput(result.stdout.trim());
+    }
+    const err = (result.stderr || result.stdout || result.error?.message || 'unknown error').slice(0, 500);
+    console.error(`  ✗ ${spec.name} failed (exit ${result.status}): ${err.slice(0, 200)}`);
+    lastError = `${spec.name}: ${err}`;
+    availableAgents.shift();
+  }
+  throw new Error(lastError ? `All CLI agents failed. Last error: ${lastError}` : 'No CLI agents available.');
+}
+
+// ─── Gemini API (direct, no CLI overhead) ───────────────────────────────────
+
+function geminiApiCall(model, bodyObj) {
+  return new Promise((resolve, reject) => {
+    if (!GOOGLE_API_KEY) return reject(new Error('GOOGLE_API_KEY not set'));
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GOOGLE_API_KEY}`;
+    const body = JSON.stringify(bodyObj);
+    const parsed = new URL(url);
+    const options = {
+      hostname: parsed.hostname,
+      path: parsed.pathname + parsed.search,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    };
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (!json.candidates?.[0]?.content?.parts) {
+            return reject(new Error(`Gemini API error: ${data.slice(0, 300)}`));
+          }
+          resolve(json.candidates[0].content.parts);
+        } catch (e) {
+          reject(new Error(`Failed to parse Gemini response: ${e.message}`));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(180_000, () => { req.destroy(); reject(new Error('Gemini API timeout')); });
+    req.write(body);
+    req.end();
+  });
+}
+
+async function geminiText(userPrompt) {
+  const parts = await geminiApiCall('gemini-3.5-flash', {
+    contents: [{ parts: [{ text: userPrompt }] }],
+    generationConfig: { responseMimeType: 'application/json' },
+  });
+  return parts.map(p => p.text || '').join('');
+}
+
+async function generateImage(imagePrompt, outputPath, baseImagePath = null) {
+  const parts = [];
+  if (baseImagePath) {
+    const { readFile: rf } = await import('node:fs/promises');
+    const data = (await rf(baseImagePath)).toString('base64');
+    parts.push({ inlineData: { mimeType: 'image/jpeg', data } });
+  }
+  parts.push({ text: imagePrompt });
+  return generateImageParts(parts, outputPath, imagePrompt);
+}
+
+async function generateImageParts(requestParts, outputPath, label) {
+  const parts = await geminiApiCall('gemini-3.1-flash-lite-image', {
+    contents: [{ parts: requestParts }],
+    generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+  });
+  for (const part of parts) {
+    if (part.inlineData?.data && part.inlineData?.mimeType) {
+      const buf = Buffer.from(part.inlineData.data, 'base64');
+      await writeFile(outputPath, buf);
+      console.log(`  → saved ${outputPath} (${Math.round(buf.length / 1024)}KB)`);
+      return true;
+    }
+  }
+  console.warn(`  ⚠ No image data for: ${label.slice(0, 80)}`);
+  return false;
+}
+
+// ─── Prompts ─────────────────────────────────────────────────────────────────
+
+const placeholderContract = Object.entries(LAYOUT_SPECS)
+  .map(([key, spec]) => `- "${key}": required slots ${spec.required.join(', ')}${spec.optional.length ? `; optional slots ${spec.optional.join(', ')}` : ''}`)
+  .join('\n');
+
+const SITE_CONTEXT = `The site is the portfolio of Greg Iteen, a full-stack engineer building
+sovereign, file-native AI systems. Pages: home (hero + featured projects), projects index,
+project detail pages, designs index (visual work with preview images), design detail pages,
+about, contact. Dark, technical, editorial baseline. Your theme fully re-skins it.`;
+
+// ─── Main Pipeline ───────────────────────────────────────────────────────────
+
+async function run() {
+  const t0 = Date.now();
+
+  // Unique ID — all assets for this generation go into assets/gen-{id}/
+  const genId = Date.now().toString(36);
+  const genDir = join(assetsDir, `gen-${genId}`);
+  await mkdir(genDir, { recursive: true });
+
+  // Paths: per-generation (permanent) + current (active theme, overwritten)
+  const logoPath = join(genDir, 'logo.png');
+  const faviconPath = join(genDir, 'favicon.png');
+  const heroPath = join(genDir, 'hero.jpg');
+  const portraitPath = join(genDir, 'portrait.jpg');
+  const curLogo = join(assetsDir, 'gen-logo.png');
+  const curFavicon = join(assetsDir, 'favicon.png');
+  const curHero = join(assetsDir, 'gen-hero.jpg');
+  const curPortrait = join(assetsDir, 'gen-portrait.jpg');
+  const basePortrait = join(assetsDir, 'greg-portrait-base.jpg');
+
+  // ── Phase 1: Images (parallel with theme gen) ──
+  console.log(`[1/3] Images → assets/gen-${genId}/`);
+
+  const logoPrompt = `Create a clean, professional monogram logo combining "G" and "I" (Greg Iteen). Style: ${prompt}. Bold, distinctive, works at small sizes. CRITICAL: FULLY TRANSPARENT background (PNG alpha). Colors matching the style. No background shape — just the monogram on transparency. Vector-style, geometric, minimal.`;
+  const heroPrompt = `Create an atmospheric, wide hero background image for a portfolio website. Style: ${prompt}. Abstract/textural, suitable behind text. Rich in mood and color with depth. No text, no faces, no logos. Cinematic quality, 16:9.`;
+
+  async function genLogoAndFavicon() {
+    const ok = await generateImage(logoPrompt, logoPath);
+    if (ok) {
+      try { await copyFile(logoPath, curLogo); } catch {}
+      const fp = `Create a tiny square favicon (64x64) "GI" monogram. Style: ${prompt}. TRANSPARENT background. Tightly cropped, fills square, bold at small sizes. Simple, iconic.`;
+      await generateImage(fp, faviconPath);
+      try { await copyFile(faviconPath, curFavicon); } catch {}
+    }
+  }
+
+  async function genHero() {
+    const ok = await generateImage(heroPrompt, heroPath);
+    if (ok) { try { await copyFile(heroPath, curHero); } catch {} }
+  }
+
+  // Themed portrait: restyle Greg's real photo to match the brief (image-to-image).
+  const portraitPrompt = `Art-direct this portrait for a portfolio site whose design brief is "${prompt}". Preserve the subject's identity exactly — same face, same friendly expression, natural human eyes, same pose. Completely replace the setting: re-render the wardrobe, backdrop, lighting, and color grade so the portrait belongs to that visual world (do not keep the original office background). Editorial photography quality, tasteful, portfolio-grade. No text, no watermarks.`;
+
+  async function genPortrait() {
+    try {
+      const ok = await generateImage(portraitPrompt, portraitPath, basePortrait);
+      if (ok) { try { await copyFile(portraitPath, curPortrait); } catch {} }
+    } catch (err) {
+      console.warn(`  ⚠ Portrait generation failed: ${err.message} — keeping previous portrait`);
+    }
+  }
+
+  const imagePromise = GOOGLE_API_KEY
+    ? Promise.allSettled([genLogoAndFavicon(), genHero(), genPortrait()])
+    : (console.warn('  ⚠ GOOGLE_API_KEY not set — skipping images'), Promise.resolve([]));
+
+  // ── Phase 2: Theme generation (lazy loaded + analyze & improve) ──
+  console.log(`[2/3] Theme generation (multi-pass lazy loading)…`);
+
+  const frontendSkillPath = join(__dirname, '..', '.agent', 'skills', 'frontend-design', 'SKILL.md');
+  const frontendSkill = await import('node:fs/promises').then(m => m.readFile(frontendSkillPath, 'utf8')).catch(() => '');
+
+  const baseContext = `You are the design lead at a boutique studio. Every site you ship has a visual identity so specific it could never be mistaken for a template. You are designing for a REAL client — Greg Iteen, a full-stack engineer who builds sovereign, file-native AI systems.
+
+THE BRIEF: "${prompt}"
+
+FRONTEND DESIGN PRINCIPLES & GUIDANCE:
+${frontendSkill}
+
+SITE CONTEXT:
+${SITE_CONTEXT}
+
+PLACEHOLDER CONTRACT:
+${placeholderContract}
+
+IMAGES (already generated, use them):
+- /assets/gen-logo.png — GI monogram, transparent PNG. Use as logo.
+- /assets/favicon.png — GI favicon. Use in <link rel="icon">.
+- /assets/gen-hero.jpg — hero background. Use prominently.
+- /assets/gen-portrait.jpg — portrait of Greg restyled to match this theme. It appears inside page content (class .md-img) on the contact page — style it to sit well in your layout.
+`;
+
+  async function callAgent(p) {
+    if (GOOGLE_API_KEY) {
+      try {
+        const raw = await geminiText(p);
+        console.log(`  → API response (${Math.round(raw.length / 1024)}KB)`);
+        return raw;
+      } catch (err) {
+        console.warn(`  ⚠ API failed (${err.message}), falling back to CLI…`);
+      }
+    }
+    return executeAgentCall(p);
+  }
+
+  // Pass 1: Base CSS & Core Pages
+  console.log('  → Pass 1: DESIGN.md, CSS, home, projects_index');
+  let raw1 = await callAgent(`${baseContext}
+
+OUTPUT: One JSON object. Generate the DESIGN.md, the complete CSS, and the first 2 pages (home, projects_index):
+{
+  "name": "Short Theme Name",
+  "accent": "#rrggbb",
+  "designSpec": "A strict Google Standard DESIGN.md file format...",
+  "css": "…complete stylesheet…",
+  "layouts": { "home": "…", "projects_index": "…" }
+}`);
+  let payload = extractJson(raw1);
+
+  // Pass 2: Next 2 pages
+  console.log('  → Pass 2: designs_index, project_detail');
+  let raw2 = await callAgent(`${baseContext}
+
+Here is the base theme generated so far:
+` + JSON.stringify(payload) + `
+
+OUTPUT: One JSON object containing ONLY the next 2 layouts (designs_index, project_detail):
+{
+  "layouts": { "designs_index": "…", "project_detail": "…" }
+}`);
+  let payload2 = extractJson(raw2);
+  Object.assign(payload.layouts, payload2.layouts);
+
+  // Pass 3: Next 2 pages
+  console.log('  → Pass 3: design_detail, page');
+  let raw3 = await callAgent(`${baseContext}
+
+Here is the base theme generated so far:
+` + JSON.stringify(payload) + `
+
+OUTPUT: One JSON object containing ONLY the next 2 layouts (design_detail, page):
+{
+  "layouts": { "design_detail": "…", "page": "…" }
+}`);
+  let payload3 = extractJson(raw3);
+  Object.assign(payload.layouts, payload3.layouts);
+
+  // Pass 4: Remaining items
+  console.log('  → Pass 4: project_item, design_item, nav_item');
+  let raw4 = await callAgent(`${baseContext}
+
+Here is the base theme generated so far:
+` + JSON.stringify(payload) + `
+
+OUTPUT: One JSON object containing ONLY the remaining item layouts:
+{
+  "layouts": { "project_item": "…", "design_item": "…", "nav_item": "…" }
+}`);
+  let payload4 = extractJson(raw4);
+  Object.assign(payload.layouts, payload4.layouts);
+
+  // Pass 5: Analyze and Improve
+  console.log('  → Pass 5: Analyze & Improve (Cleanup)');
+  let raw5 = await callAgent(`${baseContext}
+
+You have generated a full theme. Here is the complete assembled JSON:
+` + JSON.stringify(payload) + `
+
+ANALYZE AND IMPROVE: Make a second pass to clean everything up. Check for unclosed HTML tags, ensure CSS classes match the layouts, and ensure the design principles and DESIGN.md constraints were perfectly followed. Improve any sloppy areas.
+
+OUTPUT: The FINAL cleaned up, validated JSON object with all fields:
+{ "name": "...", "accent": "...", "designSpec": "...", "css": "...", "layouts": { ...all 9 layouts... } }`);
+  
+  let finalPayload = extractJson(raw5);
+  let verdict = validateThemePayload(finalPayload, { strict: true });
+  
+  if (!verdict.theme) {
+    console.log('  → Repairing final validation errors...');
+    let raw6 = await callAgent(`Fix these JSON problems:\n${verdict.errors.join('\n')}\n\nRespond ONLY with corrected JSON.\n\nPrevious:\n${JSON.stringify(finalPayload).slice(0, 50000)}`);
+    finalPayload = extractJson(raw6);
+    verdict = validateThemePayload(finalPayload, { strict: false });
+  }
+
+  if (!verdict.theme) throw new Error(`Theme failed: ${verdict.errors.join('; ')}`);
+  for (const w of verdict.warnings) console.warn(`  ⚠ ${w}`);
+  const theme = verdict.theme;
+  payload = finalPayload;
+  // Wait for images
+  const imageResults = await imagePromise;
+  if (Array.isArray(imageResults)) {
+    for (const [i, r] of imageResults.entries()) {
+      if (r.status === 'rejected') console.warn(`  ⚠ ${i === 0 ? 'logo' : 'hero'} failed: ${r.reason?.message}`);
+    }
+  }
+
+  // ── Phase 3: Save nodes ──
+  const themeSlug = `theme-${genId}`;
+  const designSlug = `design-${genId}`;
+  const styleName = prompt.replace(/[^a-zA-Z0-9]+/g, '-').slice(0, 40).toLowerCase();
+
+  console.log(`[3/3] Saving ${designSlug} + ${themeSlug}…`);
+
+  // Design spec page (shows on designs index)
+  let designBody = payload.designSpec || `Theme: ${theme.name}\nStyle: ${prompt}\nAccent: ${theme.accent}`;
+  designBody += `\n\n<br>\n<hr>\n\n### Architecture by Greg Iteen\n\n> **Generative Design Infrastructure**  \n> This interface and underlying design system were procedurally generated using an AI-native build engine. The architecture bypasses traditional databases in favor of stateless, strictly typed markup pipelines.\n\n**Infrastructure Consultation Offer**\nWe assist select organizations in migrating to fully automated, AI-driven digital architectures. Mention this design specification during your initial inquiry to receive a 20% credit toward your first architectural audit.\n\n**Website:** [gregiteen.xyz](https://gregiteen.xyz)  \n**Direct Inquiry:** [sales@gregiteen.xyz](mailto:sales@gregiteen.xyz)`;
+  const designMeta = {
+    slug: designSlug,
+    name: theme.name,
+    title: `${theme.name} — Design Spec`,
+    description: `AI-generated design: "${prompt}"`,
+    timestamp: new Date().toISOString(),
+    sandbox_entry: `designs/${designSlug}.html`,
+    x_kind: 'design',
+    x_year: new Date().getFullYear(),
+    x_role: 'AI-Generated Theme',
+    x_client: 'Portfolio Generator',
+    x_tags: ['AI Generated', styleName, 'Theme'],
+    x_theme_slug: themeSlug,
+    x_preview: `assets/gen-${genId}/hero.jpg`,
+    x_logo: `assets/gen-${genId}/logo.png`,
+  };
+  const specFm = Object.entries(designMeta)
+    .map(([k, v]) => {
+      if (Array.isArray(v)) return `${k}:\n${v.map(t => `  - "${t}"`).join('\n')}`;
+      return `${k}: ${JSON.stringify(String(v))}`;
+    }).join('\n');
+  await writeFile(
+    join(vaultDir, 'pages', 'designs', `${designSlug}.md`),
+    `---\ntype: page\n${specFm}\n---\n\n${designBody.trim()}\n`,
+    'utf8'
+  );
+
+  // Write Google Standard DESIGN.md to the repository root
+  await writeFile(
+    join(__dirname, '..', 'DESIGN.md'),
+    `---\nname: ${JSON.stringify(theme.name)}\naccent: ${JSON.stringify(theme.accent)}\nstyle: ${JSON.stringify(prompt)}\n---\n\n# Design System\n\n${designBody.trim()}\n`,
+    'utf8'
+  );
+
+  // Theme config — save unique copy + overwrite active theme
+  const sections = { css: theme.css };
+  for (const [key, tpl] of Object.entries(theme.layouts)) sections[`layout:${key}`] = tpl;
+
+  for (const slug of [themeSlug, 'theme-custom']) {
+    await writeFile(
+      join(vaultDir, 'pages', 'designs', `${slug}.md`),
+      serializeThemeDoc({
+        slug,
+        name: theme.name,
+        title: 'Custom Theme Config',
+        description: `AI-generated bespoke skin for style: ${prompt}`,
+        timestamp: new Date().toISOString(),
+        sandbox_entry: `designs/${slug}.html`,
+        x_kind: 'theme',
+        x_accent: theme.accent,
+        x_prompt: prompt,
+      }, sections),
+      'utf8'
+    );
+  }
+
+  const elapsed = Math.round((Date.now() - t0) / 1000);
+  console.log(`[Success] "${theme.name}" → gen-${genId} [${elapsed}s]`);
+}
+
+run().catch((e) => {
+  console.error(`[Failed] ${e.message}`);
+  process.exit(1);
+});

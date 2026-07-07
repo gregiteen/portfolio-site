@@ -123,6 +123,7 @@ nav a.item:hover, nav a.item.active { color: var(--accent); }
   padding: 0.25rem 0.5rem; background: var(--ink-2);
   border: 1px solid var(--glass-border); border-radius: 999px;
   transition: background .3s, border-color .3s;
+  view-transition-name: theme-flipper;
 }
 .theme-pill {
   width: 36px; height: 36px; border: 1px solid transparent; background: transparent;
@@ -980,7 +981,10 @@ function designCard(d, i) {
     <span class="tags">${tags}</span>
     <span class="foot">
       <span class="year">${d.data.x_year ?? ''}</span>
-      <span class="visit">view live ↗</span>
+      <span>
+        <a href="/api/design-spec?slug=${escapeHtml(d.data.slug)}" download="design.md" onclick="event.stopPropagation()" style="text-decoration: none; border-bottom: 1px solid var(--line); margin-right: 12px;">↓ DESIGN.md</a>
+        <span class="visit">view live ↗</span>
+      </span>
     </span>
   </span>
 </a>`;

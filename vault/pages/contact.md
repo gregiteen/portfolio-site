@@ -12,7 +12,9 @@ x_nav_order: 3
 
 ## Get in touch
 
-- **Email** — [gregiteen@gmail.com](mailto:gregiteen@gmail.com)
+![Greg Iteen](/assets/gen-portrait.jpg)
+
+- **Email** — [sales@gregiteen.xyz](mailto:sales@gregiteen.xyz)
 - **GitHub** — [github.com/gregiteen](https://github.com/gregiteen)
 
 I'm open to collaborations on local-first tooling, AI memory systems, and

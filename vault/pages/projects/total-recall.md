@@ -13,7 +13,7 @@ x_tech:
   - "Node.js"
   - "Local embeddings"
   - "REST API"
-  - "SSSS schema v2"
+  - "ssss"
 x_link: "https://github.com/gregiteen/total-recall"
 x_repo: "https://github.com/gregiteen/total-recall"
 x_logo: "assets/logos/total-recall.svg"

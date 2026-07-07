@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Greg Iteen — Enter</title>
+<meta name="description" content="Enter Greg Iteen's portfolio. Choose your own design experience.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --black:#0a0a0a;--white:#f5f5f3;--gray:rgba(245,245,243,.55);
+  --faint:rgba(245,245,243,.22);--line:rgba(245,245,243,.28);
+}
+html,body{height:100%}
+body{
+  font-family:'Archivo',sans-serif;background:var(--black);color:var(--white);
+  overflow:hidden;position:relative;
+}
+
+/* ── Full-bleed B&W photography ── */
+.photo{
+  position:fixed;inset:0;z-index:0;
+  background:url('/assets/gen-hero.jpg') center/cover no-repeat;
+  filter:grayscale(1) contrast(1.18) brightness(.62);
+  animation:drift 40s ease-in-out infinite alternate;
+}
+@keyframes drift{0%{transform:scale(1)}100%{transform:scale(1.07)}}
+.scrim{
+  position:fixed;inset:0;z-index:1;
+  background:linear-gradient(100deg,rgba(10,10,10,.92) 0%,rgba(10,10,10,.72) 45%,rgba(10,10,10,.35) 100%);
+}
+/* film grain */
+.grain{
+  position:fixed;inset:-100%;z-index:2;pointer-events:none;opacity:.07;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation:grain 8s steps(10) infinite;
+}
+@keyframes grain{
+  0%,100%{transform:translate(0,0)}10%{transform:translate(-5%,-8%)}30%{transform:translate(4%,6%)}
+  50%{transform:translate(-7%,3%)}70%{transform:translate(6%,-4%)}90%{transform:translate(-3%,7%)}
+}
+
+/* ── Frame ── */
+.frame{
+  position:relative;z-index:10;height:100vh;height:100dvh;
+  display:flex;flex-direction:column;justify-content:space-between;
+  padding:clamp(20px,4vw,56px);
+}
+.top{
+  display:flex;justify-content:space-between;align-items:baseline;
+  font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--gray);
+  animation:fadeIn 1s .2s both;
+}
+.top .no{color:var(--faint)}
+
+.main{max-width:1200px}
+h1{
+  font-family:'Archivo Black',sans-serif;
+  font-size:clamp(3rem,10.5vw,8.5rem);
+  line-height:.92;letter-spacing:-.025em;text-transform:uppercase;
+  animation:riseIn 1s .1s cubic-bezier(.16,1,.3,1) both;
+}
+h1 .outline{
+  color:transparent;-webkit-text-stroke:2px var(--white);
+}
+.lede{
+  margin-top:clamp(16px,2.4vw,28px);max-width:44ch;
+  font-size:clamp(.85rem,1.2vw,1rem);line-height:1.65;color:var(--gray);font-weight:400;
+  animation:fadeIn 1s .5s both;
+}
+
+/* ── Form ── */
+form{margin-top:clamp(24px,3.4vw,44px);max-width:560px;animation:fadeIn 1s .7s both}
+.field{margin-bottom:26px}
+.field label{
+  display:block;font-family:'IBM Plex Mono',monospace;font-size:.62rem;
+  letter-spacing:.28em;text-transform:uppercase;color:var(--gray);margin-bottom:10px;
+}
+.field input{
+  width:100%;padding:12px 2px;border:none;border-bottom:1px solid var(--line);
+  background:transparent;color:var(--white);
+  font-family:'Archivo',sans-serif;font-size:1.15rem;font-weight:500;
+  outline:none;border-radius:0;transition:border-color .25s;
+}
+.field input::placeholder{color:var(--faint)}
+.field input:focus{border-bottom-color:var(--white)}
+
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:-8px 0 28px}
+.chip{
+  padding:7px 16px;border:1px solid var(--line);border-radius:999px;
+  font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.06em;
+  color:var(--gray);cursor:pointer;background:transparent;transition:.2s;
+  user-select:none;
+}
+.chip:hover,.chip.on{border-color:var(--white);color:var(--black);background:var(--white)}
+
+.btn{
+  width:100%;padding:20px;border:1px solid var(--white);
+  font-family:'Archivo Black',sans-serif;font-size:.95rem;letter-spacing:.14em;
+  text-transform:uppercase;cursor:pointer;
+  background:var(--white);color:var(--black);
+  transition:background .2s,color .2s,transform .12s;
+}
+.btn:hover{background:transparent;color:var(--white)}
+.btn:active{transform:scale(.99)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn .spinner{
+  display:inline-block;width:14px;height:14px;border:2px solid currentColor;
+  border-top-color:transparent;border-radius:50%;
+  animation:spin .6s linear infinite;vertical-align:-2px;margin-right:10px;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.error{
+  font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.04em;
+  color:var(--white);background:transparent;margin-top:14px;min-height:1.2em;
+}
+.error:not(:empty)::before{content:'× ';}
+
+.bottom{
+  display:flex;justify-content:space-between;align-items:baseline;
+  font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--faint);
+  animation:fadeIn 1s .9s both;
+}
+
+/* ── Cookie bar ── */
+.cookie-banner{
+  position:fixed;bottom:0;left:0;right:0;z-index:100;
+  background:var(--black);border-top:1px solid var(--line);
+  padding:16px clamp(20px,4vw,56px);
+  display:flex;align-items:center;gap:24px;flex-wrap:wrap;
+  animation:slideUp .5s cubic-bezier(.16,1,.3,1) both;
+}
+@keyframes slideUp{0%{transform:translateY(100%)}100%{transform:none}}
+.cookie-text{
+  flex:1;min-width:260px;font-family:'IBM Plex Mono',monospace;
+  font-size:.64rem;letter-spacing:.03em;line-height:1.6;color:var(--gray);
+}
+.cookie-actions{display:flex;gap:12px}
+.cookie-btn{
+  padding:9px 22px;font-family:'IBM Plex Mono',monospace;font-size:.64rem;
+  letter-spacing:.14em;text-transform:uppercase;cursor:pointer;transition:.2s;
+  border:1px solid var(--line);background:transparent;color:var(--gray);
+}
+.cookie-accept{background:var(--white);color:var(--black);border-color:var(--white)}
+.cookie-accept:hover{background:transparent;color:var(--white)}
+.cookie-decline:hover{border-color:var(--white);color:var(--white)}
+
+@keyframes fadeIn{0%{opacity:0}100%{opacity:1}}
+@keyframes riseIn{0%{opacity:0;transform:translateY(40px)}100%{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important}
+}
+@media (max-width:640px){
+  body{overflow-y:auto}
+  .frame{height:auto;min-height:100dvh;gap:32px}
+}
+</style>
+</head>
+<body>
+<div class="photo"></div>
+<div class="scrim"></div>
+<div class="grain"></div>
+
+<div class="frame">
+  <header class="top">
+    <span>Greg Iteen — Portfolio</span>
+    <span class="no">Nº 001 / Enter</span>
+  </header>
+
+  <main class="main">
+    <h1>Design it<br><span class="outline">your way.</span></h1>
+    <p class="lede">Every visitor gets a portfolio built to their taste — name a design style, verify your email, and the site generates itself around you.</p>
+
+    <form id="splashForm" autocomplete="off">
+      <div class="field">
+        <label for="style">01 — Design style</label>
+        <input type="text" id="style" name="style" placeholder="brutalist, vaporwave, noir…" required>
+      </div>
+      <div class="chips" id="chips">
+        <span class="chip">Sovereign Ledger</span>
+        <span class="chip">Titanium Sovereign</span>
+        <span class="chip">Biolume Sovereign</span>
+        <span class="chip">Sovereign Swiss Grid</span>
+        <span class="chip">Sovereign Clay</span>
+      </div>
+      <div class="field">
+        <label for="email">02 — Email address</label>
+        <input type="email" id="email" name="email" placeholder="you@example.com" required>
+      </div>
+      <div class="field" style="margin-top:-14px;margin-bottom:28px;display:flex;align-items:flex-start;gap:12px;">
+        <input type="checkbox" id="optIn" name="optIn" checked style="width:auto;margin-top:5px;cursor:pointer;">
+        <label for="optIn" style="font-family:'Archivo',sans-serif;font-size:0.8rem;text-transform:none;letter-spacing:0;color:var(--gray);cursor:pointer;line-height:1.4;">
+          Send me the architectural deep-dive series and occasional infrastructure updates.
+        </label>
+      </div>
+      <button type="submit" class="btn" id="submitBtn">Generate &amp; Enter</button>
+      <div class="error" id="errorMsg"></div>
+    </form>
+  </main>
+
+  <footer class="bottom">
+    <span>gregiteen.xyz</span>
+    <span>SSSS-native · Vault-driven</span>
+  </footer>
+</div>
+
+<div class="cookie-banner" id="cookieBanner">
+  <p class="cookie-text">This site uses cookies to authenticate your session and remember your design preferences. By continuing, you agree to our use of cookies.</p>
+  <div class="cookie-actions">
+    <button class="cookie-btn cookie-decline" id="cookieDecline">Decline</button>
+    <button class="cookie-btn cookie-accept" id="cookieAccept">Accept</button>
+  </div>
+</div>
+
+<script>
+// ── Cookie consent ──
+(function(){
+  if(localStorage.getItem('gi_cookies')==='accepted'){
+    document.getElementById('cookieBanner').style.display='none';
+  }
+  document.getElementById('cookieAccept').addEventListener('click',()=>{
+    localStorage.setItem('gi_cookies','accepted');
+    document.getElementById('cookieBanner').style.display='none';
+  });
+  document.getElementById('cookieDecline').addEventListener('click',()=>{
+    document.getElementById('cookieBanner').style.display='none';
+  });
+})();
+
+// ── Chips ──
+document.querySelectorAll('.chip').forEach(c=>{
+  c.addEventListener('click',()=>{
+    document.getElementById('style').value=c.textContent;
+    document.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));
+    c.classList.add('on');
+  })
+});
+
+// Button label helper — DOM methods only, no innerHTML.
+function setBtn(btn,label,busy){
+  btn.textContent='';
+  if(busy){const s=document.createElement('span');s.className='spinner';btn.appendChild(s)}
+  btn.appendChild(document.createTextNode(label));
+}
+
+document.getElementById('splashForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  if(localStorage.getItem('gi_cookies')!=='accepted'){
+    document.getElementById('cookieBanner').style.display='flex';
+    document.getElementById('errorMsg').textContent='Please accept cookies to continue.';
+    return;
+  }
+  const btn=document.getElementById('submitBtn');
+  const err=document.getElementById('errorMsg');
+  const style=document.getElementById('style').value.trim();
+  const email=document.getElementById('email').value.trim();
+  const optIn=document.getElementById('optIn').checked;
+  if(!style||!email){err.textContent='Please fill in both fields.';return}
+  btn.disabled=true;
+  setBtn(btn,'Sending code…',true);
+  err.textContent='';
+  try{
+    const r=await fetch('/api/send-code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,style,optIn})});
+    const d=await r.json();
+    if(d.success){window.location.href='/verify.html?email='+encodeURIComponent(email)}
+    else{err.textContent=d.error||'Something went wrong.';btn.disabled=false;setBtn(btn,'Generate & Enter',false)}
+  }catch(ex){err.textContent='Network error. Try again.';btn.disabled=false;setBtn(btn,'Generate & Enter',false)}
+});
+</script>
+</body>
+</html>

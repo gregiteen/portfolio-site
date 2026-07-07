@@ -8,6 +8,7 @@ name: "Home"
 sandbox_entry: "index.html"
 x_kind: "section"
 x_nav_order: 1
+x_headline: "Software that *remembers* to whom it belongs."
 x_tagline: "I build AI systems that own their own memory."
 ---
 

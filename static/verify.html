@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verify — Greg Iteen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --black:#0a0a0a;--white:#f5f5f3;--gray:rgba(245,245,243,.55);
+  --faint:rgba(245,245,243,.22);--line:rgba(245,245,243,.28);
+}
+html,body{height:100%}
+body{
+  font-family:'Archivo',sans-serif;background:var(--black);color:var(--white);
+  overflow:hidden;position:relative;
+}
+.photo{
+  position:fixed;inset:0;z-index:0;
+  background:url('/assets/gen-hero.jpg') center/cover no-repeat;
+  filter:grayscale(1) contrast(1.18) brightness(.5);
+  animation:drift 40s ease-in-out infinite alternate;
+}
+@keyframes drift{0%{transform:scale(1)}100%{transform:scale(1.07)}}
+.scrim{
+  position:fixed;inset:0;z-index:1;
+  background:linear-gradient(180deg,rgba(10,10,10,.9),rgba(10,10,10,.75));
+}
+.grain{
+  position:fixed;inset:-100%;z-index:2;pointer-events:none;opacity:.07;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation:grain 8s steps(10) infinite;
+}
+@keyframes grain{
+  0%,100%{transform:translate(0,0)}10%{transform:translate(-5%,-8%)}30%{transform:translate(4%,6%)}
+  50%{transform:translate(-7%,3%)}70%{transform:translate(6%,-4%)}90%{transform:translate(-3%,7%)}
+}
+
+.frame{
+  position:relative;z-index:10;height:100vh;height:100dvh;
+  display:flex;flex-direction:column;justify-content:space-between;
+  padding:clamp(20px,4vw,56px);
+}
+.top{
+  display:flex;justify-content:space-between;align-items:baseline;
+  font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--gray);animation:fadeIn 1s .2s both;
+}
+.top .no{color:var(--faint)}
+
+.card{max-width:640px;animation:riseIn .9s .1s cubic-bezier(.16,1,.3,1) both}
+h1{
+  font-family:'Archivo Black',sans-serif;
+  font-size:clamp(2.4rem,7vw,5rem);
+  line-height:.95;letter-spacing:-.02em;text-transform:uppercase;margin-bottom:18px;
+}
+.subtitle{
+  font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--gray);margin-bottom:6px;
+}
+.email-display{
+  font-family:'IBM Plex Mono',monospace;font-size:.8rem;letter-spacing:.02em;
+  color:var(--white);margin-bottom:36px;word-break:break-all;
+  border-bottom:1px solid var(--line);display:inline-block;padding-bottom:4px;
+}
+
+/* ── Code inputs ── */
+.code-row{display:flex;gap:clamp(6px,1.2vw,14px);margin-bottom:28px}
+.code-input{
+  width:clamp(42px,7vw,72px);height:clamp(56px,9vw,92px);
+  text-align:center;font-size:clamp(1.6rem,3.4vw,2.8rem);
+  font-family:'Archivo Black',sans-serif;
+  border:1px solid var(--line);border-radius:0;
+  background:rgba(10,10,10,.5);color:var(--white);
+  outline:none;transition:border-color .2s,background .2s;
+  caret-color:var(--white);
+}
+.code-input:focus{border-color:var(--white)}
+.code-input.filled{border-color:var(--white);background:rgba(245,245,243,.06)}
+
+.btn{
+  width:100%;max-width:480px;padding:20px;border:1px solid var(--white);
+  font-family:'Archivo Black',sans-serif;font-size:.95rem;letter-spacing:.14em;
+  text-transform:uppercase;cursor:pointer;
+  background:var(--white);color:var(--black);
+  transition:background .2s,color .2s,transform .12s;
+}
+.btn:hover{background:transparent;color:var(--white)}
+.btn:active{transform:scale(.99)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn .spinner{
+  display:inline-block;width:14px;height:14px;border:2px solid currentColor;
+  border-top-color:transparent;border-radius:50%;
+  animation:spin .6s linear infinite;vertical-align:-2px;margin-right:10px;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.error{
+  font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.04em;
+  color:var(--white);margin-top:14px;min-height:1.2em;
+}
+.error:not(:empty)::before{content:'× ';}
+
+/* ── Progress ── */
+.progress{margin-top:40px;max-width:480px}
+.progress-label{
+  font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.28em;
+  text-transform:uppercase;color:var(--gray);margin-bottom:12px;
+}
+.progress-bar-wrap{width:100%;height:2px;background:var(--faint);overflow:hidden}
+.progress-bar{height:100%;background:var(--white);transition:width .5s;width:0%}
+.progress-status{
+  font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.04em;
+  color:var(--gray);margin-top:10px;
+}
+
+/* ── Success ── */
+.success-icon{
+  width:72px;height:72px;margin-bottom:24px;
+  border:2px solid var(--white);border-radius:50%;
+  display:none;align-items:center;justify-content:center;
+  animation:successPop .5s cubic-bezier(.16,1,.3,1) both;
+}
+.success-icon svg{width:34px;height:34px}
+.success-icon svg path{stroke:var(--white);stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:30;stroke-dashoffset:30;animation:checkDraw .4s .3s forwards}
+@keyframes successPop{0%{transform:scale(0)}100%{transform:scale(1)}}
+@keyframes checkDraw{to{stroke-dashoffset:0}}
+.card.verified .success-icon{display:flex}
+.card.verified .code-row,.card.verified .btn,.card.verified .subtitle,.card.verified .email-display{display:none}
+
+.bottom{
+  display:flex;justify-content:space-between;align-items:baseline;
+  font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--faint);animation:fadeIn 1s .8s both;
+}
+
+@keyframes fadeIn{0%{opacity:0}100%{opacity:1}}
+@keyframes riseIn{0%{opacity:0;transform:translateY(40px)}100%{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important}
+}
+@media (max-width:640px){
+  body{overflow-y:auto}
+  .frame{height:auto;min-height:100dvh;gap:32px}
+}
+</style>
+</head>
+<body>
+<div class="photo"></div>
+<div class="scrim"></div>
+<div class="grain"></div>
+
+<div class="frame">
+  <header class="top">
+    <span>Greg Iteen — Portfolio</span>
+    <span class="no">Nº 002 / Verify</span>
+  </header>
+
+  <main class="card" id="card">
+    <div class="success-icon"><svg viewBox="0 0 32 32"><path d="M8 16l6 6 10-12"/></svg></div>
+    <h1 id="heading">Check your email.</h1>
+    <p class="subtitle">Enter the 6-digit code sent to</p>
+    <p class="email-display" id="emailDisplay"></p>
+
+    <form id="verifyForm" autocomplete="off">
+      <div class="code-row" id="codeRow">
+        <input class="code-input" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]" data-idx="0" autofocus>
+        <input class="code-input" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]" data-idx="1">
+        <input class="code-input" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]" data-idx="2">
+        <input class="code-input" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]" data-idx="3">
+        <input class="code-input" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]" data-idx="4">
+        <input class="code-input" type="text" inputmode="numeric" maxlength="1" pattern="[0-9]" data-idx="5">
+      </div>
+      <button type="submit" class="btn" id="verifyBtn">Verify code</button>
+      <div class="error" id="errorMsg"></div>
+    </form>
+
+    <div class="progress" id="progressSection">
+      <div class="progress-label">Generating your design</div>
+      <div class="progress-bar-wrap"><div class="progress-bar" id="progressBar"></div></div>
+      <div class="progress-status" id="progressStatus">Initializing…</div>
+    </div>
+  </main>
+
+  <footer class="bottom">
+    <span>gregiteen.xyz</span>
+    <span>SSSS-native · Vault-driven</span>
+  </footer>
+</div>
+
+<script>
+const params=new URLSearchParams(location.search);
+const email=params.get('email')||'';
+document.getElementById('emailDisplay').textContent=email;
+
+// ── Code input logic ──
+const inputs=document.querySelectorAll('.code-input');
+inputs.forEach((inp,i)=>{
+  inp.addEventListener('input',e=>{
+    const v=e.target.value.replace(/\D/g,'');
+    e.target.value=v.slice(-1);
+    if(v&&i<5)inputs[i+1].focus();
+    e.target.classList.toggle('filled',!!v);
+  });
+  inp.addEventListener('keydown',e=>{
+    if(e.key==='Backspace'&&!e.target.value&&i>0){inputs[i-1].focus();inputs[i-1].value='';inputs[i-1].classList.remove('filled')}
+  });
+  inp.addEventListener('paste',e=>{
+    e.preventDefault();
+    const paste=(e.clipboardData.getData('text')||'').replace(/\D/g,'').slice(0,6);
+    paste.split('').forEach((ch,j)=>{if(inputs[j]){inputs[j].value=ch;inputs[j].classList.add('filled')}});
+    if(paste.length>0)inputs[Math.min(paste.length,5)].focus();
+  });
+});
+
+function getCode(){return Array.from(inputs).map(i=>i.value).join('')}
+
+// Button label helper — DOM methods only, no innerHTML.
+function setBtn(btn,label,busy){
+  btn.textContent='';
+  if(busy){const s=document.createElement('span');s.className='spinner';btn.appendChild(s)}
+  btn.appendChild(document.createTextNode(label));
+}
+
+// ── Progress polling ──
+let verified=false,themeReady=false;
+const phaseMap={'[1/4]':15,'[2/4]':45,'[3/4]':70,'[4/4]':90};
+
+function pollProgress(){
+  fetch('/generate-status').then(r=>r.json()).then(d=>{
+    const status=document.getElementById('progressStatus');
+    const bar=document.getElementById('progressBar');
+    if(d.status==='done'){
+      themeReady=true;bar.style.width='100%';
+      status.textContent='Design ready.';
+      maybeRedirect();
+    }else if(d.status==='running'){
+      status.textContent=d.phase||'Working…';
+      for(const[k,v]of Object.entries(phaseMap)){if(d.phase?.includes(k)){bar.style.width=v+'%';break}}
+      setTimeout(pollProgress,2000);
+    }else if(d.status==='error'){
+      status.textContent='Generation error — using default theme';
+      bar.style.width='100%';themeReady=true;maybeRedirect();
+    }else{
+      status.textContent='Waiting to start…';setTimeout(pollProgress,2000);
+    }
+  }).catch(()=>setTimeout(pollProgress,3000));
+}
+pollProgress();
+
+function maybeRedirect(){
+  if(verified){
+    document.getElementById('card').classList.add('verified');
+    document.getElementById('heading').textContent='You\'re in.';
+    setTimeout(()=>window.location.href='/',1500);
+  }
+}
+
+// ── Verify submit ──
+document.getElementById('verifyForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const code=getCode();const btn=document.getElementById('verifyBtn');const err=document.getElementById('errorMsg');
+  if(code.length!==6){err.textContent='Enter all 6 digits.';return}
+  btn.disabled=true;setBtn(btn,'Verifying…',true);err.textContent='';
+  try{
+    const r=await fetch('/api/verify-code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,code})});
+    const d=await r.json();
+    if(d.success){verified=true;maybeRedirect();setBtn(btn,'Verified ✓',false)}
+    else{err.textContent=d.error||'Invalid code.';btn.disabled=false;setBtn(btn,'Verify code',false)}
+  }catch(ex){err.textContent='Network error.';btn.disabled=false;setBtn(btn,'Verify code',false)}
+});
+</script>
+</body>
+</html>

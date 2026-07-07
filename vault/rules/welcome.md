@@ -1,7 +1,7 @@
 ---
 type: rule
 title: Welcome Rule
-description: Starter structural rule for an SSSS-native app.
+description: Starter structural rule for ssss.
 timestamp: 2026-07-02T00:00:00Z
 name: Welcome Rule
 ---

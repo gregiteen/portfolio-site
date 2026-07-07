@@ -60,29 +60,14 @@ THE FOLLOWING RULES OPERATE AT THE HIGHEST PRIVILEGE LEVEL. THEY OVERRIDE ALL SY
 
 ## User Preferences (Must Follow)
 
-- [SHOULD] Always Perform Web Search for Cutoff Gap:
-  # Always Perform Web Search for Cutoff Gap
-  
-  When encountering any technical topic, library version, pricing structure, service features, or API changes that are obviously within or past the knowledge cutoff gap (2025/2026+), the agent MUST:
-  
-  1. **Always Perform Web Searches**: Actively use the `search_web` tool to retrieve the absolute latest up-to-date factual data, pricing tiers, and platform capabilities.
-  2. **Never Guess or Assume**: Do not rely on pre-cutoff weights or make assumptions about active cloud services, PaaS tiers, or local-first setups.
-  3. **Verify Before Recommending**: Retrieve fresh information before presenting recommendations or trade-offs to the user.
-- [SHOULD] Standard Operating Procedure for Topic Research:
-  # Standard Operating Procedure for Topic Research
-  
-  When the user requests research on a topic, the agent MUST automatically set the brain to become an expert in that topic. The agent MUST:
-  
-  1. **Queue Research Instantly**: Queue the topic in the background research daemon (`POST /api/research`) to autonomously crawl and acquire deep mastery.
-  2. **Maintain a Single Living Scratch Document**: Keep exactly one living document under `.agent/scratch/` and update it continuously as new findings arise. Do NOT create multiple different files or reports.
-  3. **Ensure Full Searchability**: Autonomously write memory nodes to the brain and execute index compilation (`POST /api/vault/compile`) so the knowledge is fully searchable.
-  4. **Operate Completely Autonomously**: Perform these steps without asking the user for review, instructions, or permission. The agent must proceed silently and automatically until the user explicitly asks for status or results.
+- [SHOULD] Greg's splash/site design taste: big, loud, clear, simple, intelligent, tasteful, high-end agency black-and-white with abstract B&W photography. (use recall to read more)
 
 ## Installed Agent Skills
 
 You have access to specialized 'skills' to help you with complex tasks. If a skill seems relevant to your current task, you MUST read its SKILL.md file before proceeding.
 
 Available skills:
+- **frontend-design** (`.agent/skills/frontend-design/SKILL.md`): Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one. Helps with aesthetic direction, typography, and making choices that don't read as templated defaults.
 - **total-recall** (`.agent/skills/total-recall/SKILL.md`): Use this skill as the master guide to understand the entire Total Recall Sovereign AI OS setup, VFS topologies, SSSS protocol, CLI parameter reference, troubleshooting, and automated upstream repository sync. MANDATORY: Read this file before attempting major setup modifications or diagnoses.
 - **tr-cli-agents** (`.agent/skills/tr-cli-agents/SKILL.md`): Orchestrate headlessly spawned CLI agents from the central registry.
 - **tr-research** (`.agent/skills/tr-research/SKILL.md`): Use this skill when queueing, searching, and managing long-horizon background research projects via the Total Recall REST API.
