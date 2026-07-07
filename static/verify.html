@@ -254,8 +254,12 @@ pollProgress();
 function maybeRedirect(){
   if(verified){
     document.getElementById('card').classList.add('verified');
-    document.getElementById('heading').textContent='You\'re in.';
-    setTimeout(()=>window.location.href=targetUrl,1500);
+    if(themeReady){
+      document.getElementById('heading').textContent='You\'re in.';
+      setTimeout(()=>window.location.href=targetUrl,1500);
+    } else {
+      document.getElementById('heading').textContent='Almost ready...';
+    }
   }
 }
 
