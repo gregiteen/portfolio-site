@@ -12,6 +12,8 @@
 - **Absolute Source of Truth**: Because of the `--delete` flag, the local `dist/site/` folder is the strict source of truth for the live production droplet.
 
 ## Key Subsystems
-- **Marketing / Email**: Governed by `/email` and `/marketing` skills. Routes through SMTP2GO and Mailcow.
+- **Marketing / Email Suite**: Governed by `/email` and `/marketing` skills. Routes through SMTP2GO and Mailcow (DKIM/SPF/DMARC verified). Employs `emailShell()` inside `serve.mjs` to perfectly match the UI's B&W aesthetic.
+- **Visitor Memory**: Atomic local storage via `.data/sessions.json` and 30-day tokens to ensure seamless auto-login, enabling first-visit-only email triggers and persistent visitor workflow context.
+- **View Transitions**: Uses standard CSS `@view-transition` and JavaScript `startViewTransition()` to execute 3D rotateX/blur morphs across theme boundaries.
 - **Project Management**: Managed locally in `.docs/` per the `/project-management` skill.
-- **The Portfolio Vault**: Found in `vault/pages/projects/`. Holds static showcase content. **Do not overwrite.**
+- **The Portfolio Vault**: Holds static showcase content in two directories: `vault/pages/projects/` (Software Engineering projects) and `vault/pages/designs/` (HTML Graphic Design projects). The AI generator also drops specs into the `designs/` folder. **Do not overwrite the user's manual markdown files in either directory.**
