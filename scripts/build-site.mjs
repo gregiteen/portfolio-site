@@ -644,17 +644,64 @@ const FLIPPER_SCRIPT_TEMPLATE = `<script>
   const nextUrl = nextBase + subPath;
 
   const flipperHtml = \`
-    <div id="ai-design-flipper" style="position:fixed; top:0; left:0; right:0; height:44px; background:#111; color:#eee; display:flex; align-items:center; justify-content:center; z-index:99999; font-family:monospace; font-size: 13px; border-bottom:1px solid #333;">
+    <div id="ai-design-flipper" style="position:fixed; top:0; left:0; right:0; height:44px; background:#111; color:#eee; display:flex; align-items:center; justify-content:center; z-index:99999; font-family:monospace; font-size: 13px; border-bottom:1px solid #333; view-transition-name: theme-flipper;">
       <a href="\${prevUrl}" style="color:#aaa; text-decoration:none; padding:10px 20px;">&larr; Prev Design</a>
       <span style="margin:0 20px; font-weight:bold; color:#fff;">\${designs[currentIndex].name}</span>
       <a href="\${nextUrl}" style="color:#aaa; text-decoration:none; padding:10px 20px;">Next Design &rarr;</a>
     </div>
   \`;
-  
-  document.addEventListener('DOMContentLoaded', () => {
-    document.body.insertAdjacentHTML('afterbegin', flipperHtml);
-    document.body.style.paddingTop = '44px';
-  });
+
+  const attachFlipperEvents = () => {
+    const flipper = document.getElementById('ai-design-flipper');
+    if (!flipper) return;
+    flipper.addEventListener('click', (e) => {
+      const link = e.target.closest('a');
+      if (!link) return;
+      if (!document.startViewTransition) return;
+      
+      e.preventDefault();
+      const href = link.href;
+      
+      document.documentElement.classList.add('theme-morph');
+      
+      const transition = document.startViewTransition(async () => {
+        const res = await fetch(href);
+        const html = await res.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        
+        document.documentElement.innerHTML = doc.documentElement.innerHTML;
+        
+        Array.from(document.querySelectorAll('script')).forEach(oldScript => {
+          const newScript = document.createElement('script');
+          Array.from(oldScript.attributes).forEach(attr => newScript.setAttribute(attr.name, attr.value));
+          newScript.appendChild(document.createTextNode(oldScript.innerHTML));
+          oldScript.parentNode.replaceChild(newScript, oldScript);
+        });
+        
+        window.history.pushState(null, '', href);
+        window.scrollTo(0, 0);
+      });
+      
+      transition.finished.finally(() => {
+        document.documentElement.classList.remove('theme-morph');
+      });
+    });
+  };
+
+  const injectFlipper = () => {
+    if (!document.getElementById('ai-design-flipper')) {
+      document.body.insertAdjacentHTML('afterbegin', flipperHtml);
+      document.body.style.paddingTop = '44px';
+      attachFlipperEvents();
+    }
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', injectFlipper);
+  } else {
+    injectFlipper();
+  }
 })();
 </script>`;
 
@@ -733,15 +780,6 @@ let generatorScript = '';
 let scopedCustomCss = '';
 let customLayouts = {};
 let LIVE_RELOAD_SCRIPT = '';
-
-const GENERATOR_FORM = `<div class="custom-generator">
-  <p class="gen-label">🔮 SSSS Style Generator (Compile on Demand)</p>
-  <form class="gen-form">
-    <input type="text" placeholder="Describe a style — e.g. brutalist newspaper, vaporwave arcade…" maxlength="500" required>
-    <button type="submit">Generate</button>
-  </form>
-  <p class="gen-status" hidden></p>
-</div>`;
 
 /**
  * Render both theme layers: the default layout (hidden while the custom theme
@@ -1133,14 +1171,6 @@ function customDesignList(list) {
     : `<div class="design-grid">\n${list.map(designCard).join('\n')}\n</div>`;
 }
 
-// Ensure the generator UI exists in the custom layer even if the model forgot
-// the {{GENERATOR_FORM}} slot — otherwise you could never flip designs again
-// from within the custom skin.
-function ensureGeneratorForm(html) {
-  if (targetDesign) return html.replace('{{GENERATOR_FORM}}', '');
-  return html.includes(GENERATOR_FORM) ? html : `${html}\n${GENERATOR_FORM}`;
-}
-
 for (const page of pages) {
   if (page.data.x_kind === 'theme') continue; // Skip compiling theme config files
   const sourcePath = 'vault/pages/' + relative(pagesDir, page.file);
@@ -1157,7 +1187,6 @@ for (const page of pages) {
   <h1 class="display reveal d2">${headline}</h1>
   <p class="tagline reveal d3">${escapeHtml(page.data.x_tagline ?? '')}</p>
   <div class="prose reveal d4">${page.html}</div>
-  <div class="reveal d4">${GENERATOR_FORM}</div>
 </section>
 <div class="kicker">
   <h2>Featured work</h2><span class="count">${featuredCount}</span>
@@ -1173,7 +1202,6 @@ ${featured.map(projectRow).join('\n')}
           INTRO: page.html,
           FEATURED_PROJECTS: customProjectList(featured),
           FEATURED_COUNT: featuredCount,
-          GENERATOR_FORM: targetDesign ? '' : GENERATOR_FORM,
         }))
       : null;
     content = withCustomLayer(defaultContent, customContent);
@@ -1329,11 +1357,10 @@ const designsDefault = `<section class="hero" style="padding-bottom:1rem">
 ${designs.map(designCard).join('\n')}
 </div>`;
 const designsCustom = customLayouts.designs_index
-  ? ensureGeneratorForm(fillTemplate(customLayouts.designs_index, {
+  ? fillTemplate(customLayouts.designs_index, {
       DESIGN_CARDS: customDesignList(aiDesigns),
       DESIGN_COUNT: String(aiDesigns.length).padStart(2, '0'),
-      GENERATOR_FORM: targetDesign ? '' : GENERATOR_FORM,
-    }))
+    })
   : null;
 
 await writeFile(
