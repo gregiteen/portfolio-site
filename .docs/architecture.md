@@ -1,15 +1,15 @@
 # System Architecture
 
 ## Core Topology
-- **Static Generation (`scripts/build-site.mjs`)**: Parses `vault/pages/**/*.md` and constructs the raw HTML in `dist/site/`.
-- **Stateless Node Daemon (`scripts/serve.mjs`)**: Directly serves the `dist/site/` folder, managing the Drip Campaign automation loop in memory, dispatching emails on intervals based on transient visitor profile state.
-- **Theme Generation (`scripts/compile-theme.mjs`)**: Ingests prompts and generates an isolated, self-contained mini-site for that design. It creates a dedicated folder (e.g. `designs/[slug]/`). Inside this folder, it places all generated HTML files, the isolated generated image assets (logo, favicon, hero, portrait), and the Google Standard `DESIGN.md`.
-- **Google Standard `DESIGN.md`**: Governed explicitly by the local project skill `.agent/skills/frontend-design/SKILL.md`. This is the sole source of truth for a theme (see [Google DESIGN.md Spec](file:///Users/greg/Github/portfolio-site/.docs/google_design_md_spec.md)). It sits inside the isolated folder. The format strictly enforces frontmatter (`name`, `accent`, `style`) and a `# Design System` markdown body. No `theme-[id]` or `design-[id]` files are used.
+- **Static Generation (`scripts/build-site.mjs`)**: Parses `vault/pages/**/*.md` and constructs the raw HTML in `dist/site/`. Supports a `--design [slug]` flag to build completely isolated, standalone copies of the entire website using a generated layout.
+- **Stateless Node Daemon (`scripts/serve.mjs`)**: Directly serves the `dist/site/` folder. Handles the `/generate-theme` POST endpoint and the `/generate-status` polling logic, returning the exact `latestUrl` for redirects.
+- **Theme Generation (`scripts/compile-theme.mjs`)**: Ingests prompts and generates a dedicated `DESIGN.md` inside `vault/pages/designs/`. Afterwards, it automatically triggers an asynchronous background rebuild of the main site and an isolated build of the new design site.
+- **Arrow Flipper UI**: A sticky Javascript-powered navigation bar (`id="ai-design-flipper"`) injected into the top of every generated HTML page. It dynamically traverses `window.location.pathname` to hyperlink visitors seamlessly between the root index and all isolated AI-generated design folders.
+- **Google Standard `DESIGN.md`**: Governed explicitly by the local project skill `.agent/skills/frontend-design/SKILL.md`. This is the sole source of truth for a theme (see [Google DESIGN.md Spec](file:///Users/greg/Github/portfolio-site/.docs/google_design_md_spec.md)). The format strictly enforces frontmatter (`name`, `accent`, `style`) and a `# Design System` markdown body.
 
-## Deployment Pipeline & Legacy Architecture
+## Deployment Pipeline
 - **Sync Method**: Deployment runs via `rsync -avz --delete dist/site/ root@$DROPLET_IP:/var/www/gregiteen.xyz/`.
-- **Absolute Source of Truth**: Because of the `--delete` flag, the `dist/site/` folder is the strict source of truth for the live droplet.
-- **Legacy Purge**: Any old `.html` files (like `nostalgia.html` or `high-stakes-field-day.html`) that existed on the droplet from a previous architecture (before the July 3rd SSSS-native migration) were permanently purged during the sync because they were never migrated into the `vault/pages/` markdown structure in this git repository.
+- **Absolute Source of Truth**: Because of the `--delete` flag, the local `dist/site/` folder is the strict source of truth for the live production droplet.
 
 ## Key Subsystems
 - **Marketing / Email**: Governed by `/email` and `/marketing` skills. Routes through SMTP2GO and Mailcow.

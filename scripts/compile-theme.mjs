@@ -201,24 +201,19 @@ about, contact. Dark, technical, editorial baseline. Your theme fully re-skins i
 async function run() {
   const t0 = Date.now();
 
-  // Unique ID — all assets for this generation go into assets/gen-{id}/
-  const genId = Date.now().toString(36);
-  const genDir = join(assetsDir, `gen-${genId}`);
+  const styleName = prompt.replace(/[^a-zA-Z0-9]+/g, '-').slice(0, 40).toLowerCase() || 'custom';
+  const designDir = join(__dirname, '..', 'designs', styleName);
+  const genDir = join(designDir, 'assets');
   await mkdir(genDir, { recursive: true });
 
-  // Paths: per-generation (permanent) + current (active theme, overwritten)
   const logoPath = join(genDir, 'logo.png');
   const faviconPath = join(genDir, 'favicon.png');
   const heroPath = join(genDir, 'hero.jpg');
   const portraitPath = join(genDir, 'portrait.jpg');
-  const curLogo = join(assetsDir, 'gen-logo.png');
-  const curFavicon = join(assetsDir, 'favicon.png');
-  const curHero = join(assetsDir, 'gen-hero.jpg');
-  const curPortrait = join(assetsDir, 'gen-portrait.jpg');
   const basePortrait = join(assetsDir, 'greg-portrait-base.jpg');
 
   // ── Phase 1: Images (parallel with theme gen) ──
-  console.log(`[1/3] Images → assets/gen-${genId}/`);
+  console.log(`[1/3] Images → designs/${styleName}/assets/`);
 
   const logoPrompt = `Create a clean, professional monogram logo combining "G" and "I" (Greg Iteen). Style: ${prompt}. Bold, distinctive, works at small sizes. CRITICAL: FULLY TRANSPARENT background (PNG alpha). Colors matching the style. No background shape — just the monogram on transparency. Vector-style, geometric, minimal.`;
   const heroPrompt = `Create an atmospheric, wide hero background image for a portfolio website. Style: ${prompt}. Abstract/textural, suitable behind text. Rich in mood and color with depth. No text, no faces, no logos. Cinematic quality, 16:9.`;
@@ -226,16 +221,13 @@ async function run() {
   async function genLogoAndFavicon() {
     const ok = await generateImage(logoPrompt, logoPath);
     if (ok) {
-      try { await copyFile(logoPath, curLogo); } catch {}
       const fp = `Create a tiny square favicon (64x64) "GI" monogram. Style: ${prompt}. TRANSPARENT background. Tightly cropped, fills square, bold at small sizes. Simple, iconic.`;
       await generateImage(fp, faviconPath);
-      try { await copyFile(faviconPath, curFavicon); } catch {}
     }
   }
 
   async function genHero() {
-    const ok = await generateImage(heroPrompt, heroPath);
-    if (ok) { try { await copyFile(heroPath, curHero); } catch {} }
+    await generateImage(heroPrompt, heroPath);
   }
 
   // Themed portrait: restyle Greg's real photo to match the brief (image-to-image).
@@ -243,8 +235,7 @@ async function run() {
 
   async function genPortrait() {
     try {
-      const ok = await generateImage(portraitPrompt, portraitPath, basePortrait);
-      if (ok) { try { await copyFile(portraitPath, curPortrait); } catch {} }
+      await generateImage(portraitPrompt, portraitPath, basePortrait);
     } catch (err) {
       console.warn(`  ⚠ Portrait generation failed: ${err.message} — keeping previous portrait`);
     }
@@ -262,6 +253,8 @@ async function run() {
 
   const baseContext = `You are the design lead at a boutique studio. Every site you ship has a visual identity so specific it could never be mistaken for a template. You are designing for a REAL client — Greg Iteen, a full-stack engineer who builds sovereign, file-native AI systems.
 
+CRITICAL DIRECTIVE: NO TRITE DESIGNS. ALL MUST BE BESPOKE, AGENCY LEVEL DESIGNS. NO AI SLOP. Do NOT output crappy cyberpunk AI slop. You MUST write custom HTML with awesome, interactive frontend features. Avoid generic gradients, overused tech aesthetics, or lazy layouts. Push the visual envelope and write real, bespoke code.
+
 THE BRIEF: "${prompt}"
 
 FRONTEND DESIGN PRINCIPLES & GUIDANCE:
@@ -274,10 +267,10 @@ PLACEHOLDER CONTRACT:
 ${placeholderContract}
 
 IMAGES (already generated, use them):
-- /assets/gen-logo.png — GI monogram, transparent PNG. Use as logo.
-- /assets/favicon.png — GI favicon. Use in <link rel="icon">.
-- /assets/gen-hero.jpg — hero background. Use prominently.
-- /assets/gen-portrait.jpg — portrait of Greg restyled to match this theme. It appears inside page content (class .md-img) on the contact page — style it to sit well in your layout.
+- assets/logo.png — GI monogram, transparent PNG. Use as logo.
+- assets/favicon.png — GI favicon. Use in <link rel="icon">.
+- assets/hero.jpg — hero background. Use prominently.
+- assets/portrait.jpg — portrait of Greg restyled to match this theme. It appears inside page content (class .md-img) on the contact page — style it to sit well in your layout.
 `;
 
   async function callAgent(p) {
@@ -384,73 +377,75 @@ OUTPUT: The FINAL cleaned up, validated JSON object with all fields:
   }
 
   // ── Phase 3: Save nodes ──
-  const themeSlug = `theme-${genId}`;
-  const designSlug = `design-${genId}`;
-  const styleName = prompt.replace(/[^a-zA-Z0-9]+/g, '-').slice(0, 40).toLowerCase();
+  console.log(`[3/3] Saving DESIGN.md into designs/${styleName}/…`);
 
-  console.log(`[3/3] Saving ${designSlug} + ${themeSlug}…`);
-
-  // Design spec page (shows on designs index)
   let designBody = payload.designSpec || `Theme: ${theme.name}\nStyle: ${prompt}\nAccent: ${theme.accent}`;
   designBody += `\n\n<br>\n<hr>\n\n### Architecture by Greg Iteen\n\n> **Generative Design Infrastructure**  \n> This interface and underlying design system were procedurally generated using an AI-native build engine. The architecture bypasses traditional databases in favor of stateless, strictly typed markup pipelines.\n\n**Infrastructure Consultation Offer**\nWe assist select organizations in migrating to fully automated, AI-driven digital architectures. Mention this design specification during your initial inquiry to receive a 20% credit toward your first architectural audit.\n\n**Website:** [gregiteen.xyz](https://gregiteen.xyz)  \n**Direct Inquiry:** [sales@gregiteen.xyz](mailto:sales@gregiteen.xyz)`;
+
+  const blocks = Object.entries({ css: theme.css, ...Object.fromEntries(Object.entries(theme.layouts).map(([k,v]) => [`layout:${k}`, v])) })
+    .filter(([, content]) => typeof content === 'string' && content.trim())
+    .map(([name, content]) => `## section:${name}\n\n\`\`\`${name === 'css' ? 'css' : 'html'}\n${content.replace(/```/g, '')}\n\`\`\``)
+    .join('\n\n');
+
+  const designMd = `---
+name: "${theme.name}"
+accent: "${theme.accent}"
+style: "${prompt.replace(/"/g, '\\"')}"
+---
+
+# Design System
+
+${designBody.trim()}
+
+${blocks}
+`;
+
+  await writeFile(join(designDir, 'DESIGN.md'), designMd, 'utf8');
+
+  // Write the portfolio entry so it shows up on the main site's Designs index
   const designMeta = {
-    slug: designSlug,
+    slug: `design-${styleName}`,
     name: theme.name,
     title: `${theme.name} — Design Spec`,
     description: `AI-generated design: "${prompt}"`,
     timestamp: new Date().toISOString(),
-    sandbox_entry: `designs/${designSlug}.html`,
+    sandbox_entry: `designs/${styleName}/index.html`,
     x_kind: 'design',
     x_year: new Date().getFullYear(),
     x_role: 'AI-Generated Theme',
     x_client: 'Portfolio Generator',
-    x_tags: ['AI Generated', styleName, 'Theme'],
-    x_theme_slug: themeSlug,
-    x_preview: `assets/gen-${genId}/hero.jpg`,
-    x_logo: `assets/gen-${genId}/logo.png`,
+    x_tags: ['AI Generated', 'Theme'],
+    x_preview: `/designs/${styleName}/assets/hero.jpg`,
+    x_logo: `/designs/${styleName}/assets/logo.png`,
+    x_link: `/designs/${styleName}/index.html`
   };
   const specFm = Object.entries(designMeta)
     .map(([k, v]) => {
       if (Array.isArray(v)) return `${k}:\n${v.map(t => `  - "${t}"`).join('\n')}`;
       return `${k}: ${JSON.stringify(String(v))}`;
     }).join('\n');
+  
   await writeFile(
-    join(vaultDir, 'pages', 'designs', `${designSlug}.md`),
-    `---\ntype: page\n${specFm}\n---\n\n${designBody.trim()}\n`,
+    join(vaultDir, 'pages', 'designs', `${styleName}.md`),
+    `---\ntype: page\n${specFm}\n---\n\n${(payload.designSpec || '').trim() || `Generated design for: ${prompt}`}\n`,
     'utf8'
   );
-
-  // Write Google Standard DESIGN.md to the repository root
-  await writeFile(
-    join(__dirname, '..', 'DESIGN.md'),
-    `---\nname: ${JSON.stringify(theme.name)}\naccent: ${JSON.stringify(theme.accent)}\nstyle: ${JSON.stringify(prompt)}\n---\n\n# Design System\n\n${designBody.trim()}\n`,
-    'utf8'
-  );
-
-  // Theme config — save unique copy + overwrite active theme
-  const sections = { css: theme.css };
-  for (const [key, tpl] of Object.entries(theme.layouts)) sections[`layout:${key}`] = tpl;
-
-  for (const slug of [themeSlug, 'theme-custom']) {
-    await writeFile(
-      join(vaultDir, 'pages', 'designs', `${slug}.md`),
-      serializeThemeDoc({
-        slug,
-        name: theme.name,
-        title: 'Custom Theme Config',
-        description: `AI-generated bespoke skin for style: ${prompt}`,
-        timestamp: new Date().toISOString(),
-        sandbox_entry: `designs/${slug}.html`,
-        x_kind: 'theme',
-        x_accent: theme.accent,
-        x_prompt: prompt,
-      }, sections),
-      'utf8'
-    );
-  }
 
   const elapsed = Math.round((Date.now() - t0) / 1000);
-  console.log(`[Success] "${theme.name}" → gen-${genId} [${elapsed}s]`);
+  console.log(`[Success] "${theme.name}" → designs/${styleName} [${elapsed}s]`);
+
+  // ── Phase 4: Build HTML ──
+  console.log(`[4/4] Building isolated HTML...`);
+  const buildResult = spawnSync(process.execPath, [join(__dirname, 'build-site.mjs'), '--design', styleName], { stdio: 'inherit' });
+  if (buildResult.status !== 0) {
+    console.warn(`  ⚠ build-site.mjs exited with code ${buildResult.status}`);
+  }
+
+  console.log(`[4/4] Rebuilding main site to register design...`);
+  const mainBuildResult = spawnSync(process.execPath, [join(__dirname, 'build-site.mjs')], { stdio: 'inherit' });
+  if (mainBuildResult.status !== 0) {
+    console.warn(`  ⚠ build-site.mjs (main) exited with code ${mainBuildResult.status}`);
+  }
 }
 
 run().catch((e) => {

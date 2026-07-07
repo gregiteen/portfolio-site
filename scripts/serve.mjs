@@ -606,11 +606,24 @@ createServer(async (req, res) => {
   }
 
   if (urlPath === '/generate-status') {
+    let latestUrl = null;
+    try {
+      const designsDir = join(__dirname, '..', 'vault', 'pages', 'designs');
+      const files = await import('node:fs/promises').then(fs => fs.readdir(designsDir));
+      const designFiles = files.filter(f => f.startsWith('design-') || f.endsWith('.md'))
+        .filter(f => !f.startsWith('theme-'))
+        .sort().reverse();
+      if (designFiles.length > 0) {
+        latestUrl = `/designs/${designFiles[0].replace('.md', '')}/index.html`;
+      }
+    } catch {}
+
     return sendJson(res, 200, {
       status: genJob.status,
       phase: genJob.phase,
       error: genJob.error,
       version: buildVersion,
+      latestUrl
     });
   }
 

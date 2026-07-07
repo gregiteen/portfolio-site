@@ -9,10 +9,16 @@ import { fileURLToPath } from 'node:url';
 import { parseDocument } from '@ssss/cli/frontmatter';
 import { parseNestedMap, extractSections, scopeCss, fillTemplate } from './lib/theme.mjs';
 
+let targetDesign = null;
+const designArgIdx = process.argv.indexOf('--design');
+if (designArgIdx >= 0 && designArgIdx + 1 < process.argv.length) {
+  targetDesign = process.argv[designArgIdx + 1];
+}
+
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pagesDir = join(root, 'vault', 'pages');
 const assetsDir = join(root, 'assets');
-const outDir = join(root, 'dist', 'site');
+const outDir = targetDesign ? join(root, 'dist', 'site', 'designs', targetDesign) : join(root, 'dist', 'site');
 
 async function collectMarkdown(dir) {
   const out = [];
@@ -608,48 +614,36 @@ const TRANSITIONS = `<style>
 }
 </style>`;
 
-// __VALID_THEMES__ is replaced at build time with the themes that actually exist.
-const THEME_SCRIPT_TEMPLATE = `<script>
+const FLIPPER_SCRIPT_TEMPLATE = `<script>
 (function() {
-  const validThemes = __VALID_THEMES__;
-  let savedTheme = localStorage.getItem('greg-theme') || 'warm';
-  if (!validThemes.includes(savedTheme)) savedTheme = 'warm';
-  document.documentElement.setAttribute('data-theme', savedTheme);
+  const designs = __VALID_THEMES__;
+  if (!designs || designs.length === 0) return;
 
-  window.addEventListener('DOMContentLoaded', () => {
-    const pills = document.querySelectorAll('.theme-pill');
+  const currentUrl = window.location.pathname;
+  let currentIndex = designs.findIndex(d => currentUrl.endsWith(d.url.replace('/index.html', '')) || currentUrl === d.url);
+  if (currentIndex === -1) currentIndex = 0;
 
-    const updatePills = (theme) => {
-      pills.forEach(pill => {
-        const active = pill.getAttribute('data-theme-val') === theme;
-        pill.classList.toggle('active', active);
-        pill.setAttribute('aria-pressed', String(active));
-      });
-    };
+  const prev = designs[(currentIndex - 1 + designs.length) % designs.length];
+  const next = designs[(currentIndex + 1) % designs.length];
 
-    updatePills(savedTheme);
+  const flipperHtml = \`
+    <div id="ai-design-flipper" style="position:fixed; top:0; left:0; right:0; height:44px; background:#111; color:#eee; display:flex; align-items:center; justify-content:center; z-index:99999; font-family:monospace; font-size: 13px; border-bottom:1px solid #333;">
+      <a href="\${prev.url}" style="color:#aaa; text-decoration:none; padding:10px 20px;">&larr; Prev Design</a>
+      <span style="margin:0 20px; font-weight:bold; color:#fff;">\${designs[currentIndex].name}</span>
+      <a href="\${next.url}" style="color:#aaa; text-decoration:none; padding:10px 20px;">Next Design &rarr;</a>
+    </div>
+  \`;
+  
+  document.addEventListener('DOMContentLoaded', () => {
+    document.body.insertAdjacentHTML('afterbegin', flipperHtml);
+    document.body.style.paddingTop = '44px';
+  });
+})();
+</script>`;
 
-    pills.forEach(pill => {
-      pill.addEventListener('click', () => {
-        const theme = pill.getAttribute('data-theme-val');
-        const apply = () => {
-          document.documentElement.setAttribute('data-theme', theme);
-          localStorage.setItem('greg-theme', theme);
-          updatePills(theme);
-        };
-        // 3D cross-fade between designs where supported, instant otherwise.
-        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        if (document.startViewTransition && !reduced) {
-          document.documentElement.classList.add('theme-morph');
-          const t = document.startViewTransition(apply);
-          t.finished.finally(() => document.documentElement.classList.remove('theme-morph'));
-        } else {
-          apply();
-        }
-      });
-    });
-
-    // SSSS style generator — dev-server only (async job + status polling).
+const GENERATOR_SCRIPT = `<script>
+(function() {
+  document.addEventListener('DOMContentLoaded', () => {
     const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     document.querySelectorAll('.custom-generator').forEach(box => {
       if (!isLocal) { box.hidden = true; return; }
@@ -678,9 +672,8 @@ const THEME_SCRIPT_TEMPLATE = `<script>
               setStatus(job.phase || 'Working…');
               pollTimer = setTimeout(poll, 1500);
             } else if (job.status === 'done') {
-              localStorage.setItem('greg-theme', 'custom');
-              setStatus('Compiled! Reloading with your new design…');
-              setTimeout(() => location.reload(), 1200);
+              setStatus('Compiled! Redirecting to your new design…');
+              setTimeout(() => { window.location.href = job.latestUrl || '/'; }, 1200);
             } else if (job.status === 'error') {
               setStatus('Generation failed: ' + (job.error || 'unknown error'), true);
               setBusy(false);
@@ -708,7 +701,6 @@ const THEME_SCRIPT_TEMPLATE = `<script>
         .catch(() => { setStatus('Error connecting to the dev server.', true); setBusy(false); });
       });
 
-      // If a generation is already running (e.g. page reloaded), resume the status view.
       fetch('/generate-status').then(r => r.json()).then(job => {
         if (job.status === 'running') { setBusy(true); poll(); }
       }).catch(() => {});
@@ -719,7 +711,8 @@ const THEME_SCRIPT_TEMPLATE = `<script>
 
 let themePillsHtml = '';
 let themeCss = '';
-let themeScript = '';
+let flipperScript = '';
+let generatorScript = '';
 let scopedCustomCss = '';
 let customLayouts = {};
 let LIVE_RELOAD_SCRIPT = '';
@@ -771,7 +764,7 @@ function layout({ title, description, nav, content, activeSlug, sourcePath }) {
   // every page is safe: other themes are untouched and flipping is instant.
   const stylesheet = [themeCss, STYLE, scopedCustomCss].filter(Boolean).join('\n');
 
-  return `<!doctype html>
+  let finalHtml = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -782,7 +775,8 @@ function layout({ title, description, nav, content, activeSlug, sourcePath }) {
 <meta property="og:description" content="${escapeHtml(description)}">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="greg.iteen">
-${themeScript}
+${flipperScript}
+${generatorScript}
 ${LIVE_RELOAD_SCRIPT}
 ${FONTS}
 ${FAVICON}
@@ -836,6 +830,11 @@ ${content}
 </body>
 </html>
 `;
+  if (targetDesign) {
+    finalHtml = finalHtml.replace(/href="\//g, `href="/designs/${targetDesign}/`);
+    finalHtml = finalHtml.replace(/src="\//g, `src="/designs/${targetDesign}/`);
+  }
+  return finalHtml;
 }
 
 function logoTile(p) {
@@ -867,6 +866,7 @@ const customTheme = themes.find((t) => t.data.slug === 'theme-custom') ?? null;
 // win the cascade tie and the flipper would be a no-op.
 const themeCssBlocks = [];
 for (const t of builtinThemes) {
+  if (targetDesign) continue;
   const name = t.data.slug.replace('theme-', '');
   const tokens = parseNestedMap(t.raw, 'x_variables');
   const vars = Object.entries(tokens)
@@ -878,7 +878,22 @@ for (const t of builtinThemes) {
 }
 
 // The generated custom theme: scoped CSS + layout templates from fenced sections.
-if (customTheme) {
+if (targetDesign) {
+  try {
+    const designMdRaw = await readFile(join(root, 'designs', targetDesign, 'DESIGN.md'), 'utf8');
+    const doc = parseDocument(designMdRaw);
+    const sections = extractSections(doc.body);
+    if (sections.css) {
+      scopedCustomCss = sections.css; // Un-scoped for standalone site
+      customLayouts = {};
+      for (const [key, content] of Object.entries(sections)) {
+        if (key.startsWith('layout:')) customLayouts[key.slice('layout:'.length)] = content;
+      }
+    }
+  } catch (e) {
+    console.warn(`[Warn] Could not parse DESIGN.md for ${targetDesign}: ${e.message}`);
+  }
+} else if (customTheme) {
   const sections = extractSections(customTheme.body);
   if (sections.css) {
     scopedCustomCss = scopeCss(sections.css);
@@ -890,17 +905,22 @@ if (customTheme) {
     themeCssBlocks.push(`.theme-pill.custom::after { background: ${customAccent}; }`);
   }
 }
-themeCss = themeCssBlocks.join('\n\n');
 
-const pillThemes = [
-  ...builtinThemes.map((t) => ({ name: t.data.slug.replace('theme-', ''), label: t.data.name })),
-  ...(scopedCustomCss ? [{ name: 'custom', label: `${customTheme.data.name} (generated)` }] : []),
-];
-themePillsHtml = pillThemes
-  .map((t) => `<button class="theme-pill ${t.name}" data-theme-val="${t.name}" aria-label="${escapeHtml(t.label)} theme" aria-pressed="false" title="${escapeHtml(t.label)}"></button>`)
-  .join('\n        ');
+const aiDesigns = pages
+  .filter((p) => p.data.x_kind === 'design' && p.data.x_role === 'AI-Generated Theme')
+  .sort((a, b) => (b.data.x_year ?? 0) - (a.data.x_year ?? 0) || a.data.name.localeCompare(b.data.name));
 
-themeScript = THEME_SCRIPT_TEMPLATE.replace('__VALID_THEMES__', JSON.stringify(pillThemes.map((t) => t.name)));
+const flipperData = aiDesigns.map(d => ({ name: d.data.name, url: d.data.x_link }));
+flipperScript = FLIPPER_SCRIPT_TEMPLATE.replace('__VALID_THEMES__', JSON.stringify(flipperData));
+themePillsHtml = ''; // No more CSS theme pills!
+
+if (!targetDesign) {
+  themeCss = themeCssBlocks.join('\n\n');
+  generatorScript = GENERATOR_SCRIPT;
+} else {
+  themeCss = '';
+  generatorScript = '';
+}
 
 LIVE_RELOAD_SCRIPT = `
 <script>
@@ -944,6 +964,11 @@ const nav = [
 await rm(outDir, { recursive: true, force: true });
 await mkdir(outDir, { recursive: true });
 await cp(assetsDir, join(outDir, 'assets'), { recursive: true });
+if (targetDesign) {
+  try {
+    await cp(join(root, 'designs', targetDesign, 'assets'), join(outDir, 'assets'), { recursive: true });
+  } catch {}
+}
 
 function projectRow(p, i) {
   const badges = (p.data.x_tech ?? []).map((t) => `<span class="badge">${escapeHtml(t)}</span>`).join('');
