@@ -779,7 +779,9 @@ function layout({ title, description, nav, content, activeSlug, sourcePath }) {
 
   // The custom skin is scoped to [data-theme="custom"], so shipping it on
   // every page is safe: other themes are untouched and flipping is instant.
-  const stylesheet = [themeCss, STYLE, scopedCustomCss].filter(Boolean).join('\n');
+  const stylesheet = targetDesign
+    ? [scopedCustomCss].filter(Boolean).join('\n')
+    : [themeCss, STYLE, scopedCustomCss].filter(Boolean).join('\n');
 
   let finalHtml = `<!doctype html>
 <html lang="en">
@@ -1025,6 +1027,11 @@ const nav = [
 await rm(outDir, { recursive: true, force: true });
 await mkdir(outDir, { recursive: true });
 await cp(assetsDir, join(outDir, 'assets'), { recursive: true });
+
+// Always emit theme.css if a target design is being built
+if (targetDesign && scopedCustomCss) {
+  await writeFile(join(outDir, 'theme.css'), scopedCustomCss);
+}
 if (targetDesign) {
   try {
     await cp(join(root, 'designs', targetDesign, 'assets'), join(outDir, 'assets'), { recursive: true });
