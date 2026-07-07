@@ -21,7 +21,7 @@ export const LAYOUT_SPECS = {
   },
   designs_index: {
     required: ['{{DESIGN_CARDS}}'],
-    optional: ['{{DESIGN_COUNT}}', '{{GENERATOR_FORM}}'],
+    optional: ['{{DESIGN_COUNT}}'],
   },
   project_detail: {
     required: ['{{NAME}}', '{{CONTENT}}'],

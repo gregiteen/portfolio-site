@@ -16,7 +16,7 @@ x_tech:
   - "ssss"
 x_link: "https://github.com/gregiteen/total-recall"
 x_repo: "https://github.com/gregiteen/total-recall"
-x_logo: "assets/logos/total-recall.jpg"
+x_logo: "assets/logos/total-recall.png"
 x_featured: true
 ---
 

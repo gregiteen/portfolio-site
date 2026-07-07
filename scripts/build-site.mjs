@@ -132,6 +132,14 @@ nav a.item:hover, nav a.item.active { color: var(--accent); }
   transition: background .3s, border-color .3s;
   view-transition-name: theme-flipper;
 }
+.logout-link {
+  font-family: 'IBM Plex Mono', monospace; font-size: .58rem;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--text-3, rgba(240,238,246,0.3)); text-decoration: none;
+  padding: 6px 10px; transition: color .2s;
+  min-width: 44px; min-height: 44px; display: inline-flex; align-items: center;
+}
+.logout-link:hover { color: var(--text-1, #f0eef6); }
 .theme-pill {
   width: 36px; height: 36px; border: 1px solid transparent; background: transparent;
   cursor: pointer; padding: 0; outline: none; transition: transform 0.2s;
@@ -885,6 +893,7 @@ ${TRANSITIONS}
       <div class="theme-pills" role="group" aria-label="Theme switcher">
         ${themePillsHtml}
       </div>
+      <a href="/api/logout" class="logout-link" title="Sign out">↗ out</a>
     </nav>
   </div>
 </header>
@@ -893,29 +902,28 @@ ${TRANSITIONS}
 ${content}
   </div>
 </main>
+<aside class="cna-banner">
+  <div class="frame">
+    <a href="/consult.html" class="cna-link">
+      <span class="cna-text">Have a project in mind?</span>
+      <span class="cna-cta">Start a conversation →</span>
+    </a>
+  </div>
+</aside>
+<style>
+.cna-banner{background:rgba(255,255,255,0.03);border-top:1px solid rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.06)}
+.cna-link{display:flex;justify-content:space-between;align-items:center;padding:16px 0;text-decoration:none;transition:opacity .2s}
+.cna-link:hover{opacity:.8}
+.cna-text{font-size:.85rem;color:rgba(240,238,246,0.5)}
+.cna-cta{font-family:monospace;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:rgba(139,92,246,0.8)}
+</style>
 <footer>
   <div class="frame">
     <p>rendered from <code>${escapeHtml(sourcePath)}</code> · vault → html, no database</p>
     <p class="gh">open source: <a href="https://github.com/gregiteen/ssss">ssss</a> · <a href="https://github.com/gregiteen/total-recall">total-recall</a></p>
   </div>
 </footer>
-<a href="/api/design-spec" download="design.md" class="design-dl" title="Download design spec" aria-label="Download design spec">
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v9M4 8l4 4 4-4M2 14h12"/></svg>
-  design.md
-</a>
-<style>
-.design-dl{
-  position:fixed;bottom:16px;right:16px;z-index:999;
-  display:inline-flex;align-items:center;gap:6px;
-  padding:8px 14px;border-radius:8px;
-  font-size:11px;font-family:monospace;text-decoration:none;
-  background:rgba(20,20,30,0.85);color:rgba(240,238,246,0.6);
-  border:1px solid rgba(255,255,255,0.08);
-  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
-  transition:color .2s,border-color .2s,background .2s;
-}
-.design-dl:hover{color:#8b5cf6;border-color:rgba(139,92,246,0.3);background:rgba(20,20,30,0.95)}
-</style>
+
 <div class="cookie-banner" id="cookieBanner">
   <p class="cookie-text">This site uses cookies to authenticate your session and remember your design preferences. By continuing, you agree to our use of cookies.</p>
   <div class="cookie-actions">
@@ -935,6 +943,14 @@ ${content}
   document.getElementById('cookieDecline').addEventListener('click',()=>{
     document.getElementById('cookieBanner').style.display='none';
   });
+  // Notify server when visitor leaves (triggers deferred email to Greg)
+  let exitSent=false;
+  function sendExit(){
+    if(exitSent)return;exitSent=true;
+    navigator.sendBeacon('/api/visitor-exit','');
+  }
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)sendExit()});
+  window.addEventListener('pagehide',sendExit);
 })();
 </script>
 <style>
@@ -1041,7 +1057,7 @@ if (targetDesign) {
 }
 
 const aiDesigns = pages
-  .filter((p) => p.data.x_kind === 'design' && p.data.x_role === 'AI-Generated Theme')
+  .filter((p) => p.data.x_kind === 'theme-skin')
   .sort((a, b) => (b.data.x_year ?? 0) - (a.data.x_year ?? 0) || a.data.name.localeCompare(b.data.name));
 
 const flipperData = aiDesigns.map(d => ({ name: d.data.name, url: d.data.x_link }));
@@ -1201,6 +1217,7 @@ function customDesignList(list) {
 
 for (const page of pages) {
   if (page.data.x_kind === 'theme') continue; // Skip compiling theme config files
+  if (page.data.x_kind === 'theme-skin') continue; // Skip AI-generated skins (built separately)
   const sourcePath = 'vault/pages/' + relative(pagesDir, page.file);
   let content = null;
   
@@ -1309,7 +1326,7 @@ ${cells.map(([k, v]) => `  <div class="meta-cell"><span class="k">${k}</span><sp
 </div>
 <div class="prose reveal d4">${page.html}</div>
 ${page.data.x_link ? `<a class="btn" href="${escapeHtml(page.data.x_link)}" target="_blank" rel="noopener">visit ${escapeHtml(page.data.x_link.replace(/https?:\/\/(www\.)?/, '').replace(/\/$/, ''))} ↗</a>` : ''}
-${page.data.slug?.startsWith('design-') ? `<a class="btn design-dl-inline" href="/api/design-spec?slug=${escapeHtml(page.data.slug)}" download="${escapeHtml(page.data.slug)}.md">↓ Download design.md</a>` : ''}
+
 <br><a class="backlink" href="/designs.html">← cd ../designs</a>`;
     const customContent = customLayouts.design_detail
       ? fillTemplate(customLayouts.design_detail, {
@@ -1396,8 +1413,8 @@ ${designs.map(designCard).join('\n')}
 </div>`;
 const designsCustom = customLayouts.designs_index
   ? fillTemplate(customLayouts.designs_index, {
-      DESIGN_CARDS: customDesignList(aiDesigns),
-      DESIGN_COUNT: String(aiDesigns.length).padStart(2, '0'),
+      DESIGN_CARDS: customDesignList(designs),
+      DESIGN_COUNT: String(designs.length).padStart(2, '0'),
     })
   : null;
 
@@ -1431,7 +1448,7 @@ console.log(`Built ${pages.length + 2} pages → ${outDir}`);
 import { execSync } from 'child_process';
 if (!targetDesign) {
   for (const d of aiDesigns) {
-    const slug = d.data.slug.replace('design-', '');
+    const slug = d.data.slug.replace(/^(design|skin)-/, '');
     console.log(`Building design layer: ${slug}`);
     try {
       execSync(`node scripts/build-site.mjs --design ${slug}`, { stdio: 'inherit' });

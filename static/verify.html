@@ -270,7 +270,15 @@ document.getElementById('verifyForm').addEventListener('submit',async e=>{
   if(code.length!==6){err.textContent='Enter all 6 digits.';return}
   btn.disabled=true;setBtn(btn,'Verifying…',true);err.textContent='';
   try{
-    const r=await fetch('/api/verify-code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,code})});
+    const enrich = {
+      screen: `${screen.width}x${screen.height}`,
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      lang: navigator.language,
+      ref: document.referrer || '',
+      touch: 'ontouchstart' in window,
+      platform: navigator.platform || '',
+    };
+    const r=await fetch('/api/verify-code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,code,enrich})});
     const d=await r.json();
     if(d.success){verified=true;maybeRedirect();setBtn(btn,'Verified ✓',false)}
     else{err.textContent=d.error||'Invalid code.';btn.disabled=false;setBtn(btn,'Verify code',false)}

@@ -218,9 +218,19 @@ async function run() {
   const frontendSkillPath = join(__dirname, '..', '.agent', 'skills', 'frontend-design', 'SKILL.md');
   const frontendSkill = await import('node:fs/promises').then(m => m.readFile(frontendSkillPath, 'utf8')).catch(() => '');
 
-  const baseContext = `You are the design lead at a boutique studio. Every site you ship has a visual identity so specific it could never be mistaken for a template. You are designing for a REAL client — Greg Iteen, a full-stack engineer who builds local, file-native AI systems.
+  const baseContext = `You are a STRICT structural HTML layout engineer. You do not write copy. Every site you ship has a visual identity so specific it could never be mistaken for a template. You are designing for a REAL client — Greg Iteen, a full-stack engineer who builds local, file-native AI systems.
 
 CRITICAL DIRECTIVE: NO TRITE DESIGNS. ALL MUST BE BESPOKE, AGENCY LEVEL DESIGNS. NO AI SLOP. Do NOT output crappy cyberpunk AI slop. You MUST write custom HTML with awesome, interactive frontend features. Avoid generic gradients, overused tech aesthetics, or lazy layouts. Push the visual envelope and write real, bespoke code.
+
+ABSOLUTE SYSTEM RULE - NO FAKE COPY ALLOWED:
+You MUST NEVER write any hardcoded text, marketing copy, titles, or "lorem ipsum" into the HTML layouts. Your ONLY job is to write the structural HTML/CSS.
+For ALL text, you MUST USE the EXACT {{PLACEHOLDER}} variables provided in the Placeholder Contract. The build script will inject Greg's real portfolio copy into those variables.
+FURTHERMORE:
+- You MUST NOT write fake copy inside HTML attributes (e.g., alt="", title=""). Leave them empty or use a placeholder if appropriate.
+- You MUST NOT hallucinate Markdown formatting tags (like <strong> or <em>) outside of placeholders.
+- You MUST NOT mutate, alter, case-change, or combine placeholders.
+- Do NOT JSON-escape the placeholders.
+If you hardcode any real text into the layouts, YOU FAIL.
 
 THE BRIEF: "${prompt}"
 
@@ -230,7 +240,7 @@ ${frontendSkill}
 SITE CONTEXT:
 ${SITE_CONTEXT}
 
-PLACEHOLDER CONTRACT:
+PLACEHOLDER CONTRACT (YOU MUST USE THESE EXACT VARIABLES INSTEAD OF HARDCODING TEXT):
 ${placeholderContract}
 
 IMAGES (already generated, use them):
@@ -274,6 +284,38 @@ OUTPUT: Return exactly one JSON object with your plan and image prompts:
 }`);
   let planObj = extractJson(rawPlan);
   let plan = planObj.thought_process || 'No plan provided.';
+
+  // Pass 1b: Plan Review Gate — analyze and improve the plan before any code
+  console.log('  → Pass 1b: Plan Review Gate');
+  let rawPlanReview = await callAgent(`${baseContext}
+
+You are reviewing a design plan BEFORE any code is written. Here is the current plan:
+
+${plan}
+
+Your job: Score this plan 1-10 on distinctiveness, visual ambition, and whether it avoids generic AI design tropes (neon gradients, generic dark modes, lazy cyberpunk aesthetics).
+
+If the score is below 8, RADICALLY IMPROVE the plan. Push for a more specific, memorable visual identity. Reference real design movements, specific typographic choices, concrete color palettes, and interactive mechanics that feel intentional rather than templated.
+
+OUTPUT: Return exactly one JSON object:
+{
+  "score": 7,
+  "critique": "What's wrong with the current plan...",
+  "improved_plan": "The full improved plan with all details...",
+  "improved_image_prompts": {
+    "logo": "...",
+    "favicon": "...",
+    "hero": "..."
+  }
+}`);
+  let reviewObj = extractJson(rawPlanReview);
+  if (reviewObj.improved_plan) {
+    plan = reviewObj.improved_plan;
+    console.log(`  → Plan scored ${reviewObj.score}/10 — ${reviewObj.score >= 8 ? 'kept' : 'improved'}`);
+  }
+  if (reviewObj.improved_image_prompts) {
+    planObj.image_prompts = reviewObj.improved_image_prompts;
+  }
   
   // The portrait uses a strict A/B tested prompt to perfectly preserve identity while styling to match the theme.
   const portraitPrompt = `Art-direct this portrait for a portfolio site whose design brief is "${prompt}". Preserve the subject's identity exactly — same face, same friendly expression, natural human eyes, same pose. Completely replace the setting: re-render the wardrobe, backdrop, lighting, and color grade so the portrait belongs to that visual world (do not keep the original office background). Editorial photography quality, tasteful, portfolio-grade. No text, no watermarks.`;
@@ -292,8 +334,8 @@ OUTPUT: Return exactly one JSON object with your plan and image prompts:
       ])
     : (console.warn('  ⚠ GOOGLE_API_KEY not set — skipping images'), Promise.resolve([]));
 
-  // Pass 2: Base CSS & Core Pages
-  console.log('  → Pass 2: DESIGN.md, CSS, home, projects_index');
+  // Pass 2a: Base CSS & Core Pages (must come first — CSS establishes the design system)
+  console.log('  → Pass 2a: DESIGN.md, CSS, shell, home, projects_index');
   let raw1 = await callAgent(`${baseContext}
 
 Here is your approved architectural plan:
@@ -309,56 +351,56 @@ OUTPUT: One JSON object. Generate the DESIGN.md, the complete CSS, and the first
 }`);
   let payload = extractJson(raw1);
 
-  // Pass 2: Next 2 pages
-  console.log('  → Pass 2: designs_index, project_detail');
-  let raw2 = await callAgent(`${baseContext}
+  // Passes 2b, 3, 4: Remaining layouts — run in PARALLEL for maximum velocity
+  console.log('  → Passes 2b/3/4: Remaining layouts (parallel)');
+  const baseThemeContext = JSON.stringify(payload);
+  const [raw2, raw3, raw4] = await Promise.all([
+    callAgent(`${baseContext}
 
 Here is the base theme generated so far:
-` + JSON.stringify(payload) + `
+${baseThemeContext}
 
 OUTPUT: One JSON object containing ONLY the next 2 layouts (designs_index, project_detail):
 {
   "layouts": { "designs_index": "…", "project_detail": "…" }
-}`);
-  let payload2 = extractJson(raw2);
-  Object.assign(payload.layouts, payload2.layouts);
-
-  // Pass 3: Next 2 pages
-  console.log('  → Pass 3: design_detail, page');
-  let raw3 = await callAgent(`${baseContext}
+}`),
+    callAgent(`${baseContext}
 
 Here is the base theme generated so far:
-` + JSON.stringify(payload) + `
+${baseThemeContext}
 
 OUTPUT: One JSON object containing ONLY the next 2 layouts (design_detail, page):
 {
   "layouts": { "design_detail": "…", "page": "…" }
-}`);
-  let payload3 = extractJson(raw3);
-  Object.assign(payload.layouts, payload3.layouts);
-
-  // Pass 4: Remaining items
-  console.log('  → Pass 4: project_item, design_item, nav_item');
-  let raw4 = await callAgent(`${baseContext}
+}`),
+    callAgent(`${baseContext}
 
 Here is the base theme generated so far:
-` + JSON.stringify(payload) + `
+${baseThemeContext}
 
 OUTPUT: One JSON object containing ONLY the remaining item layouts:
 {
   "layouts": { "project_item": "…", "design_item": "…", "nav_item": "…" }
-}`);
-  let payload4 = extractJson(raw4);
-  Object.assign(payload.layouts, payload4.layouts);
+}`),
+  ]);
+  Object.assign(payload.layouts, extractJson(raw2).layouts);
+  Object.assign(payload.layouts, extractJson(raw3).layouts);
+  Object.assign(payload.layouts, extractJson(raw4).layouts);
 
-  // Pass 5: Analyze and Improve
-  console.log('  → Pass 5: Analyze & Improve (Cleanup)');
+  // Pass 5: Holistic Review — score, validate placeholders, fix inconsistencies
+  console.log('  → Pass 5: Holistic Review (Score + Validate + Fix)');
   let raw5 = await callAgent(`${baseContext}
 
 You have generated a full theme. Here is the complete assembled JSON:
 ` + JSON.stringify(payload) + `
 
-ANALYZE AND IMPROVE: Make a second pass to clean everything up. Check for unclosed HTML tags, ensure CSS classes match the layouts, and ensure the design principles and DESIGN.md constraints were perfectly followed. Improve any sloppy areas.
+HOLISTIC REVIEW CHECKLIST:
+1. Score the overall design quality 1-10. Is it distinctive, cohesive, and premium? Would it embarrass a professional designer?
+2. Check EVERY layout for required {{PLACEHOLDER}} variables. If any are missing, add them.
+3. Check for unclosed HTML tags and mismatched CSS class names.
+4. Check that NO hardcoded text, titles, or marketing copy leaked into the layouts.
+5. If the score is below 7, make targeted improvements to raise quality.
+6. Ensure the CSS and layouts are visually consistent with each other and the plan.
 
 OUTPUT: The FINAL cleaned up, validated JSON object with all fields:
 { "name": "...", "accent": "...", "designSpec": "...", "css": "...", "layouts": { ...all 9 layouts... } }`);
@@ -389,7 +431,6 @@ OUTPUT: The FINAL cleaned up, validated JSON object with all fields:
   console.log(`[3/3] Saving DESIGN.md into designs/${styleName}/…`);
 
   let designBody = payload.designSpec || `Theme: ${theme.name}\nStyle: ${prompt}\nAccent: ${theme.accent}`;
-  designBody += `\n\n<br>\n<hr>\n\n### Architecture by Greg Iteen\n\n> **Generative Design Infrastructure**  \n> This interface and underlying design system were procedurally generated using an AI-native build engine. The architecture bypasses traditional databases in favor of stateless, strictly typed markup pipelines.\n\n**Infrastructure Consultation Offer**\nWe assist select organizations in migrating to fully automated, AI-driven digital architectures. Mention this design specification during your initial inquiry to receive a 20% credit toward your first architectural audit.\n\n**Website:** [gregiteen.xyz](https://gregiteen.xyz)  \n**Direct Inquiry:** [sales@gregiteen.xyz](mailto:sales@gregiteen.xyz)`;
 
   const blocks = Object.entries({ css: theme.css, ...Object.fromEntries(Object.entries(theme.layouts).map(([k,v]) => [`layout:${k}`, v])) })
     .filter(([, content]) => typeof content === 'string' && content.trim())
@@ -411,31 +452,30 @@ ${blocks}
 
   await writeFile(join(designDir, 'DESIGN.md'), designMd, 'utf8');
 
-  // Write the portfolio entry so it shows up on the main site's Designs index
-  const designMeta = {
-    slug: `design-${styleName}`,
+  // Write the skin registry entry (separate from portfolio designs)
+  const skinMeta = {
+    slug: `skin-${styleName}`,
     name: theme.name,
-    title: `${theme.name} — Design Spec`,
-    description: `AI-generated design: "${prompt}"`,
+    title: `${theme.name} — Generated Skin`,
+    description: `AI-generated skin: "${prompt}"`,
     timestamp: new Date().toISOString(),
     sandbox_entry: `designs/${styleName}/index.html`,
-    x_kind: 'design',
+    x_kind: 'theme-skin',
     x_year: new Date().getFullYear(),
-    x_role: 'AI-Generated Theme',
-    x_client: 'Portfolio Generator',
-    x_tags: ['AI Generated', 'Theme'],
     x_preview: `/designs/${styleName}/assets/hero.jpg`,
     x_logo: `/designs/${styleName}/assets/logo.png`,
     x_link: `/designs/${styleName}/index.html`
   };
-  const specFm = Object.entries(designMeta)
+  const specFm = Object.entries(skinMeta)
     .map(([k, v]) => {
       if (Array.isArray(v)) return `${k}:\n${v.map(t => `  - "${t}"`).join('\n')}`;
       return `${k}: ${JSON.stringify(String(v))}`;
     }).join('\n');
   
-  const vaultDesignMd = `---\ntype: page\n${specFm}\n---\n\n${designBody.trim()}\n`;
-  await writeFile(join(__dirname, '..', 'vault', 'pages', 'designs', `${styleName}.md`), vaultDesignMd, 'utf8');
+  const skinsDir = join(__dirname, '..', 'vault', 'pages', 'skins');
+  await mkdir(skinsDir, { recursive: true });
+  const vaultSkinMd = `---\ntype: page\n${specFm}\n---\n\n${designBody.trim()}\n`;
+  await writeFile(join(skinsDir, `${styleName}.md`), vaultSkinMd, 'utf8');
   
   const elapsed = Math.round((Date.now() - t0) / 1000);
   console.log(`[Success] "${theme.name}" → designs/${styleName} [${elapsed}s]`);

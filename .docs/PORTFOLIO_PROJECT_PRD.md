@@ -1,49 +1,155 @@
-# PORTFOLIO_PROJECT_PRD
+# Portfolio Site — Product Requirements Document
 
-## 1. Goal
-Provide a local, file-native portfolio site that showcases real software and design projects, while featuring a highly engaging "Design Aesthetic" gimmick that allows visitors to completely re-skin the active site into bespoke aesthetic universes. The system must remain entirely stateless and database-free.
+## What This Is
 
-## 2. Core Architecture & Concepts
-- **The Vault (Source of Truth)**: The entire core portfolio application lives inside `vault/pages/`.
-  - `vault/pages/projects/` contains manual software engineering projects.
-  - `vault/pages/designs/` contains manual HTML graphic design projects.
-- **The Base Build**: `scripts/build-site.mjs` parses the vault and builds the raw HTML into `dist/site/`. The default root site is the **B&W Agency Splash Page**—a high-contrast, Archivo Black display, grayscale/contrast hero with film-grain overlay.
-- **The Design Aesthetic Engine (Gimmick)**: An interactive feature strictly restricted to the standalone `splash.html` page where visitors can submit a prompt to re-skin the active site. The engine outputs its spec (`DESIGN.md`) and newly generated assets into an isolated folder at `designs/[slug]/`. It NEVER touches the vault.
-- **Full Site Rebuilds**: When a new design is generated, `build-site.mjs` rebuilds the *entire* portfolio site (retaining all the real vault content) but renders it through the lens of the generated layout. The output of this full rebuild is saved inside `dist/site/designs/[slug]/`.
-- **The UI Flipper**: A sticky Javascript navigation bar (`ai-design-flipper`) injected into the top of every generated HTML page. It dynamically traverses `window.location.pathname` to hyperlink visitors seamlessly between the root index and all isolated AI-generated design folders, preserving their current reading path (e.g., flipping from `/projects/festech.html` on the B&W site directly to `/designs/[slug]/projects/festech.html` on the reskinned site).
-- **Stateless Node Daemon (`serve.mjs`)**: Directly serves the `dist/site/` folder, handles the AI generation endpoints, and manages the marketing/visitor loop.
-- **Deployment**: Synchronizes the local `dist/site/` folder to a DigitalOcean droplet via `rsync -avz --delete`. The local `dist/site/` is the absolute strict source of truth for production.
+An AI-powered interactive portfolio and lead generation engine for Greg Iteen. Visitors arrive at a splash page, choose a design style, verify their email, and the site generates a bespoke visual skin of Greg's portfolio on the fly. The generated design is a full standalone build — not a CSS toggle — and the flipper lets visitors swap between generated designs by loading entirely different HTML builds of the same page via View Transitions.
 
-## 3. The User Journey Walkthrough
+The design generation gimmick is the hook. It captures visitor emails, demonstrates technical capability, and funnels prospects toward an AI-powered client needs assessment (CNA) that generates proposals.
 
-### Phase 1: Arrival & The B&W Baseline
-1. The user navigates to the standalone `splash.html` page, which is the sole entry point and location for the design aesthetic prompt box.
-2. They are greeted by a stark, high-contrast, film-grain aesthetic.
-3. They CANNOT skip the prompt. They must generate a design and verify their email to enter the portfolio.
+## The Visitor Journey
 
-### Phase 2: Generation & Lead Capture
-1. The user submits a design prompt (e.g., "A hyper-modern cyberpunk UI").
-2. The site requires email verification via a 2FA code before generating (`/api/send-code`).
-3. The user enters their email. `serve.mjs` dispatches a visually matched B&W 2FA email using the `emailShell()` template.
-4. The user verifies the code. The system issues a 30-day session token stored in atomic local JSON (`.data/sessions.json`).
-5. A first-visit-only welcome drip campaign email is immediately scheduled/sent.
-6. The backend (`compile-theme.mjs`) runs a multi-agent critique-and-planning phase to generate bespoke image prompts (logo, hero) and a Google Standard `DESIGN.md` spec.
-7. The system creates the isolated `designs/[slug]/` folder, saves the assets and spec, and triggers a full site rebuild using `--design [slug]`.
+### 1. Splash Page (`static/splash.html`)
+- Visitor enters a design style prompt (freeform text or preset chips)
+- Visitor enters their email address
+- Optional opt-in for drip campaign
+- Hits "Generate & Enter"
+- **Generation starts IMMEDIATELY on submit** — the verification process is the mandatory delay that buys time for generation to complete
+- Server sends a 6-digit verification code to their email
+- Visitor info is enriched via cookies, browser data, and any other available methods — more context to include when emailing Greg
 
-### Phase 3: The Gimmick & 3D Transitions
-1. The generation completes, and the user is redirected to the newly generated URL: `/designs/[slug]/index.html`.
-2. The user sees their prompt realized: the exact same portfolio content, but wrapped in a radically different layout, typography, and color palette.
-3. At the top of the screen sits the **UI Flipper** bar.
-4. The user clicks "Next Design" or "Prev Design" to jump to other previously generated aesthetic universes.
-5. **The Magic Moment**: When they click the flipper, the browser executes a 3D rotateX/blur morph using the CSS View Transitions API. The site smoothly morphs into the next theme without a hard flash.
-6. Because the flipper tracks their exact path (`subPath`), if they are reading the "Total Recall" project page and click "Next Design", they land perfectly on the "Total Recall" project page of the *next* aesthetic universe.
+### 2. Email Verification (`static/verify.html`)
+- Visitor enters the verification code
+- On success: `gi_auth` cookie is set (30-day TTL)
+- By this time, the generation should be complete (or nearly complete)
+- **Home page loads in their bespoke generated design**
 
-## 4. Strict Constraints
-- **Absolute Vault Isolation**: The design engine MUST NEVER write files into `vault/pages/`. It must exclusively dump its output into `designs/[slug]/`. The manual portfolio items in the vault must never be polluted by generated skins.
-- **No Theme Pills**: Do NOT use or generate `theme-[id]` or `design-[id]` files in the vault. The site relies entirely on isolated folders compiled via `--design [slug]`, not global CSS hot-swapping or theme pills.
-- **Image Generation Constraints**: The generation pipeline MUST run a planning phase to generate bespoke image prompts for logos and heroes that match the design brief. Do NOT use generic monogram fallbacks.
-- **Bio Photo Constraints**: The portrait generation MUST strictly use the canonical `assets/greg-portrait-source.png` high-res photo, enforcing identity preservation via the A/B tested prompt formula. NEVER use `assets/greg-portrait-base.jpg`.
-- **Design Philosophy**: EVERYTHING MUST BE COMPLETELY DIFFERENT. Themes must not look generic or similar. Each isolated theme must enforce radically different aesthetics, layouts, and typography across generations.
-- **NO AI SLOP**: DO NOT generate "neon cyan", "holographic gradients", "Y2K", or other lazy, generic AI tropes unless explicitly prompted. Adhere strictly to high-end, brutalist, editorial, or highly deliberate design principles matching the frontend-design skill rules. Avoid templated dark modes and cream backgrounds.
-- **UI-Matched Email Suite**: All outbound emails (2FA, confirmation, owner alerts) must visually match the B&W UI via the shared `emailShell()` template.
-- **Google Standard `DESIGN.md`**: The AI spec must use standard frontmatter (`name`, `accent`, `style`) and a `# Design System` markdown body.
+### 3. Email Notification to Greg
+- **If visitor does NOT proceed to CNA:** Greg is emailed immediately with enriched visitor info
+- **If visitor DOES proceed to CNA:** Email is held until CNA is complete and proposal is generated, so Greg receives the full picture (visitor info + needs analysis + proposal)
+
+### 4. Portfolio Experience
+- The site renders Greg's real portfolio content (projects, about, contact, designs) in the visitor's generated visual skin
+- **Flipper bar** at the top: visitor can flip through all available generated designs. Each flip loads a completely different standalone HTML build of the current page via `fetch()` + `document.startViewTransition()`
+- **CNA banners** on all pages: persistent call-to-action driving prospects to the needs assessment form
+- **NO generator form anywhere in the portfolio** — generation ONLY happens via the splash page
+
+### 5. AI-Powered CNA Form
+- Separate page accessible from banners on every page
+- Interactive AI-driven conversation that conducts a client needs analysis
+- Analyzes the prospect's needs against Greg's services, pricing ranges, timelines, and budget
+- On completion: AI generates a proposal (PDF) using a prompt
+- Proposal is sent to Greg for approval (not auto-sent)
+- **Feedback loop via email**: Greg reviews, provides feedback to AI, proposal iterates until finalized
+- Greg sends finalized proposal via open-source DocuSign alternative
+
+### 6. Backend / Nurturing
+- Cookie-based session persistence
+- Visitor profiles tracked in vault
+- Enriched visitor data (cookies, browser info, any available signals)
+- Email drip campaigns for lead nurturing
+
+---
+
+## Design Generation Pipeline
+
+### Critical Timing: Generation Starts on Submit, Not Verification
+The verification process IS the generation buffer. When the visitor hits "Generate & Enter":
+1. Server kicks off theme generation immediately
+2. Server sends verification code to visitor's email
+3. Visitor goes to their email, finds the code, enters it — this takes 30-90 seconds
+4. By the time verification completes, generation should be done (or home page should be ready via lazy loading)
+
+### Required Pipeline
+
+#### Phase 1: Planning (Automated, No Manual Review)
+1. LLM receives the style prompt + `baseContext` (which includes the frontend-design SKILL.md)
+2. LLM produces a design plan: color palette, typography, layout strategy, interactive elements
+3. **Review gate**: LLM analyzes and improves its own plan before proceeding
+4. LLM produces image generation prompts
+
+#### Phase 2: Generation (Maximum Parallelization)
+1. **Immediately parallel**: Image generation (logo, favicon, hero, portrait) kicks off
+2. **First priority**: CSS + shell + home layout → **build and serve home immediately** (lazy load)
+3. **Parallel batch**: remaining layout templates generated concurrently
+4. **Review gate**: LLM reviews CSS + layouts for consistency with the plan
+
+#### Phase 3: Holistic Review (Automated)
+1. All layouts assembled → LLM reviews the full design holistically
+2. Scores quality, checks for inconsistencies, fixes issues
+3. Final build of all remaining pages
+
+### Continuous Improvement (Cron)
+- Daily job runs on **ALL** existing generated designs (not one at a time)
+- LLM analyzes, scores, and generates an improved version of each
+- If improved version scores higher, swap it in
+- Stop iterating on a design once it hits a quality plateau
+- Model rotation (Gemini, Claude, etc.) for fresh aesthetic perspectives
+- Visitors can return to see how their generated design evolves
+
+### Portfolio Promotion
+- After the automated improvement process has run and a design reaches its optimal state, Greg can promote it to the portfolio (appears on Designs index alongside real client work)
+- This is a real feature to be implemented now — not deferred
+
+---
+
+## Content Architecture
+
+### Real Portfolio Content (Vault)
+
+| Page | Vault Source | Output |
+|------|-------------|--------|
+| Home | `vault/pages/home.md` | `index.html` |
+| About | `vault/pages/about.md` | `about.html` |
+| Contact | `vault/pages/contact.md` | `contact.html` |
+| Projects Index | *(derived)* | `projects.html` |
+| Designs Index | *(derived)* | `designs.html` |
+| Project Detail | `vault/pages/projects/*.md` | `projects/{slug}.html` |
+| Design Detail | `vault/pages/designs/*.md` | `designs/{slug}.html` |
+
+### Projects
+
+| Project | Featured | Tech |
+|---------|----------|------|
+| SSSS | Yes | Node.js, Open spec, Zero-dep |
+| Total Recall | Yes | Node.js, Local embeddings, REST API, ssss |
+| UltraChat | Yes | TypeScript, Express, Supabase, ssss |
+| festech.live | Yes | Python, Flask, Automation |
+
+### Portfolio Designs (Real Client Work — `vault/pages/designs/`)
+
+| Project | Client | Year |
+|---------|--------|------|
+| Nostalgia | Nostalgia Festival | 2026 |
+| High Stakes Field Day | Sessions by Slim | 2026 |
+
+### Theme Skins (AI-Generated — NOT Portfolio)
+AI-generated visual skins live in their **own separate folder** — NOT in `vault/pages/designs/`. They must NEVER appear on the Designs index. They are standalone builds accessible via the flipper only.
+
+---
+
+## The Core Contract
+
+> The AI generates **structure** (CSS + HTML templates with `{{PLACEHOLDER}}` slots). The build script injects **content** (from the vault). These concerns must never cross.
+
+---
+
+## Known Bugs / Missing Features
+
+### Bugs (P0)
+1. **Theme skins in wrong folder** — AI-generated themes are written to `vault/pages/designs/` alongside real portfolio work. They need their own separate folder.
+2. **Hardcoded fake marketing block** — `compile-theme.mjs` line 402 appends fake "Infrastructure Consultation Offer" to every DESIGN.md.
+3. **Existing generated themes must be deleted** — Clean slate. All current AI-generated designs removed.
+4. **Generator form on designs page** — The `{{GENERATOR_FORM}}` placeholder exists in the designs_index layout. Generation should ONLY happen via splash page.
+
+### Pipeline Improvements (P1)
+5. **No planning review gate** — Planning is a single LLM call with no self-critique loop.
+6. **Sequential generation** — Layout templates generated in series. Should be parallelized.
+7. **No lazy loading** — All pages must finish before any are served.
+8. **Generation doesn't start on submit** — Should start immediately when visitor submits the splash form, not after verification.
+
+### New Features (P2-P3)
+9. **No continuous improvement cron** — Daily improvement of ALL designs not implemented.
+10. **No CNA form** — AI-powered needs assessment not built.
+11. **No proposal generation** — PDF generation and approval workflow not built.
+12. **No portfolio promotion workflow** — No way to promote mature designs to portfolio.
+13. **No visitor enrichment** — Cookie/browser data not collected for enriched visitor emails.

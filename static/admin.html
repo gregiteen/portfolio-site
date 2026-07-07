@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin — Greg Iteen</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--surface3:#222;
+  --white:#f5f5f3;--gray:#888;--faint:#444;--line:#2a2a2a;
+  --red:#e22b22;--green:#22c55e;--amber:#eab308;--blue:#3b82f6;
+  --mono:'IBM Plex Mono',monospace;--sans:'Archivo',sans-serif;--display:'Archivo Black',sans-serif;
+}
+html{font-size:14px}
+body{font-family:var(--sans);background:var(--bg);color:var(--white);min-height:100dvh}
+
+/* Layout */
+.shell{display:grid;grid-template-columns:220px 1fr;min-height:100dvh}
+@media(max-width:768px){.shell{grid-template-columns:1fr}.sidebar{display:none}.sidebar.open{display:flex;position:fixed;inset:0;z-index:100}}
+
+/* Sidebar */
+.sidebar{
+  background:var(--surface);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;padding:24px 0;position:sticky;top:0;height:100dvh;overflow-y:auto;
+}
+.sidebar-brand{
+  font-family:var(--display);font-size:1.1rem;padding:0 20px 20px;
+  border-bottom:1px solid var(--line);margin-bottom:8px;
+}
+.sidebar-brand em{color:var(--red)}
+.sidebar-label{
+  font-family:var(--mono);font-size:.58rem;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--faint);padding:16px 20px 6px;
+}
+.sidebar-link{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 20px;font-size:.85rem;color:var(--gray);
+  text-decoration:none;transition:all .15s;cursor:pointer;border:none;background:none;
+  font-family:var(--sans);width:100%;text-align:left;
+}
+.sidebar-link:hover{color:var(--white);background:var(--surface2)}
+.sidebar-link.active{color:var(--white);background:var(--surface2);border-left:2px solid var(--red)}
+.sidebar-link .badge{
+  margin-left:auto;font-family:var(--mono);font-size:.6rem;
+  background:var(--red);color:var(--white);padding:2px 7px;border-radius:2px;
+}
+
+/* Main */
+.main{padding:32px clamp(20px,3vw,40px);overflow-y:auto}
+.page-title{
+  font-family:var(--display);font-size:clamp(1.2rem,2.5vw,1.8rem);
+  text-transform:uppercase;letter-spacing:-.02em;margin-bottom:24px;
+}
+
+/* Cards */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:32px}
+.stat-card{
+  background:var(--surface);border:1px solid var(--line);padding:18px;
+}
+.stat-value{font-family:var(--display);font-size:1.8rem;margin-bottom:2px}
+.stat-label{font-family:var(--mono);font-size:.6rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gray)}
+
+/* Tables */
+.table-wrap{overflow-x:auto;margin-bottom:32px}
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+thead{position:sticky;top:0}
+th{
+  font-family:var(--mono);font-size:.58rem;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--faint);text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);
+  background:var(--bg);
+}
+td{padding:10px 14px;border-bottom:1px solid var(--line);color:var(--gray);vertical-align:top}
+tr:hover td{background:var(--surface);color:var(--white)}
+
+/* Badges */
+.badge-pill{
+  display:inline-block;padding:2px 8px;font-family:var(--mono);font-size:.6rem;
+  letter-spacing:.06em;border-radius:2px;
+}
+.badge-green{background:rgba(34,197,94,.15);color:var(--green)}
+.badge-amber{background:rgba(234,179,8,.15);color:var(--amber)}
+.badge-red{background:rgba(226,43,34,.15);color:var(--red)}
+.badge-blue{background:rgba(59,130,246,.15);color:var(--blue)}
+
+/* Settings form */
+.settings-group{margin-bottom:28px}
+.settings-group h3{
+  font-family:var(--mono);font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:12px;
+}
+.field{margin-bottom:14px}
+.field label{
+  display:block;font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--gray);margin-bottom:5px;
+}
+.field input,.field select{
+  width:100%;max-width:480px;padding:10px 14px;
+  background:var(--surface);border:1px solid var(--line);color:var(--white);
+  font-family:var(--mono);font-size:.82rem;outline:none;
+  transition:border-color .2s;
+}
+.field input:focus{border-color:var(--white)}
+.field input[type="password"]{letter-spacing:.15em}
+.btn{
+  padding:10px 24px;border:1px solid var(--white);background:var(--white);color:var(--bg);
+  font-family:var(--display);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;
+  cursor:pointer;transition:all .2s;
+}
+.btn:hover{background:transparent;color:var(--white)}
+.btn-danger{border-color:var(--red);background:var(--red)}
+.btn-danger:hover{background:transparent;color:var(--red)}
+.btn-sm{padding:6px 14px;font-size:.6rem}
+.btn-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+
+/* Panels */
+.panel{background:var(--surface);border:1px solid var(--line);padding:20px;margin-bottom:20px}
+.panel-title{
+  font-family:var(--display);font-size:.85rem;text-transform:uppercase;
+  letter-spacing:.08em;margin-bottom:14px;
+}
+.mono{font-family:var(--mono);font-size:.75rem}
+.text-gray{color:var(--gray)}
+.text-faint{color:var(--faint)}
+.text-green{color:var(--green)}
+.text-red{color:var(--red)}
+.text-amber{color:var(--amber)}
+.mb-8{margin-bottom:8px}
+.mb-16{margin-bottom:16px}
+.mb-24{margin-bottom:24px}
+
+/* Theme cards */
+.theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-bottom:32px}
+.theme-card{
+  background:var(--surface);border:1px solid var(--line);overflow:hidden;
+  transition:border-color .2s;
+}
+.theme-card:hover{border-color:var(--faint)}
+.theme-card-header{
+  display:flex;justify-content:space-between;align-items:baseline;
+  padding:16px;border-bottom:1px solid var(--line);
+}
+.theme-card-name{font-family:var(--display);font-size:.85rem;text-transform:uppercase}
+.theme-card-body{padding:16px;font-size:.78rem;color:var(--gray)}
+.theme-card-row{display:flex;justify-content:space-between;margin-bottom:6px}
+.theme-card-actions{
+  padding:12px 16px;border-top:1px solid var(--line);
+  display:flex;gap:8px;
+}
+
+/* Mobile menu button */
+.mobile-menu{
+  display:none;position:fixed;top:12px;left:12px;z-index:101;
+  background:var(--surface);border:1px solid var(--line);color:var(--white);
+  padding:8px 12px;font-family:var(--mono);font-size:.7rem;cursor:pointer;
+}
+@media(max-width:768px){.mobile-menu{display:block}}
+
+/* Empty state */
+.empty{text-align:center;padding:48px 20px;color:var(--faint);font-family:var(--mono);font-size:.8rem}
+
+/* Toast */
+.toast{
+  position:fixed;bottom:24px;right:24px;z-index:200;
+  background:var(--surface2);border:1px solid var(--line);padding:12px 20px;
+  font-family:var(--mono);font-size:.75rem;color:var(--white);
+  transform:translateY(120%);opacity:0;transition:all .3s;
+}
+.toast.show{transform:none;opacity:1}
+</style>
+</head>
+<body>
+<button class="mobile-menu" onclick="document.querySelector('.sidebar').classList.toggle('open')">☰ Menu</button>
+
+<div class="shell">
+  <nav class="sidebar">
+    <div class="sidebar-brand">greg<em>.</em>iteen</div>
+    <span class="sidebar-label">Overview</span>
+    <button class="sidebar-link active" data-page="dashboard" onclick="showPage('dashboard')">◉ Dashboard</button>
+    <span class="sidebar-label">Data</span>
+    <button class="sidebar-link" data-page="visitors" onclick="showPage('visitors')">⊕ Visitors</button>
+    <button class="sidebar-link" data-page="themes" onclick="showPage('themes')">◈ Themes</button>
+    <button class="sidebar-link" data-page="proposals" onclick="showPage('proposals')">⊞ Proposals</button>
+    <span class="sidebar-label">System</span>
+    <button class="sidebar-link" data-page="settings" onclick="showPage('settings')">⊡ Settings</button>
+    <button class="sidebar-link" data-page="logs" onclick="showPage('logs')">⊟ Logs</button>
+    <div style="flex:1"></div>
+    <a href="/" class="sidebar-link" style="border-top:1px solid var(--line);margin-top:8px;padding-top:14px">← Back to Site</a>
+  </nav>
+
+  <div class="main">
+    <!-- DASHBOARD -->
+    <div class="page" id="page-dashboard">
+      <h1 class="page-title">Dashboard</h1>
+      <div class="stat-grid" id="statGrid"></div>
+      <div class="panel">
+        <div class="panel-title">Generator Status</div>
+        <div id="genStatus" class="mono text-gray">Loading…</div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Recent Visitors</div>
+        <div class="table-wrap"><table id="recentVisitors"><thead><tr><th>Email</th><th>Style</th><th>Last Seen</th><th>Visits</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+
+    <!-- VISITORS -->
+    <div class="page" id="page-visitors" style="display:none">
+      <h1 class="page-title">Visitors</h1>
+      <div class="table-wrap">
+        <table id="visitorsTable">
+          <thead><tr><th>Email</th><th>Style</th><th>Opt-In</th><th>First Seen</th><th>Last Seen</th><th>Visits</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- THEMES -->
+    <div class="page" id="page-themes" style="display:none">
+      <h1 class="page-title">Generated Themes</h1>
+      <div class="btn-row mb-24">
+        <button class="btn btn-sm" onclick="triggerImprovement()">Run Improvement Cycle</button>
+      </div>
+      <div class="theme-grid" id="themeGrid"></div>
+      <div class="empty" id="noThemes" style="display:none">No generated themes yet.</div>
+    </div>
+
+    <!-- PROPOSALS -->
+    <div class="page" id="page-proposals" style="display:none">
+      <h1 class="page-title">Active Proposals</h1>
+      <div class="table-wrap">
+        <table id="proposalsTable">
+          <thead><tr><th>ID</th><th>Client</th><th>Company</th><th>Type</th><th>Revisions</th><th>Created</th><th>Actions</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="empty" id="noProposals" style="display:none">No active proposals.</div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div class="page" id="page-settings" style="display:none">
+      <h1 class="page-title">Settings</h1>
+      <div class="settings-group">
+        <h3>AI Configuration</h3>
+        <div class="field">
+          <label>Google API Key</label>
+          <input type="password" id="settingApiKey" placeholder="••••••••••••••••••">
+        </div>
+        <div class="field">
+          <label>Default Model</label>
+          <select id="settingModel">
+            <option value="gemini-3.5-flash">Gemini 3.5 Flash (fast)</option>
+            <option value="gemini-3.1-pro">Gemini 3.1 Pro</option>
+            <option value="gemini-3.5-pro">Gemini 3.5 Pro (highest quality)</option>
+          </select>
+        </div>
+      </div>
+      <div class="settings-group">
+        <h3>Email Configuration</h3>
+        <div class="field">
+          <label>Owner Email (MAIL_OWNER)</label>
+          <input type="text" id="settingOwner" placeholder="greg@gregiteen.xyz">
+        </div>
+        <div class="field">
+          <label>From Address (MAIL_FROM)</label>
+          <input type="text" id="settingFrom" placeholder="Greg Iteen <sales@gregiteen.xyz>">
+        </div>
+        <div class="field">
+          <label>Mail Domain</label>
+          <input type="text" id="settingDomain" placeholder="gregiteen.xyz">
+        </div>
+      </div>
+      <div class="settings-group">
+        <h3>Improvement Cron</h3>
+        <div class="field">
+          <label>Cron Hour (0-23, local time)</label>
+          <input type="number" id="settingCronHour" min="0" max="23" value="3">
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn" onclick="saveSettings()">Save Settings</button>
+      </div>
+    </div>
+
+    <!-- LOGS -->
+    <div class="page" id="page-logs" style="display:none">
+      <h1 class="page-title">Server Logs</h1>
+      <div class="panel">
+        <div class="panel-title">Generation Log</div>
+        <pre id="genLog" class="mono text-gray" style="white-space:pre-wrap;max-height:500px;overflow-y:auto">Loading…</pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/api/admin';
+
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+  document.getElementById('page-' + id).style.display = '';
+  document.querySelectorAll('.sidebar-link[data-page]').forEach(l => l.classList.toggle('active', l.dataset.page === id));
+  document.querySelector('.sidebar').classList.remove('open');
+  if (id === 'dashboard') loadDashboard();
+  if (id === 'visitors') loadVisitors();
+  if (id === 'themes') loadThemes();
+  if (id === 'proposals') loadProposals();
+  if (id === 'settings') loadSettings();
+  if (id === 'logs') loadLogs();
+}
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+function timeAgo(ts) {
+  if (!ts) return '—';
+  const d = Date.now() - ts;
+  if (d < 60000) return 'just now';
+  if (d < 3600000) return Math.floor(d / 60000) + 'm ago';
+  if (d < 86400000) return Math.floor(d / 3600000) + 'h ago';
+  return Math.floor(d / 86400000) + 'd ago';
+}
+
+function fmtDate(ts) {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+async function api(path, opts) {
+  const r = await fetch(API + path, opts);
+  if (!r.ok) throw new Error(`${r.status}`);
+  return r.json();
+}
+
+// ── Dashboard ──
+async function loadDashboard() {
+  try {
+    const data = await api('/stats');
+    const grid = document.getElementById('statGrid');
+    grid.innerHTML = [
+      { v: data.totalVisitors, l: 'Total Visitors' },
+      { v: data.totalSessions, l: 'Active Sessions' },
+      { v: data.totalThemes, l: 'Generated Themes' },
+      { v: data.activeProposals, l: 'Active Proposals' },
+      { v: data.generatorStatus, l: 'Generator' },
+      { v: data.uptime, l: 'Uptime' },
+    ].map(s => `<div class="stat-card"><div class="stat-value">${s.v}</div><div class="stat-label">${s.l}</div></div>`).join('');
+
+    document.getElementById('genStatus').textContent = `Status: ${data.genJob?.status || 'idle'} · Phase: ${data.genJob?.phase || '—'} · Last run: ${data.genJob?.finishedAt ? timeAgo(data.genJob.finishedAt) : 'never'}`;
+
+    const tbody = document.querySelector('#recentVisitors tbody');
+    tbody.innerHTML = (data.recentVisitors || []).slice(0, 8).map(v =>
+      `<tr><td>${v.email}</td><td>${v.style}</td><td>${timeAgo(v.lastSeen)}</td><td>${v.visits}</td></tr>`
+    ).join('') || '<tr><td colspan="4" class="text-faint">No visitors yet</td></tr>';
+  } catch (e) {
+    document.getElementById('statGrid').innerHTML = `<div class="empty">Failed to load: ${e.message}</div>`;
+  }
+}
+
+// ── Visitors ──
+async function loadVisitors() {
+  try {
+    const data = await api('/visitors');
+    const tbody = document.querySelector('#visitorsTable tbody');
+    tbody.innerHTML = data.map(v =>
+      `<tr>
+        <td><strong style="color:var(--white)">${v.email}</strong></td>
+        <td>${v.style || '—'}</td>
+        <td>${v.optIn ? '<span class="badge-pill badge-green">Yes</span>' : '<span class="badge-pill badge-red">No</span>'}</td>
+        <td class="mono">${fmtDate(v.firstSeen)}</td>
+        <td class="mono">${fmtDate(v.lastSeen)}</td>
+        <td>${v.visits}</td>
+      </tr>`
+    ).join('') || '<tr><td colspan="6" class="text-faint">No visitors yet</td></tr>';
+  } catch (e) {
+    toast('Failed to load visitors');
+  }
+}
+
+// ── Themes ──
+async function loadThemes() {
+  try {
+    const data = await api('/themes');
+    const grid = document.getElementById('themeGrid');
+    const noThemes = document.getElementById('noThemes');
+    if (data.length === 0) {
+      grid.innerHTML = '';
+      noThemes.style.display = '';
+      return;
+    }
+    noThemes.style.display = 'none';
+    grid.innerHTML = data.map(t => `
+      <div class="theme-card">
+        <div class="theme-card-header">
+          <span class="theme-card-name">${t.name || t.slug}</span>
+          ${t.score ? `<span class="badge-pill ${t.score >= 8 ? 'badge-green' : t.score >= 6 ? 'badge-amber' : 'badge-red'}">${t.score}/10</span>` : ''}
+        </div>
+        <div class="theme-card-body">
+          <div class="theme-card-row"><span>Slug</span><span class="mono">${t.slug}</span></div>
+          <div class="theme-card-row"><span>Style</span><span>${t.style || '—'}</span></div>
+          <div class="theme-card-row"><span>Last Improved</span><span class="mono">${t.lastImproved || '—'}</span></div>
+          <div class="theme-card-row"><span>Accent</span><span><span style="display:inline-block;width:12px;height:12px;background:${t.accent};border:1px solid var(--line);vertical-align:middle"></span> ${t.accent || '—'}</span></div>
+        </div>
+        <div class="theme-card-actions">
+          <button class="btn btn-sm" onclick="window.open('/designs/${t.slug}/index.html','_blank')">Preview</button>
+          <button class="btn btn-sm" onclick="promoteTheme('${t.slug}')">Promote</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteTheme('${t.slug}')">Delete</button>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    toast('Failed to load themes');
+  }
+}
+
+async function triggerImprovement() {
+  toast('Starting improvement cycle…');
+  try {
+    await api('/improve', { method: 'POST' });
+    toast('Improvement cycle started');
+  } catch (e) { toast('Failed: ' + e.message); }
+}
+
+async function promoteTheme(slug) {
+  if (!confirm(`Promote "${slug}" to portfolio?`)) return;
+  try {
+    await api('/themes/' + slug + '/promote', { method: 'POST' });
+    toast(`"${slug}" promoted to portfolio`);
+    loadThemes();
+  } catch (e) { toast('Failed: ' + e.message); }
+}
+
+async function deleteTheme(slug) {
+  if (!confirm(`Delete "${slug}"? This cannot be undone.`)) return;
+  try {
+    await api('/themes/' + slug, { method: 'DELETE' });
+    toast(`"${slug}" deleted`);
+    loadThemes();
+  } catch (e) { toast('Failed: ' + e.message); }
+}
+
+// ── Proposals ──
+async function loadProposals() {
+  try {
+    const data = await api('/proposals');
+    const tbody = document.querySelector('#proposalsTable tbody');
+    const noProposals = document.getElementById('noProposals');
+    if (data.length === 0) {
+      tbody.innerHTML = '';
+      noProposals.style.display = '';
+      return;
+    }
+    noProposals.style.display = 'none';
+    tbody.innerHTML = data.map(p => `
+      <tr>
+        <td class="mono">${p.id.slice(0, 8)}</td>
+        <td><strong style="color:var(--white)">${p.clientEmail}</strong></td>
+        <td>${p.company || '—'}</td>
+        <td>${p.projectType || '—'}</td>
+        <td>${p.revisions}</td>
+        <td class="mono">${fmtDate(p.createdAt)}</td>
+        <td><button class="btn btn-sm btn-danger" onclick="deleteProposal('${p.id}')">Remove</button></td>
+      </tr>
+    `).join('');
+  } catch (e) { toast('Failed to load proposals'); }
+}
+
+async function deleteProposal(id) {
+  if (!confirm('Remove this proposal?')) return;
+  try {
+    await api('/proposals/' + id, { method: 'DELETE' });
+    toast('Proposal removed');
+    loadProposals();
+  } catch (e) { toast('Failed'); }
+}
+
+// ── Settings ──
+async function loadSettings() {
+  try {
+    const data = await api('/settings');
+    document.getElementById('settingApiKey').value = data.apiKeySet ? '••••••••••••' : '';
+    document.getElementById('settingApiKey').placeholder = data.apiKeySet ? 'Key is set (enter new to replace)' : 'Not configured';
+    document.getElementById('settingModel').value = data.defaultModel || 'gemini-3.5-flash';
+    document.getElementById('settingOwner').value = data.mailOwner || '';
+    document.getElementById('settingFrom').value = data.mailFrom || '';
+    document.getElementById('settingDomain').value = data.mailDomain || '';
+    document.getElementById('settingCronHour').value = data.cronHour ?? 3;
+  } catch (e) { toast('Failed to load settings'); }
+}
+
+async function saveSettings() {
+  const body = {};
+  const apiKey = document.getElementById('settingApiKey').value;
+  if (apiKey && !apiKey.startsWith('•')) body.apiKey = apiKey;
+  body.defaultModel = document.getElementById('settingModel').value;
+  body.cronHour = parseInt(document.getElementById('settingCronHour').value) || 3;
+  try {
+    await api('/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    toast('Settings saved');
+  } catch (e) { toast('Failed to save'); }
+}
+
+// ── Logs ──
+async function loadLogs() {
+  try {
+    const data = await api('/logs');
+    document.getElementById('genLog').textContent = data.logs || 'No logs available.';
+  } catch (e) {
+    document.getElementById('genLog').textContent = 'Failed to load logs.';
+  }
+}
+
+// Initial load
+loadDashboard();
+</script>
+</body>
+</html>

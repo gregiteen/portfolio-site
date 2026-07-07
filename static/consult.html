@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Greg Iteen — Let's Work Together</title>
+<meta name="description" content="Tell me about your project. AI-powered needs assessment for Greg Iteen's engineering services.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --black:#0a0a0a;--white:#f5f5f3;--gray:rgba(245,245,243,.55);
+  --faint:rgba(245,245,243,.22);--line:rgba(245,245,243,.28);
+  --accent:#e22b22;
+}
+html,body{min-height:100%}
+body{
+  font-family:'Archivo',sans-serif;background:var(--black);color:var(--white);
+  overflow-x:hidden;
+}
+
+.frame{
+  position:relative;z-index:10;
+  display:flex;flex-direction:column;
+  padding:clamp(20px,4vw,56px);
+  min-height:100dvh;
+}
+.top{
+  display:flex;justify-content:space-between;align-items:baseline;
+  font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--gray);
+  margin-bottom:clamp(32px,6vw,80px);
+}
+.top a{color:var(--gray);text-decoration:none;transition:color .2s}
+.top a:hover{color:var(--white)}
+
+h1{
+  font-family:'Archivo Black',sans-serif;
+  font-size:clamp(2rem,6vw,4.5rem);
+  line-height:.95;letter-spacing:-.025em;text-transform:uppercase;
+  margin-bottom:clamp(16px,2vw,24px);
+}
+.lede{
+  max-width:50ch;font-size:clamp(.85rem,1.1vw,1rem);line-height:1.65;
+  color:var(--gray);margin-bottom:clamp(32px,4vw,56px);
+}
+
+/* Chat interface */
+.chat{
+  flex:1;display:flex;flex-direction:column;
+  max-width:720px;width:100%;
+}
+.messages{
+  flex:1;overflow-y:auto;margin-bottom:24px;
+  display:flex;flex-direction:column;gap:16px;
+}
+.msg{
+  max-width:85%;padding:14px 18px;
+  font-size:.92rem;line-height:1.55;
+  border-radius:2px;
+}
+.msg.ai{
+  align-self:flex-start;
+  background:rgba(245,245,243,.06);border-left:2px solid var(--accent);
+  color:var(--white);
+}
+.msg.user{
+  align-self:flex-end;
+  background:var(--white);color:var(--black);
+}
+.msg.typing::after{
+  content:'…';animation:blink 1s steps(3) infinite;
+}
+@keyframes blink{0%,100%{opacity:.2}50%{opacity:1}}
+
+.input-row{
+  display:flex;gap:12px;align-items:flex-end;
+}
+.input-row textarea{
+  flex:1;resize:none;
+  padding:14px 16px;border:1px solid var(--line);
+  background:transparent;color:var(--white);
+  font-family:'Archivo',sans-serif;font-size:.95rem;
+  outline:none;border-radius:0;transition:border-color .25s;
+  min-height:52px;max-height:200px;
+}
+.input-row textarea::placeholder{color:var(--faint)}
+.input-row textarea:focus{border-color:var(--white)}
+.input-row button{
+  padding:14px 28px;border:1px solid var(--white);
+  font-family:'Archivo Black',sans-serif;font-size:.8rem;letter-spacing:.14em;
+  text-transform:uppercase;cursor:pointer;
+  background:var(--white);color:var(--black);
+  transition:background .2s,color .2s;white-space:nowrap;
+  min-height:52px;
+}
+.input-row button:hover{background:transparent;color:var(--white)}
+.input-row button:disabled{opacity:.4;cursor:not-allowed}
+
+/* Summary panel */
+.summary{
+  display:none;margin-top:32px;padding:24px;
+  border:1px solid var(--line);
+}
+.summary.visible{display:block}
+.summary h2{
+  font-family:'Archivo Black',sans-serif;font-size:1rem;
+  letter-spacing:.1em;text-transform:uppercase;margin-bottom:16px;
+}
+.summary-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:16px;
+}
+.summary-item{
+  font-family:'IBM Plex Mono',monospace;font-size:.72rem;
+  letter-spacing:.04em;color:var(--gray);
+}
+.summary-item strong{
+  display:block;font-family:'Archivo',sans-serif;font-size:.9rem;
+  color:var(--white);margin-bottom:4px;letter-spacing:0;
+}
+.submit-proposal{
+  margin-top:24px;width:100%;padding:18px;
+  border:1px solid var(--accent);background:var(--accent);
+  color:var(--white);font-family:'Archivo Black',sans-serif;
+  font-size:.9rem;letter-spacing:.14em;text-transform:uppercase;
+  cursor:pointer;transition:background .2s,border-color .2s;
+}
+.submit-proposal:hover{background:transparent;border-color:var(--white)}
+.submit-proposal:disabled{opacity:.4;cursor:not-allowed}
+
+.bottom{
+  display:flex;justify-content:space-between;align-items:baseline;
+  font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--faint);
+  margin-top:clamp(24px,3vw,48px);
+}
+
+@media (max-width:640px){
+  .input-row{flex-direction:column}
+  .input-row button{width:100%}
+}
+</style>
+</head>
+<body>
+<div class="frame">
+  <header class="top">
+    <a href="/">← Back to Portfolio</a>
+    <span>Nº 002 / Consult</span>
+  </header>
+
+  <h1>Let's build<br>something.</h1>
+  <p class="lede">Tell me about your project. This AI-powered assessment will analyze your needs, map them to services, and generate a proposal for Greg to review.</p>
+
+  <div class="chat">
+    <div class="messages" id="messages"></div>
+    <div class="input-row">
+      <textarea id="userInput" placeholder="Describe your project…" rows="1"></textarea>
+      <button id="sendBtn" type="button">Send</button>
+    </div>
+  </div>
+
+  <div class="summary" id="summary">
+    <h2>Assessment Summary</h2>
+    <div class="summary-grid" id="summaryGrid"></div>
+    <button class="submit-proposal" id="submitProposal">Generate Proposal</button>
+  </div>
+
+  <footer class="bottom">
+    <span>gregiteen.xyz</span>
+    <span>AI-Powered Needs Assessment</span>
+  </footer>
+</div>
+
+<script>
+const messages = document.getElementById('messages');
+const input = document.getElementById('userInput');
+const sendBtn = document.getElementById('sendBtn');
+const summary = document.getElementById('summary');
+const summaryGrid = document.getElementById('summaryGrid');
+const submitProposal = document.getElementById('submitProposal');
+
+let conversationHistory = [];
+let assessmentComplete = false;
+let assessmentData = null;
+
+// Auto-resize textarea
+input.addEventListener('input', () => {
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+});
+
+// Send on Enter (Shift+Enter for newline)
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    handleSend();
+  }
+});
+
+sendBtn.addEventListener('click', handleSend);
+
+function addMessage(text, role) {
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  div.textContent = text;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+  return div;
+}
+
+function addTypingIndicator() {
+  const div = document.createElement('div');
+  div.className = 'msg ai typing';
+  div.id = 'typing';
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+  return div;
+}
+
+function removeTypingIndicator() {
+  const el = document.getElementById('typing');
+  if (el) el.remove();
+}
+
+async function handleSend() {
+  const text = input.value.trim();
+  if (!text || sendBtn.disabled) return;
+
+  addMessage(text, 'user');
+  conversationHistory.push({ role: 'user', content: text });
+  input.value = '';
+  input.style.height = 'auto';
+  sendBtn.disabled = true;
+
+  addTypingIndicator();
+
+  try {
+    const res = await fetch('/api/cna', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ history: conversationHistory }),
+    });
+    const data = await res.json();
+    removeTypingIndicator();
+
+    if (data.message) {
+      addMessage(data.message, 'ai');
+      conversationHistory.push({ role: 'assistant', content: data.message });
+    }
+
+    if (data.complete && data.assessment) {
+      assessmentComplete = true;
+      assessmentData = data.assessment;
+      showSummary(data.assessment);
+    }
+  } catch (err) {
+    removeTypingIndicator();
+    addMessage('Connection error. Please try again.', 'ai');
+  }
+
+  sendBtn.disabled = assessmentComplete;
+  if (!assessmentComplete) input.focus();
+}
+
+function showSummary(assessment) {
+  summaryGrid.innerHTML = '';
+  const fields = [
+    ['Project Type', assessment.project_type],
+    ['Timeline', assessment.timeline],
+    ['Budget Range', assessment.budget_range],
+    ['Complexity', assessment.complexity],
+    ['Key Tech', assessment.technologies],
+    ['Priority', assessment.priority],
+  ];
+  for (const [label, value] of fields) {
+    if (!value) continue;
+    const item = document.createElement('div');
+    item.className = 'summary-item';
+    const strong = document.createElement('strong');
+    strong.textContent = value;
+    item.appendChild(strong);
+    item.appendChild(document.createTextNode(label));
+    summaryGrid.appendChild(item);
+  }
+  summary.classList.add('visible');
+  input.disabled = true;
+  input.placeholder = 'Assessment complete.';
+}
+
+submitProposal.addEventListener('click', async () => {
+  if (!assessmentData) return;
+  submitProposal.disabled = true;
+  submitProposal.textContent = 'Generating…';
+
+  try {
+    const res = await fetch('/api/cna-proposal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        assessment: assessmentData,
+        history: conversationHistory,
+      }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      submitProposal.textContent = 'Proposal Sent to Greg ✓';
+      addMessage('Your proposal has been generated and sent to Greg for review. He\'ll be in touch shortly.', 'ai');
+    } else {
+      submitProposal.textContent = 'Error — Try Again';
+      submitProposal.disabled = false;
+    }
+  } catch {
+    submitProposal.textContent = 'Error — Try Again';
+    submitProposal.disabled = false;
+  }
+});
+
+// Start the conversation
+(async () => {
+  addTypingIndicator();
+  try {
+    const res = await fetch('/api/cna', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ history: [] }),
+    });
+    const data = await res.json();
+    removeTypingIndicator();
+    if (data.message) {
+      addMessage(data.message, 'ai');
+      conversationHistory.push({ role: 'assistant', content: data.message });
+    }
+  } catch {
+    removeTypingIndicator();
+    addMessage('Welcome! Tell me about the project you have in mind.', 'ai');
+    conversationHistory.push({ role: 'assistant', content: 'Welcome! Tell me about the project you have in mind.' });
+  }
+})();
+</script>
+</body>
+</html>

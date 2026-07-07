@@ -1,40 +1,107 @@
-# PORTFOLIO_PROJECT_DEV_PLAN
+# Portfolio Site — Development Plan
 
-## Phase 1: Re-stabilize System Integrations
-1. Complete system reset: restore `scripts/compile-theme.mjs` to strict generation limits.
-2. Document architectural constraints securely within the `.docs/` repository and Total Recall invariants.
-3. Lock down `vault/pages/designs/` to prevent auto-overwrites.
+## Priority Order
 
-## Phase 2: Engine Refactor
-1. **Refactor `compile-theme.mjs`**: Remove the global file overwriting. Route all generative output into isolated `designs/[slug]/` folders.
-2. **Implement Google Standard**: Ensure the engine outputs the canonical `DESIGN.md` spec file inside each isolated folder.
-3. **Asset Isolation**: Save `logo.png`, `favicon.png`, `hero.jpg`, and `portrait.jpg` directly into the generated `designs/[slug]/` directory.
-4. **Bespoke Asset Prompts**: Refactor `compile-theme.mjs` to include a critique-and-plan pass before image generation to construct unique logo/hero prompts.
-5. **Portrait Identity Preservation**: Hardcode the canonical `greg-portrait-source.png` reference and lock the portrait prompt to the strict A/B tested identity-preserving formula.
+### P0: Fix Existing Bugs + Clean Slate
 
-## Phase 3: B&W Agency Splash + Verify
-1. Build B&W treatment (grayscale/contrast filter + SVG film-grain).
-2. Rebuild `splash.html` and `verify.html` in B&W Archivo Black style.
-3. Restyle cookie bar and error states to monochrome.
-4. Finalize mobile (375px) and desktop (1280px+) passes.
-5. Create monochrome logo/favicon treatment.
+#### 1. Delete all existing AI-generated designs
+**What:** Remove all AI-generated theme files from `vault/pages/designs/` (keep only `nostalgia.md` and `high-stakes-field-day.md`). Remove all generated design directories from `designs/`. Clean slate.
+**Verify:** `vault/pages/designs/` contains only `nostalgia.md` and `high-stakes-field-day.md`. `designs/` is empty or only contains manually created work.
 
-## Phase 4: Email Suite (Matches UI)
-1. Establish `emailShell()` shared B&W template in `serve.mjs`.
-2. Restyle 2FA email, confirmation email, and owner-alert email.
-3. Perform deliverability check (Gmail + one other client, light/dark, DMARC aligned).
+#### 2. Create separate folder for generated theme skins
+**What:** Generated themes should write to a new location (e.g., `vault/pages/skins/` or a non-vault location entirely) — NOT `vault/pages/designs/`. Update `compile-theme.mjs` to write to the new location.
+**Verify:** New theme generation writes to the new folder, not `vault/pages/designs/`
 
-## Phase 5: Visitor Memory + Workflows
-1. Establish `.data/sessions.json` and 30-day token persistence.
-2. Build visitor profile tracking (style/visits) and first-visit email gates.
-3. Wire `serve.mjs` steps to the `on-visitor.md` workflow doc.
+#### 3. Update build-site.mjs to handle theme skins separately
+**What:** The build script must never include theme skins on the Designs index page. Theme skins are only accessible via the flipper and their standalone URLs.
+**Verify:** Designs index only shows Nostalgia + HSFD
 
-## Phase 6: 3D Design Transitions
-1. Implement `@view-transition` cross-page fades with perspective.
-2. Wrap theme-pill switches in `startViewTransition` with 3D rotateX/blur morphs.
-3. Build designs gallery animated switching.
+#### 4. Remove fake marketing block
+**File:** `scripts/compile-theme.mjs` line 402
+**What:** Delete the hardcoded "Infrastructure Consultation Offer" + fake emails appended to every DESIGN.md
+**Verify:** Generate a test theme, confirm no fake copy
 
-## Phase 7: Analyze & Improve Gates
-1. Gate A (pre-submit): `npm test` green, full build clean, fix findings.
-2. Gate B (post-deploy): silent refresh, console/network audit, fix findings.
-3. Final sweep: broken links, meta/OG tags, 404s.
+#### 5. Remove generator form from designs page
+**What:** The `{{GENERATOR_FORM}}` placeholder should not be used on the designs_index layout. Generation ONLY happens via splash page.
+**Verify:** Designs page has no generation form
+
+#### 6. Verify LLM prompt fix
+**What:** Audit the most recently generated theme layouts for fake hardcoded copy
+**Verify:** Layouts use `{{PLACEHOLDER}}` variables, not hardcoded text
+
+---
+
+### P1: Improve Generation Pipeline
+
+#### 7. Generation starts on splash form submit (not verification)
+**File:** `scripts/serve.mjs`
+**What:** When `/api/send-code` is called, immediately kick off `compile-theme.mjs` in background alongside sending the verification code. The verification delay IS the generation buffer.
+**Verify:** Theme generation begins the moment the visitor hits "Generate & Enter"
+
+#### 8. Add planning review gate
+**File:** `scripts/compile-theme.mjs`
+**What:** After Pass 1 planning, add a second LLM call to analyze and improve the plan before any code generation begins.
+**Verify:** Plan quality improves measurably
+
+#### 9. Parallelize layout generation
+**File:** `scripts/compile-theme.mjs`
+**What:** After CSS + Home, run remaining layout passes concurrently via `Promise.all()`
+**Verify:** Generation time drops significantly
+
+#### 10. Lazy load home page
+**File:** `scripts/compile-theme.mjs` + `scripts/serve.mjs`
+**What:** Build and serve home page as soon as CSS + shell + home layout are ready. Continue remaining layouts in background.
+**Verify:** Home page available within ~40s
+
+#### 11. Strengthen holistic review (Pass 5)
+**File:** `scripts/compile-theme.mjs`
+**What:** Score design 1-10, check placeholder compliance, fix inconsistencies
+**Verify:** Cleaner output quality
+
+---
+
+### P2: Continuous Improvement + Promotion
+
+#### 12. Create `improve-theme.mjs`
+**What:** Script that loads a theme, sends it to LLM for critique, generates improved version, swaps in if better
+**Verify:** Run on one theme, confirm improvement
+
+#### 13. Daily cron on ALL designs
+**What:** Daily job runs `improve-theme.mjs` on every existing generated design, not just one
+**Verify:** All designs show improvement over multiple days
+
+#### 14. Model rotation
+**What:** Alternate between Gemini, Claude, etc. for fresh perspectives
+**Verify:** Different models produce different improvements
+
+#### 15. Portfolio promotion workflow
+**What:** Greg can flag a mature optimized design for promotion to the real portfolio. The design then appears on the Designs index alongside Nostalgia and HSFD.
+**Verify:** Promoted design appears on Designs index with proper metadata
+
+---
+
+### P3: CNA + Proposals + Visitor Enrichment
+
+#### 16. Visitor enrichment
+**What:** Collect cookie data, browser info, and any available signals about the visitor. Include enriched data in emails to Greg.
+**Verify:** Visitor emails contain richer context
+
+#### 17. Email timing logic
+**What:** If visitor does NOT do CNA → email Greg immediately on verification. If visitor DOES start CNA → hold email until CNA is complete and proposal is generated.
+**Verify:** Both paths work correctly
+
+#### 18. CNA form page + banners
+**What:** AI-powered interactive needs assessment page. CNA banners on all portfolio pages.
+**Verify:** Prospect can complete full CNA conversation
+
+#### 19. Proposal PDF generation
+**What:** AI generates PDF proposal from CNA data
+**Verify:** Professional, accurate PDF output
+
+#### 20. Proposal feedback loop
+**What:** Proposal sent to Greg via email. Greg provides feedback to AI via email. AI iterates proposal until finalized.
+**Verify:** Multi-round feedback produces polished final proposal
+
+#### 21. Proposal delivery via DocuSign alternative
+**What:** Greg sends finalized proposal via open-source DocuSign
+**Verify:** Client receives and can sign

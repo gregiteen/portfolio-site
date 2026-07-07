@@ -9,6 +9,7 @@ import { join, normalize, extname, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, createHash } from 'node:crypto';
 import { createTransport } from 'nodemailer';
+import https from 'node:https';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -26,6 +27,7 @@ const vaultDir = join(__dirname, '..', 'vault');
 const visitorsLog = join(__dirname, '..', 'vault', 'visitors.md');
 const buildScript = join(__dirname, 'build-site.mjs');
 const compileScript = join(__dirname, 'compile-theme.mjs');
+const improveScript = join(__dirname, 'improve-theme.mjs');
 const port = Number(process.env.PORT ?? 4173);
 const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon' };
 
@@ -127,6 +129,12 @@ function startGeneration(prompt) {
 
 /** In-memory store: email → { code, expiresAt, attempts } */
 const pendingCodes = new Map();
+
+/** Deferred visitor notifications: token → { sessionInfo, cnaData, timer } */
+const pendingVisitEmails = new Map();
+
+/** Active proposal threads: proposalId → { clientEmail, assessment, enrichment, proposal, revisions } */
+const proposalThreads = new Map();
 
 /** token → { email, style, issuedAt, … } — persisted so sessions survive restarts */
 const authTokens = new Map();
@@ -348,7 +356,18 @@ async function notifyOwner(info) {
         ${row('IP', info.ip, true)}
         ${row('Browser', browser)}
         ${row('OS', os)}
+        ${info.screen ? row('Screen', info.screen, true) : ''}
+        ${info.timezone ? row('Timezone', info.timezone) : ''}
+        ${info.language ? row('Language', info.language) : ''}
+        ${info.referrer ? row('Referrer', info.referrer, true) : ''}
+        ${info.platform ? row('Platform', info.platform) : ''}
+        ${row('Touch', info.touch ? 'Yes' : 'No')}
       </table>
+      ${info.cnaAssessment ? `
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-top:2px solid #e22b22;margin-top:20px;">
+        <tr><td colspan="2" style="font-family:'Courier New',Courier,monospace;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#e22b22;padding:14px 0 8px;">CNA Assessment</td></tr>
+        ${Object.entries(info.cnaAssessment).map(([k, v]) => row(k.replace(/_/g, ' '), v)).join('')}
+      </table>` : ''}
       <p style="font-family:'Courier New',Courier,monospace;font-size:10px;line-height:1.6;color:#555;margin:20px 0 0;word-break:break-all;">${ua}</p>`,
   });
 
@@ -360,6 +379,61 @@ async function notifyOwner(info) {
     html,
   });
   console.log(`[Visitors] Notified owner about ${info.email}`);
+}
+
+/** Send the deferred notification with everything collected during the visit */
+function sendDeferredNotification(token) {
+  const pending = pendingVisitEmails.get(token);
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  pendingVisitEmails.delete(token);
+
+  const info = pending.sessionInfo;
+  const cna = pending.cnaData;
+
+  // Build a comprehensive email with all session data
+  if (cna) {
+    // Visitor did CNA — include assessment in the notification
+    info.cnaAssessment = cna;
+  }
+
+  notifyOwner(info).catch(err => console.error('[Visitors] Notify error:', err.message));
+}
+
+// ─── Gemini API Helper ───────────────────────────────────────────────────────
+
+function geminiCall(apiKey, prompt) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseMimeType: 'application/json' },
+    });
+    const url = new URL(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`);
+    const options = {
+      hostname: url.hostname,
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    };
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (c) => data += c);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          if (!text) return reject(new Error(`Empty Gemini response: ${data.slice(0, 200)}`));
+          resolve(text);
+        } catch (/** @type {any} */ e) {
+          reject(new Error(`Gemini parse error: ${e.message}`));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(120_000, () => { req.destroy(); reject(new Error('Gemini timeout')); });
+    req.write(body);
+    req.end();
+  });
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -388,7 +462,7 @@ function readBody(req) {
 
 /** Paths that bypass the auth check */
 function isPublicPath(urlPath) {
-  if (urlPath === '/splash.html' || urlPath === '/verify.html') return true;
+  if (urlPath === '/splash.html' || urlPath === '/verify.html' || urlPath === '/consult.html') return true;
   if (urlPath.startsWith('/api/')) return true;
   if (urlPath.startsWith('/assets/')) return true;
   if (urlPath.startsWith('/designs/')) return true;
@@ -411,6 +485,16 @@ function isAuthenticated(req) {
   return true;
 }
 
+function isAdmin(req) {
+  const cookies = parseCookies(req.headers.cookie);
+  const token = cookies.gi_auth;
+  if (!token) return false;
+  const session = authTokens.get(token);
+  if (!session) return false;
+  // Admin = the site owner's email
+  return session.email === mailOwner || session.email === process.env.ADMIN_EMAIL;
+}
+
 // ─── Server ──────────────────────────────────────────────────────────────────
 
 createServer(async (req, res) => {
@@ -420,6 +504,31 @@ createServer(async (req, res) => {
   // ── Auth check for protected routes ──
   if (!isPublicPath(urlPath) && !isAuthenticated(req)) {
     res.writeHead(302, { 'Location': '/splash.html' });
+    res.end();
+    return;
+  }
+
+  // ── Returning user: splash → home redirect ──
+  if (urlPath === '/splash.html' && isAuthenticated(req)) {
+    res.writeHead(302, { 'Location': '/' });
+    res.end();
+    return;
+  }
+
+  // ── API: Logout ──
+  if (urlPath === '/api/logout') {
+    const cookies = parseCookies(req.headers.cookie);
+    const token = cookies.gi_auth;
+    if (token) {
+      // Fire deferred notification before logout
+      sendDeferredNotification(token);
+      authTokens.delete(token);
+      saveSessions();
+    }
+    res.writeHead(302, {
+      'Location': '/splash.html',
+      'Set-Cookie': 'gi_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+    });
     res.end();
     return;
   }
@@ -445,8 +554,16 @@ createServer(async (req, res) => {
         return sendJson(res, 400, { success: false, error: 'Design style required.' });
       }
 
+      // Check generation rate limit per email (3 max)
+      const emailKey = email.toLowerCase();
+      const existingProfile = visitorProfiles.get(emailKey);
+      const genCount = existingProfile?.generations ?? 0;
+      if (genCount >= 3) {
+        return sendJson(res, 429, { success: false, error: 'Generation limit reached (3 max). Your existing designs are still available — just enter your email to sign in.' });
+      }
+
       const code = generateCode();
-      pendingCodes.set(email.toLowerCase(), {
+      pendingCodes.set(emailKey, {
         code,
         style: style.trim(),
         optIn: !!optIn,
@@ -467,7 +584,7 @@ createServer(async (req, res) => {
       requestGeneration(cleanStyle);
 
       return sendJson(res, 200, { success: true });
-    } catch (err) {
+    } catch (/** @type {any} */ err) {
       return sendJson(res, 400, { success: false, error: String(err) });
     }
   }
@@ -475,7 +592,7 @@ createServer(async (req, res) => {
   // ── API: Verify code ──
   if (urlPath === '/api/verify-code' && req.method === 'POST') {
     try {
-      const { email, code } = await readBody(req);
+      const { email, code, enrich } = await readBody(req);
       if (!email || !code) {
         return sendJson(res, 400, { success: false, error: 'Email and code required.' });
       }
@@ -524,13 +641,29 @@ createServer(async (req, res) => {
         firstSeen: prior?.firstSeen ?? Date.now(),
         lastSeen: Date.now(),
         visits: (prior?.visits ?? 0) + 1,
+        generations: (prior?.generations ?? 0) + 1,
       });
       saveSessions();
 
-      // Log visitor and notify Greg with full session info
-      const sessionInfo = { email: emailKey, style, optIn, ip: req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '', userAgent: req.headers['user-agent'] || '' };
+      // Log visitor and notify Greg with full session info + enrichment
+      const sessionInfo = {
+        email: emailKey, style, optIn,
+        ip: req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '',
+        userAgent: req.headers['user-agent'] || '',
+        screen: enrich?.screen || '',
+        timezone: enrich?.tz || '',
+        language: enrich?.lang || '',
+        referrer: enrich?.ref || '',
+        touch: enrich?.touch || false,
+        platform: enrich?.platform || '',
+      };
       logVisitor(sessionInfo).catch(err => console.error('Event stream error:', String(err)));
-      notifyOwner(sessionInfo).catch(err => console.error('[Visitors] Notify error:', err.message));
+
+      // Defer notification — wait until visitor leaves the site
+      const exitTimer = setTimeout(() => {
+        sendDeferredNotification(token);
+      }, 30 * 60 * 1000); // 30 min fallback
+      pendingVisitEmails.set(token, { sessionInfo, cnaData: null, timer: exitTimer });
 
       // First visit → personal confirmation/welcome email from sales@
       if (!prior) {
@@ -543,45 +676,12 @@ createServer(async (req, res) => {
       });
       res.end(JSON.stringify({ success: true, redirect: '/' }));
       return;
-    } catch (err) {
+    } catch (/** @type {any} */ err) {
       return sendJson(res, 400, { success: false, error: String(err) });
     }
   }
 
-  // ── API: Download design spec ──
-  if (urlPath === '/api/design-spec') {
-    const slug = urlObj.searchParams.get('slug');
-    const designsDir = join(__dirname, '..', 'vault', 'pages', 'designs');
-    let designPath;
-    if (slug && /^design-[a-z0-9]+$/.test(slug)) {
-      designPath = join(designsDir, `${slug}.md`);
-    } else {
-      // Find the latest design-*.md file
-      try {
-        const files = (await readFile(designsDir, 'utf8').catch(() => null), 
-          await import('node:fs/promises').then(fs => fs.readdir(designsDir)));
-        const designFiles = files.filter(f => f.startsWith('design-') && f.endsWith('.md'))
-          .sort().reverse();
-        designPath = designFiles.length
-          ? join(designsDir, designFiles[0])
-          : join(designsDir, 'design.md');
-      } catch {
-        designPath = join(designsDir, 'design.md');
-      }
-    }
-    try {
-      const content = await readFile(designPath, 'utf8');
-      const filename = designPath.split('/').pop();
-      res.writeHead(200, {
-        'content-type': 'text/markdown; charset=utf-8',
-        'content-disposition': `attachment; filename="${filename}"`,
-      });
-      res.end(content);
-    } catch {
-      return sendJson(res, 404, { error: 'No design spec available yet.' });
-    }
-    return;
-  }
+  // (design-spec download removed — designs are proprietary)
 
   // ── API: Session info (what cookies tell us) ──
   if (urlPath === '/api/session') {
@@ -658,6 +758,607 @@ createServer(async (req, res) => {
     return;
   }
 
+  // ── API: Visitor Exit (sendBeacon) ──
+  if (urlPath === '/api/visitor-exit' && req.method === 'POST') {
+    const cookies = parseCookies(req.headers.cookie);
+    const token = cookies.gi_auth;
+    if (token) {
+      sendDeferredNotification(token);
+    }
+    res.writeHead(204).end();
+    return;
+  }
+
+  // ── API: CNA Chat ──
+  if (urlPath === '/api/cna' && req.method === 'POST') {
+    try {
+      const { history } = await readBody(req);
+      const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
+      if (!GOOGLE_API_KEY) {
+        return sendJson(res, 500, { message: 'AI service unavailable.' });
+      }
+
+      const systemPrompt = `You are an AI assistant conducting a Client Needs Assessment for Greg Iteen, a software engineer and designer. Your job is to understand the prospect's project needs through a natural conversation.
+
+Gather the following information through the conversation:
+1. Project type (website, web app, mobile app, branding, design, infrastructure, etc.)
+2. Project description and goals
+3. Timeline expectations
+4. Budget range (if they're comfortable sharing)
+5. Technical requirements / preferred technologies
+6. Current pain points or problems to solve
+7. Target audience
+8. Any existing assets or systems to integrate with
+
+Be professional, warm, and concise. Ask one or two questions at a time, not all at once. When you have enough information to generate a meaningful proposal (usually after 4-8 exchanges), respond with a JSON assessment.
+
+When the assessment is complete, your response MUST be valid JSON with this exact structure:
+{"message": "Your closing message to the prospect...", "complete": true, "assessment": {"project_type": "...", "description": "...", "timeline": "...", "budget_range": "...", "technologies": "...", "complexity": "Low/Medium/High", "priority": "...", "pain_points": "...", "target_audience": "..."}}
+
+If NOT complete, respond with just:
+{"message": "Your next question or response...", "complete": false}`;
+
+      const contents = [
+        { role: 'user', parts: [{ text: systemPrompt }] },
+        { role: 'model', parts: [{ text: 'Understood. I will conduct the needs assessment as described.' }] },
+      ];
+
+      if (!history || history.length === 0) {
+        contents.push({ role: 'user', parts: [{ text: 'The prospect just arrived. Start the conversation with a warm greeting and your first question.' }] });
+      } else {
+        for (const msg of history) {
+          contents.push({
+            role: msg.role === 'user' ? 'user' : 'model',
+            parts: [{ text: msg.content }],
+          });
+        }
+      }
+
+      const apiBody = JSON.stringify({
+        contents,
+        generationConfig: { responseMimeType: 'application/json' },
+      });
+
+      const apiUrl = new URL(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${GOOGLE_API_KEY}`);
+      const apiRes = await new Promise((resolve, reject) => {
+        const req2 = https.request({
+          hostname: apiUrl.hostname,
+          path: apiUrl.pathname + apiUrl.search,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(apiBody) },
+        }, (res2) => {
+          let data = '';
+          res2.on('data', (c) => data += c);
+          res2.on('end', () => resolve(data));
+        });
+        req2.on('error', reject);
+        req2.setTimeout(60000, () => { req2.destroy(); reject(new Error('timeout')); });
+        req2.write(apiBody);
+        req2.end();
+      });
+
+      const parsed = JSON.parse(apiRes);
+      const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      let cnaResponse;
+      try {
+        cnaResponse = JSON.parse(text);
+      } catch {
+        cnaResponse = { message: text || 'I\'d love to hear about your project. What are you looking to build?', complete: false };
+      }
+
+      return sendJson(res, 200, cnaResponse);
+    } catch (/** @type {any} */ err) {
+      console.error('[CNA] Error:', err.message);
+      return sendJson(res, 500, { message: 'Something went wrong. Please try again.' });
+    }
+  }
+
+  // ── API: CNA Proposal Generation ──
+  if (urlPath === '/api/cna-proposal' && req.method === 'POST') {
+    try {
+      const { assessment, history } = await readBody(req);
+      if (!assessment) {
+        return sendJson(res, 400, { success: false, error: 'Assessment data required.' });
+      }
+
+      // Get visitor info from auth token
+      const cookies = parseCookies(req.headers.cookie);
+      const token = cookies.gi_auth;
+      const session = token ? authTokens.get(token) : null;
+      const clientEmail = session?.email || 'unknown';
+
+      // Attach CNA to deferred visitor notification
+      if (token && pendingVisitEmails.has(token)) {
+        pendingVisitEmails.get(token).cnaData = assessment;
+      }
+
+      // Generate proposal in background — respond to client immediately
+      sendJson(res, 200, { success: true });
+
+      // Kick off enrichment + proposal generation
+      const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
+      if (!GOOGLE_API_KEY) {
+        console.error('[Proposal] No GOOGLE_API_KEY — cannot generate proposal');
+        return;
+      }
+
+      const proposalId = randomBytes(8).toString('hex');
+      const conversationText = (history || []).map(m => `${m.role === 'user' ? 'CLIENT' : 'AI'}: ${m.content}`).join('\n\n');
+      const assessmentText = Object.entries(assessment).map(([k, v]) => `${k}: ${v}`).join('\n');
+
+      // Step 1: Enrich client info via Gemini
+      console.log(`[Proposal ${proposalId}] Enriching client info…`);
+      const emailDomain = clientEmail.includes('@') ? clientEmail.split('@')[1] : '';
+      const enrichPrompt = `You are a business intelligence analyst. Research and analyze this prospect for a proposal.
+
+Client email: ${clientEmail}
+Email domain: ${emailDomain}
+CNA Assessment:
+${assessmentText}
+
+Full conversation:
+${conversationText}
+
+Based on the email domain and all available context, provide a comprehensive client profile. Infer what you can about their business, industry, company size, and likely needs. If the domain suggests a specific company, describe what that company likely does.
+
+OUTPUT: Return exactly one JSON object:
+{
+  "company_name": "Best guess at company name or 'Individual'",
+  "industry": "Their likely industry",
+  "company_description": "What this company/person likely does",
+  "estimated_size": "Solo/Small/Medium/Enterprise",
+  "likely_budget_tier": "Based on company size and project scope",
+  "key_insights": "Anything notable that should inform the proposal",
+  "recommended_approach": "How Greg should position this engagement"
+}`;
+
+      let enrichment = {};
+      try {
+        const enrichRaw = await geminiCall(GOOGLE_API_KEY, enrichPrompt);
+        enrichment = JSON.parse(enrichRaw);
+      } catch (/** @type {any} */ e) {
+        console.warn(`[Proposal ${proposalId}] Enrichment failed: ${e.message}`);
+        enrichment = { company_name: emailDomain || 'Unknown', industry: 'Unknown' };
+      }
+
+      // Step 2: Generate proposal draft
+      console.log(`[Proposal ${proposalId}] Generating proposal draft…`);
+      const proposalPrompt = `You are writing a professional project proposal on behalf of Greg Iteen, a software engineer and designer.
+
+CLIENT PROFILE:
+${JSON.stringify(enrichment, null, 2)}
+
+CLIENT NEEDS ASSESSMENT:
+${assessmentText}
+
+CONVERSATION CONTEXT:
+${conversationText}
+
+Write a professional, compelling project proposal. Include:
+1. Executive summary
+2. Understanding of the client's needs (show you listened)
+3. Proposed solution and approach
+4. Scope of work (itemized deliverables)
+5. Timeline with milestones
+6. Investment (pricing — use ranges based on the budget tier and project complexity)
+7. Why Greg is the right fit
+8. Next steps
+
+Keep it direct, confident, and professional. No fluff. This is from a technical expert, not a sales department.
+
+OUTPUT: Return exactly one JSON object:
+{
+  "subject_line": "Proposal: [project type] for [company]",
+  "proposal_text": "The full proposal in clean markdown format",
+  "client_email_draft": "A brief, warm email to the client that would accompany the proposal"
+}`;
+
+      let proposalDraft = {};
+      try {
+        const proposalRaw = await geminiCall(GOOGLE_API_KEY, proposalPrompt);
+        proposalDraft = JSON.parse(proposalRaw);
+      } catch (/** @type {any} */ e) {
+        console.warn(`[Proposal ${proposalId}] Draft generation failed: ${e.message}`);
+        proposalDraft = {
+          subject_line: `Proposal for ${enrichment.company_name || clientEmail}`,
+          proposal_text: `[Draft generation failed — please write manually]\n\nClient: ${clientEmail}\nAssessment:\n${assessmentText}`,
+          client_email_draft: '',
+        };
+      }
+
+      // Store proposal for email thread
+      proposalThreads.set(proposalId, {
+        clientEmail,
+        assessment,
+        enrichment,
+        proposal: proposalDraft,
+        history: conversationText,
+        revisions: 0,
+        createdAt: Date.now(),
+      });
+
+      // Step 3: Email Greg with the full package
+      console.log(`[Proposal ${proposalId}] Emailing to Greg…`);
+      const enrichmentRows = Object.entries(enrichment)
+        .map(([k, v]) => `**${k.replace(/_/g, ' ')}:** ${v}`)
+        .join('\n');
+
+      const emailToGreg = `PROPOSAL DRAFT — ${proposalId}
+${'='.repeat(60)}
+
+CLIENT: ${clientEmail}
+COMPANY: ${enrichment.company_name || 'Unknown'}
+INDUSTRY: ${enrichment.industry || 'Unknown'}
+
+${'─'.repeat(60)}
+CLIENT ENRICHMENT
+${'─'.repeat(60)}
+${enrichmentRows}
+
+${'─'.repeat(60)}
+CNA ASSESSMENT
+${'─'.repeat(60)}
+${assessmentText}
+
+${'─'.repeat(60)}
+PROPOSAL DRAFT
+${'─'.repeat(60)}
+${proposalDraft.proposal_text}
+
+${'─'.repeat(60)}
+DRAFT EMAIL TO CLIENT
+${'─'.repeat(60)}
+${proposalDraft.client_email_draft}
+
+${'═'.repeat(60)}
+INSTRUCTIONS:
+• Reply to this email with edits/feedback — AI will revise the proposal.
+• Reply "send it" to finalize and send to the client (${clientEmail}).
+• The proposal will be attached to a formatted email and you'll be CC'd.
+${'═'.repeat(60)}`;
+
+      const replyTo = `proposal-${proposalId}@${process.env.MAIL_DOMAIN || 'gregiteen.xyz'}`;
+
+      try {
+        await smtpTransport.sendMail({
+          from: mailFrom,
+          to: mailOwner,
+          replyTo,
+          subject: `[PROPOSAL] ${proposalDraft.subject_line || 'New Proposal'} — Reply to edit`,
+          text: emailToGreg,
+          headers: { 'X-Proposal-ID': proposalId },
+        });
+        console.log(`[Proposal ${proposalId}] Email sent to Greg. Reply-To: ${replyTo}`);
+      } catch (/** @type {any} */ emailErr) {
+        console.error(`[Proposal ${proposalId}] Email failed:`, emailErr.message);
+      }
+
+    } catch (/** @type {any} */ err) {
+      console.error('[Proposal] Error:', err.message);
+      if (!res.writableEnded) sendJson(res, 500, { success: false, error: 'Failed to generate proposal.' });
+    }
+    return;
+  }
+
+  // ── API: Proposal Reply Webhook (inbound email from Greg) ──
+  if (urlPath === '/api/proposal-reply' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      // SMTP2GO inbound webhook sends: from, to, subject, text, html
+      const toAddr = body.to || body.envelope?.to?.[0] || '';
+      const replyText = body.text || body.plain || body.body || '';
+      const fromAddr = body.from || body.envelope?.from || '';
+
+      // Extract proposal ID from the to address: proposal-<id>@domain
+      const idMatch = toAddr.match(/proposal-([a-f0-9]+)@/);
+      if (!idMatch) {
+        console.warn('[Proposal Reply] No proposal ID found in:', toAddr);
+        return sendJson(res, 400, { error: 'No proposal ID' });
+      }
+
+      const proposalId = idMatch[1];
+      const thread = proposalThreads.get(proposalId);
+      if (!thread) {
+        console.warn(`[Proposal Reply] Unknown proposal ID: ${proposalId}`);
+        return sendJson(res, 404, { error: 'Proposal not found' });
+      }
+
+      console.log(`[Proposal ${proposalId}] Reply from Greg: ${replyText.slice(0, 100)}…`);
+
+      // Check for "send it" command
+      const cleaned = replyText.replace(/^>.*$/gm, '').trim().toLowerCase();
+      if (cleaned === 'send it' || cleaned === 'send it.' || cleaned.startsWith('send it')) {
+        // FINALIZE: Send proposal to client
+        console.log(`[Proposal ${proposalId}] SENDING to client: ${thread.clientEmail}`);
+
+        const clientSubject = thread.proposal.subject_line || `Project Proposal from Greg Iteen`;
+
+        try {
+          await smtpTransport.sendMail({
+            from: mailFrom,
+            to: thread.clientEmail,
+            cc: mailOwner,
+            subject: clientSubject,
+            text: `${thread.proposal.client_email_draft}\n\n${'─'.repeat(40)}\n\n${thread.proposal.proposal_text}\n\n— Greg Iteen\ngregiteen.xyz`,
+          });
+
+          // Notify Greg it was sent
+          await smtpTransport.sendMail({
+            from: mailFrom,
+            to: mailOwner,
+            subject: `✓ Proposal sent to ${thread.clientEmail}`,
+            text: `Proposal ${proposalId} has been sent to ${thread.clientEmail}.\nYou were CC'd on the email.`,
+          });
+
+          proposalThreads.delete(proposalId);
+          console.log(`[Proposal ${proposalId}] Sent and closed.`);
+        } catch (/** @type {any} */ sendErr) {
+          console.error(`[Proposal ${proposalId}] Send failed:`, sendErr.message);
+          await smtpTransport.sendMail({
+            from: mailFrom, to: mailOwner,
+            subject: `✗ Failed to send proposal ${proposalId}`,
+            text: `Error: ${sendErr.message}\n\nThe proposal was NOT sent. Try again or send manually.`,
+          }).catch(() => {});
+        }
+
+        return sendJson(res, 200, { status: 'sent' });
+      }
+
+      // REVISION: Greg wants edits — send feedback to AI, generate revised proposal
+      const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
+      if (!GOOGLE_API_KEY) {
+        return sendJson(res, 500, { error: 'No API key for revision' });
+      }
+
+      thread.revisions++;
+      console.log(`[Proposal ${proposalId}] Revision #${thread.revisions}…`);
+
+      const revisionPrompt = `You are revising a project proposal based on feedback from the author (Greg Iteen).
+
+CURRENT PROPOSAL:
+${thread.proposal.proposal_text}
+
+CURRENT CLIENT EMAIL DRAFT:
+${thread.proposal.client_email_draft}
+
+GREG'S FEEDBACK:
+${replyText}
+
+Apply Greg's feedback precisely. Do not add anything he didn't ask for. Do not remove anything he didn't mention. If he gives specific wording, use it verbatim.
+
+OUTPUT: Return exactly one JSON object:
+{
+  "subject_line": "Updated subject line if needed",
+  "proposal_text": "The full revised proposal",
+  "client_email_draft": "The revised email to accompany the proposal",
+  "changes_made": "Brief summary of what changed"
+}`;
+
+      try {
+        const revisionRaw = await geminiCall(GOOGLE_API_KEY, revisionPrompt);
+        const revision = JSON.parse(revisionRaw);
+        thread.proposal = revision;
+
+        // Email revised version back to Greg
+        const replyTo = `proposal-${proposalId}@${process.env.MAIL_DOMAIN || 'gregiteen.xyz'}`;
+        await smtpTransport.sendMail({
+          from: mailFrom,
+          to: mailOwner,
+          replyTo,
+          subject: `Re: [PROPOSAL] ${revision.subject_line || 'Revised'} — Rev ${thread.revisions}`,
+          text: `REVISION #${thread.revisions}
+${'─'.repeat(60)}
+CHANGES: ${revision.changes_made || 'Applied your feedback'}
+
+${'─'.repeat(60)}
+REVISED PROPOSAL
+${'─'.repeat(60)}
+${revision.proposal_text}
+
+${'─'.repeat(60)}
+REVISED CLIENT EMAIL
+${'─'.repeat(60)}
+${revision.client_email_draft}
+
+${'═'.repeat(60)}
+Reply with more edits, or reply "send it" to send to ${thread.clientEmail}.
+${'═'.repeat(60)}`,
+        });
+
+        console.log(`[Proposal ${proposalId}] Revision ${thread.revisions} sent to Greg.`);
+      } catch (/** @type {any} */ revErr) {
+        console.error(`[Proposal ${proposalId}] Revision failed:`, revErr.message);
+        await smtpTransport.sendMail({
+          from: mailFrom, to: mailOwner,
+          subject: `✗ Revision failed for proposal ${proposalId}`,
+          text: `AI revision failed: ${revErr.message}\n\nYour feedback: ${replyText}\n\nReply again to retry.`,
+        }).catch(() => {});
+      }
+
+      return sendJson(res, 200, { status: 'revised' });
+    } catch (/** @type {any} */ err) {
+      console.error('[Proposal Reply] Error:', err.message);
+      return sendJson(res, 500, { error: err.message });
+    }
+  }
+
+  // ── Admin: Protect admin page ──
+  if (urlPath === '/admin.html' && !isAdmin(req)) {
+    res.writeHead(403, { 'content-type': 'text/plain' });
+    res.end('Forbidden');
+    return;
+  }
+
+  // ── Admin API ──
+  if (urlPath.startsWith('/api/admin/')) {
+    if (!isAdmin(req)) {
+      return sendJson(res, 403, { error: 'Admin access required' });
+    }
+
+    const adminPath = urlPath.slice('/api/admin'.length);
+
+    // GET /api/admin/stats
+    if (adminPath === '/stats' && req.method === 'GET') {
+      const uptimeMs = process.uptime() * 1000;
+      const h = Math.floor(uptimeMs / 3600000);
+      const m = Math.floor((uptimeMs % 3600000) / 60000);
+      const recentVisitors = [...visitorProfiles.entries()]
+        .map(([email, p]) => ({ email, ...p }))
+        .sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0))
+        .slice(0, 10);
+
+      // Count themes on disk
+      let themeCount = 0;
+      try {
+        const { readdir } = await import('node:fs/promises');
+        const entries = await readdir(join(__dirname, '..', 'designs'), { withFileTypes: true });
+        themeCount = entries.filter(e => e.isDirectory()).length;
+      } catch {}
+
+      return sendJson(res, 200, {
+        totalVisitors: visitorProfiles.size,
+        totalSessions: authTokens.size,
+        totalThemes: themeCount,
+        activeProposals: proposalThreads.size,
+        generatorStatus: genJob.status,
+        uptime: `${h}h ${m}m`,
+        genJob: { status: genJob.status, phase: genJob.phase, error: genJob.error, finishedAt: genJob.finishedAt },
+        recentVisitors,
+      });
+    }
+
+    // GET /api/admin/visitors
+    if (adminPath === '/visitors' && req.method === 'GET') {
+      const visitors = [...visitorProfiles.entries()]
+        .map(([email, p]) => ({ email, ...p }))
+        .sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+      return sendJson(res, 200, visitors);
+    }
+
+    // GET /api/admin/themes
+    if (adminPath === '/themes' && req.method === 'GET') {
+      const themes = [];
+      try {
+        const { readdir, readFile: rf } = await import('node:fs/promises');
+        const designsDir = join(__dirname, '..', 'designs');
+        const entries = await readdir(designsDir, { withFileTypes: true });
+        for (const e of entries) {
+          if (!e.isDirectory()) continue;
+          const slug = e.name;
+          let meta = { slug, name: slug };
+          try {
+            const dm = await rf(join(designsDir, slug, 'DESIGN.md'), 'utf8');
+            const nameMatch = dm.match(/^name:\s*"?([^"\n]+)"?/m);
+            const accentMatch = dm.match(/^accent:\s*"?([^"\n]+)"?/m);
+            const styleMatch = dm.match(/^style:\s*"?([^"\n]+)"?/m);
+            const scoreMatch = dm.match(/^improvement_score:\s*"?([^"\n]+)"?/m);
+            const improvedMatch = dm.match(/^last_improved:\s*"?([^"\n]+)"?/m);
+            if (nameMatch) meta.name = nameMatch[1];
+            if (accentMatch) meta.accent = accentMatch[1];
+            if (styleMatch) meta.style = styleMatch[1];
+            if (scoreMatch) meta.score = Number(scoreMatch[1]);
+            if (improvedMatch) meta.lastImproved = improvedMatch[1];
+          } catch {}
+          themes.push(meta);
+        }
+      } catch {}
+      return sendJson(res, 200, themes);
+    }
+
+    // POST /api/admin/themes/:slug/promote
+    const promoteMatch = adminPath.match(/^\/themes\/([a-z0-9_-]+)\/promote$/);
+    if (promoteMatch && req.method === 'POST') {
+      const slug = promoteMatch[1];
+      try {
+        const { spawnSync } = await import('node:child_process');
+        const result = spawnSync(process.execPath, [join(__dirname, 'promote-theme.mjs'), slug], { stdio: 'pipe' });
+        return sendJson(res, 200, { success: result.status === 0, output: String(result.stdout) });
+      } catch (/** @type {any} */ e) {
+        return sendJson(res, 500, { error: e.message });
+      }
+    }
+
+    // DELETE /api/admin/themes/:slug
+    const deleteThemeMatch = adminPath.match(/^\/themes\/([a-z0-9_-]+)$/);
+    if (deleteThemeMatch && req.method === 'DELETE') {
+      const slug = deleteThemeMatch[1];
+      try {
+        const { rm } = await import('node:fs/promises');
+        await rm(join(__dirname, '..', 'designs', slug), { recursive: true, force: true });
+        // Also remove vault skin if present
+        await rm(join(__dirname, '..', 'vault', 'pages', 'skins', `${slug}.md`), { force: true }).catch(() => {});
+        rebuild('admin: deleted theme');
+        return sendJson(res, 200, { success: true });
+      } catch (/** @type {any} */ e) {
+        return sendJson(res, 500, { error: e.message });
+      }
+    }
+
+    // GET /api/admin/proposals
+    if (adminPath === '/proposals' && req.method === 'GET') {
+      const proposals = [...proposalThreads.entries()].map(([id, t]) => ({
+        id,
+        clientEmail: t.clientEmail,
+        company: t.enrichment?.company_name || '',
+        projectType: t.assessment?.project_type || '',
+        revisions: t.revisions,
+        createdAt: t.createdAt,
+      }));
+      return sendJson(res, 200, proposals);
+    }
+
+    // DELETE /api/admin/proposals/:id
+    const deletePropMatch = adminPath.match(/^\/proposals\/([a-f0-9]+)$/);
+    if (deletePropMatch && req.method === 'DELETE') {
+      proposalThreads.delete(deletePropMatch[1]);
+      return sendJson(res, 200, { success: true });
+    }
+
+    // GET /api/admin/settings
+    if (adminPath === '/settings' && req.method === 'GET') {
+      return sendJson(res, 200, {
+        apiKeySet: !!process.env.GOOGLE_API_KEY,
+        defaultModel: process.env.DEFAULT_MODEL || 'gemini-3.5-flash',
+        mailOwner: mailOwner,
+        mailFrom: mailFrom,
+        mailDomain: process.env.MAIL_DOMAIN || '',
+        cronHour: 3,
+      });
+    }
+
+    // POST /api/admin/settings
+    if (adminPath === '/settings' && req.method === 'POST') {
+      try {
+        const body = await readBody(req);
+        if (body.apiKey) process.env.GOOGLE_API_KEY = body.apiKey;
+        if (body.defaultModel) process.env.DEFAULT_MODEL = body.defaultModel;
+        if (body.cronHour !== undefined) process.env.CRON_HOUR = String(body.cronHour);
+        return sendJson(res, 200, { success: true });
+      } catch (/** @type {any} */ e) {
+        return sendJson(res, 400, { error: e.message });
+      }
+    }
+
+    // POST /api/admin/improve — trigger improvement cycle manually
+    if (adminPath === '/improve' && req.method === 'POST') {
+      const child = spawn(process.execPath, [improveScript], { stdio: ['ignore', 'pipe', 'pipe'] });
+      child.on('close', (code) => {
+        console.log(`[Admin] Manual improvement run finished (exit ${code})`);
+        if (code === 0) rebuild('admin: improvement run');
+      });
+      return sendJson(res, 202, { started: true });
+    }
+
+    // GET /api/admin/logs
+    if (adminPath === '/logs' && req.method === 'GET') {
+      return sendJson(res, 200, {
+        logs: `Generator status: ${genJob.status}\nPhase: ${genJob.phase || '—'}\nPrompt: ${genJob.prompt || '—'}\nError: ${genJob.error || 'none'}\nStarted: ${genJob.startedAt ? new Date(genJob.startedAt).toISOString() : '—'}\nFinished: ${genJob.finishedAt ? new Date(genJob.finishedAt).toISOString() : '—'}\n\nActive sessions: ${authTokens.size}\nVisitor profiles: ${visitorProfiles.size}\nPending notifications: ${pendingVisitEmails.size}\nActive proposals: ${proposalThreads.size}\nGeneration queue: ${genQueue.length}`,
+      });
+    }
+
+    return sendJson(res, 404, { error: 'Not found' });
+  }
+
   // ── Static file serving ──
   let file = normalize(join(root, urlPath === '/' ? 'index.html' : urlPath));
   if (file !== root && !file.startsWith(root + sep)) { res.writeHead(403).end(); return; }
@@ -668,3 +1369,37 @@ createServer(async (req, res) => {
     res.writeHead(404, { 'content-type': 'text/plain' }).end('not found');
   }
 }).listen(port, () => console.log(`portfolio-site → http://localhost:${port}`));
+
+// ─── Daily improvement cron ──────────────────────────────────────────────────
+// Run improve-theme.mjs on ALL designs once per day at 3:00 AM local time.
+let lastImproveDay = -1;
+
+function checkImproveCron() {
+  const now = new Date();
+  const today = now.getDate();
+  const hour = now.getHours();
+
+  // Fire at 3 AM, once per day
+  if (hour === 3 && today !== lastImproveDay) {
+    lastImproveDay = today;
+    console.log('[Cron] Starting daily theme improvement run…');
+    const child = spawn(process.execPath, [improveScript], { stdio: ['ignore', 'pipe', 'pipe'] });
+    child.stdout.on('data', (chunk) => {
+      for (const line of String(chunk).split('\n').filter(l => l.trim())) {
+        console.log(`[Cron] ${line}`);
+      }
+    });
+    child.stderr.on('data', (chunk) => {
+      console.error(`[Cron] ${String(chunk).trim()}`);
+    });
+    child.on('close', (code) => {
+      console.log(`[Cron] Improvement run finished (exit ${code})`);
+      if (code === 0) rebuild('cron improvement');
+    });
+  }
+}
+
+// Check every 5 minutes
+setInterval(checkImproveCron, 5 * 60 * 1000);
+console.log('[Cron] Daily improvement cron scheduled (3:00 AM)');
+

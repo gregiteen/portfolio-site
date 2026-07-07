@@ -15,7 +15,7 @@ x_tech:
   - "Zero-dependency engine"
 x_link: "https://github.com/gregiteen/ssss"
 x_repo: "https://github.com/gregiteen/ssss"
-x_logo: "assets/logos/ssss.jpg"
+x_logo: "assets/logos/ssss.png"
 x_featured: true
 ---
 
