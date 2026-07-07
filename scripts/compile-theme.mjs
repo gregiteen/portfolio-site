@@ -286,9 +286,23 @@ IMAGES (already generated, use them):
     return executeAgentCall(p);
   }
 
-  // Pass 1: Base CSS & Core Pages
-  console.log('  → Pass 1: DESIGN.md, CSS, home, projects_index');
+  // Pass 1: Planning and Architecture
+  console.log('  → Pass 1: Planning and Architecture');
+  let plan = await callAgent(`${baseContext}
+
+You are starting a new design build. Before writing any code, you must deeply plan out the architecture and visual identity.
+1. Analyze the brief.
+2. Decide on typography, color palette, layouts, and interactive elements.
+3. Critique your own plan and improve it to make it radically bespoke. Do NOT settle for the first idea.
+
+OUTPUT: Return your thought process in plain text. Do not return JSON yet.`);
+
+  // Pass 2: Base CSS & Core Pages
+  console.log('  → Pass 2: DESIGN.md, CSS, home, projects_index');
   let raw1 = await callAgent(`${baseContext}
+
+Here is your approved architectural plan:
+${plan}
 
 OUTPUT: One JSON object. Generate the DESIGN.md, the complete CSS, and the first 2 pages (home, projects_index):
 {
