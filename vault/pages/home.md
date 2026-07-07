@@ -1,7 +1,7 @@
 ---
 type: page
 slug: "home"
-title: "Greg Iteen — Builder of Sovereign Software"
+title: "Greg Iteen — Builder of Local Software"
 description: "Portfolio home page: intro and featured work."
 timestamp: 2026-07-03T20:00:00Z
 name: "Home"
@@ -13,7 +13,7 @@ x_tagline: "I build AI systems that own their own memory."
 ---
 
 I'm **Greg Iteen** — a full-stack engineer building AI-native tools where the
-filesystem is the database, Markdown is the schema, and users keep sovereignty
+filesystem is the database, Markdown is the schema, and users keep localty
 over their own data.
 
 Recent obsessions: local-first memory systems, deterministic operation

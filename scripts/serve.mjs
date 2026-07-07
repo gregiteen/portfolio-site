@@ -270,7 +270,7 @@ async function sendVerificationEmail(email, code) {
 async function sendConfirmationEmail(email, style, optIn) {
   const projects = [
     ['UltraChat', 'An AI-powered communication platform — chat, voice, email, and automation under one roof.', 'https://ultrachat.app'],
-    ['Total Recall', 'A sovereign memory OS for AI agents. Zero database — the filesystem is the brain.', `${SITE_URL}/projects/total-recall.html`],
+    ['Total Recall', 'A memory OS for AI agents. Zero database — the filesystem is the brain.', `${SITE_URL}/projects/total-recall.html`],
     ['SSSS', 'The Structured Semantic Syntax System — the open standard this very site runs on.', `${SITE_URL}/projects/ssss.html`],
     ['Festech.live', 'Live event technology, from ticketing to production.', 'https://festech.live'],
   ];
@@ -305,7 +305,7 @@ async function sendConfirmationEmail(email, style, optIn) {
     to: email,
     subject: `You're in — your ${style} edition is ready`,
     html,
-    text: `Hey — Greg here. Thanks for stopping by.\n\nYou asked for "${style}", so the site rebuilt itself around that — every visitor gets their own edition.\n\nA few things I've been building:\n- UltraChat — AI-powered communication platform (https://ultrachat.app)\n- Total Recall — sovereign memory OS for AI agents\n- SSSS — the open standard this site runs on\n- Festech.live — live event technology (https://festech.live)\n\nYour edition: ${SITE_URL}\n\nWant to build something together? Just reply — this lands straight in my inbox.\n\n— Greg`,
+    text: `Hey — Greg here. Thanks for stopping by.\n\nYou asked for "${style}", so the site rebuilt itself around that — every visitor gets their own edition.\n\nA few things I've been building:\n- UltraChat — AI-powered communication platform (https://ultrachat.app)\n- Total Recall — memory OS for AI agents\n- SSSS — the open standard this site runs on\n- Festech.live — live event technology (https://festech.live)\n\nYour edition: ${SITE_URL}\n\nWant to build something together? Just reply — this lands straight in my inbox.\n\n— Greg`,
   });
   console.log(`[Mail] Confirmation sent to ${email}`);
 }

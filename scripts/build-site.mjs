@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { parseDocument } from '@ssss/cli/frontmatter';
 import { parseNestedMap, extractSections, scopeCss, fillTemplate } from './lib/theme.mjs';
 
-let targetDesign = null;
+let targetDesign = 'ethereal-minimalist-gallery-soft-off-whi';
 const designArgIdx = process.argv.indexOf('--design');
 if (designArgIdx >= 0 && designArgIdx + 1 < process.argv.length) {
   targetDesign = process.argv[designArgIdx + 1];
@@ -621,17 +621,33 @@ const FLIPPER_SCRIPT_TEMPLATE = `<script>
   if (!designs || designs.length === 0) return;
 
   const currentUrl = window.location.pathname;
-  let currentIndex = designs.findIndex(d => currentUrl.endsWith(d.url.replace('/index.html', '')) || currentUrl === d.url);
-  if (currentIndex === -1) currentIndex = 0;
+  let currentIndex = designs.findIndex(d => currentUrl.startsWith(d.url.replace('/index.html', '')));
+  if (currentIndex === -1) {
+    currentIndex = designs.findIndex(d => d.url === '/index.html' || d.url === '/');
+    if (currentIndex === -1) currentIndex = 0;
+  }
 
   const prev = designs[(currentIndex - 1 + designs.length) % designs.length];
   const next = designs[(currentIndex + 1) % designs.length];
 
+  let subPath = currentUrl;
+  const currentBase = designs[currentIndex].url.replace('/index.html', '').replace(/\/$/, '');
+  if (currentBase && currentUrl.startsWith(currentBase)) {
+    subPath = currentUrl.substring(currentBase.length);
+  }
+  if (!subPath || subPath === '/') subPath = '/index.html';
+
+  const prevBase = prev.url.replace('/index.html', '').replace(/\/$/, '');
+  const nextBase = next.url.replace('/index.html', '').replace(/\/$/, '');
+
+  const prevUrl = prevBase + subPath;
+  const nextUrl = nextBase + subPath;
+
   const flipperHtml = \`
     <div id="ai-design-flipper" style="position:fixed; top:0; left:0; right:0; height:44px; background:#111; color:#eee; display:flex; align-items:center; justify-content:center; z-index:99999; font-family:monospace; font-size: 13px; border-bottom:1px solid #333;">
-      <a href="\${prev.url}" style="color:#aaa; text-decoration:none; padding:10px 20px;">&larr; Prev Design</a>
+      <a href="\${prevUrl}" style="color:#aaa; text-decoration:none; padding:10px 20px;">&larr; Prev Design</a>
       <span style="margin:0 20px; font-weight:bold; color:#fff;">\${designs[currentIndex].name}</span>
-      <a href="\${next.url}" style="color:#aaa; text-decoration:none; padding:10px 20px;">Next Design &rarr;</a>
+      <a href="\${nextUrl}" style="color:#aaa; text-decoration:none; padding:10px 20px;">Next Design &rarr;</a>
     </div>
   \`;
   
@@ -827,6 +843,50 @@ ${content}
   transition:color .2s,border-color .2s,background .2s;
 }
 .design-dl:hover{color:#8b5cf6;border-color:rgba(139,92,246,0.3);background:rgba(20,20,30,0.95)}
+</style>
+<div class="cookie-banner" id="cookieBanner">
+  <p class="cookie-text">This site uses cookies to authenticate your session and remember your design preferences. By continuing, you agree to our use of cookies.</p>
+  <div class="cookie-actions">
+    <button class="cookie-btn cookie-decline" id="cookieDecline">Decline</button>
+    <button class="cookie-btn cookie-accept" id="cookieAccept">Accept</button>
+  </div>
+</div>
+<script>
+(function(){
+  if(localStorage.getItem('gi_cookies')==='accepted'){
+    document.getElementById('cookieBanner').style.display='none';
+  }
+  document.getElementById('cookieAccept').addEventListener('click',()=>{
+    localStorage.setItem('gi_cookies','accepted');
+    document.getElementById('cookieBanner').style.display='none';
+  });
+  document.getElementById('cookieDecline').addEventListener('click',()=>{
+    document.getElementById('cookieBanner').style.display='none';
+  });
+})();
+</script>
+<style>
+.cookie-banner{
+  position:fixed;bottom:0;left:0;right:0;z-index:100;
+  background:var(--black, #111);border-top:1px solid var(--line, #333);
+  padding:16px clamp(20px,4vw,56px);
+  display:flex;align-items:center;gap:24px;flex-wrap:wrap;
+  animation:slideUp .5s cubic-bezier(.16,1,.3,1) both;
+}
+@keyframes slideUp{0%{transform:translateY(100%)}100%{transform:none}}
+.cookie-text{
+  flex:1;min-width:260px;font-family:'IBM Plex Mono',monospace;
+  font-size:.64rem;letter-spacing:.03em;line-height:1.6;color:var(--gray, #999);margin:0;
+}
+.cookie-actions{display:flex;gap:12px}
+.cookie-btn{
+  padding:9px 22px;font-family:'IBM Plex Mono',monospace;font-size:.64rem;
+  letter-spacing:.14em;text-transform:uppercase;cursor:pointer;transition:.2s;
+  border:1px solid var(--line, #333);background:transparent;color:var(--gray, #999);
+}
+.cookie-accept{background:var(--white, #fff);color:var(--black, #111);border-color:var(--white, #fff)}
+.cookie-accept:hover{background:transparent;color:var(--white, #fff)}
+.cookie-decline:hover{border-color:var(--white, #fff);color:var(--white, #fff)}
 </style>
 </body>
 </html>

@@ -14,10 +14,10 @@
   --black:#0a0a0a;--white:#f5f5f3;--gray:rgba(245,245,243,.55);
   --faint:rgba(245,245,243,.22);--line:rgba(245,245,243,.28);
 }
-html,body{height:100%}
+html,body{min-height:100%; height:auto}
 body{
   font-family:'Archivo',sans-serif;background:var(--black);color:var(--white);
-  overflow:hidden;position:relative;
+  overflow-y:auto;overflow-x:hidden;position:relative;
 }
 
 /* ── Full-bleed B&W photography ── */
@@ -45,7 +45,7 @@ body{
 
 /* ── Frame ── */
 .frame{
-  position:relative;z-index:10;height:100vh;height:100dvh;
+  position:relative;z-index:10;min-height:100vh;min-height:100dvh;
   display:flex;flex-direction:column;justify-content:space-between;
   padding:clamp(20px,4vw,56px);
 }
@@ -182,11 +182,11 @@ form{margin-top:clamp(24px,3.4vw,44px);max-width:560px;animation:fadeIn 1s .7s b
         <input type="text" id="style" name="style" placeholder="brutalist, vaporwave, noir…" required>
       </div>
       <div class="chips" id="chips">
-        <span class="chip">Sovereign Ledger</span>
-        <span class="chip">Titanium Sovereign</span>
-        <span class="chip">Biolume Sovereign</span>
-        <span class="chip">Sovereign Swiss Grid</span>
-        <span class="chip">Sovereign Clay</span>
+        <span class="chip">Local Ledger</span>
+        <span class="chip">Titanium Local</span>
+        <span class="chip">Biolume Local</span>
+        <span class="chip">Local Swiss Grid</span>
+        <span class="chip">Local Clay</span>
       </div>
       <div class="field">
         <label for="email">02 — Email address</label>

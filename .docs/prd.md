@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD)
 
 ## 1. Goal
-Provide a sovereign, file-native portfolio site that is infinitely re-skinnable via an AI design engine.
+Provide a local, file-native portfolio site that is infinitely re-skinnable via an AI design engine.
 
 ## 2. Core Features
 - **AI Theme Generator**: Generates a single, global theme consisting of a `DESIGN.md` spec and a set of core assets (logo, favicon, hero, portrait).

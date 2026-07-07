@@ -8,7 +8,7 @@ const newGenLogic = `  // ── Phase 2: Theme generation (lazy loaded + analyz
   const frontendSkillPath = join(__dirname, '..', '.agent', 'skills', 'frontend-design', 'SKILL.md');
   const frontendSkill = await import('node:fs/promises').then(m => m.readFile(frontendSkillPath, 'utf8')).catch(() => '');
 
-  const baseContext = \`You are the design lead at a boutique studio. Every site you ship has a visual identity so specific it could never be mistaken for a template. You are designing for a REAL client — Greg Iteen, a full-stack engineer who builds sovereign, file-native AI systems.
+  const baseContext = \`You are the design lead at a boutique studio. Every site you ship has a visual identity so specific it could never be mistaken for a template. You are designing for a REAL client — Greg Iteen, a full-stack engineer who builds local, file-native AI systems.
 
 THE BRIEF: "\${prompt}"
 

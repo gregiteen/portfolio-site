@@ -1,7 +1,7 @@
 ---
 type: page
 slug: "project-total-recall"
-title: "Total Recall — Sovereign Memory OS"
+title: "Total Recall — Local Memory OS"
 description: "A database-free memory kernel that gives AI agents permanent, portable memory."
 timestamp: 2026-07-03T20:00:00Z
 name: "Total Recall"

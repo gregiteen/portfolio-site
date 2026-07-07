@@ -13,7 +13,7 @@ x_nav_order: 2
 ## Who I am
 
 I'm a software engineer who thinks most modern software holds user data
-hostage. My work pushes the other direction: **sovereign systems** — plain
+hostage. My work pushes the other direction: **local systems** — plain
 files, open specs, and runtimes you can inspect, fork, and carry with you.
 
 ## How I work
