@@ -1,4 +1,4 @@
-# System Architecture
+# PORTFOLIO_PROJECT_ARCHITECTURE
 
 ## Core Topology
 - **Static Generation (`scripts/build-site.mjs`)**: Parses `vault/pages/**/*.md` and constructs the raw HTML in `dist/site/`. Supports a `--design [slug]` flag to build completely isolated, standalone copies of the entire website using a generated layout.

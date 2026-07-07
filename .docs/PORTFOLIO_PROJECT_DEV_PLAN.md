@@ -1,4 +1,4 @@
-# Development Plan
+# PORTFOLIO_PROJECT_DEV_PLAN
 
 ## Phase 1: Re-stabilize System Integrations
 1. Complete system reset: restore `scripts/compile-theme.mjs` to strict generation limits.

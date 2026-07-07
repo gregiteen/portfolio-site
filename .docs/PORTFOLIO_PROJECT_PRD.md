@@ -1,4 +1,4 @@
-# Product Requirements Document (PRD)
+# PORTFOLIO_PROJECT_PRD
 
 ## 1. Goal
 Provide a local, file-native portfolio site that is infinitely re-skinnable via an AI design engine.
@@ -9,7 +9,6 @@ Provide a local, file-native portfolio site that is infinitely re-skinnable via 
 - **Drip Campaign Daemon**: An integrated daemon running within `serve.mjs` to auto-dispatch sequence emails using SMTP2GO/Mailcow without external crons.
 - **Lead Generation**: A 2FA code verification system (`/api/send-code`) that captures opt-ins for the marketing loop.
 
-## 3. Strict Constraints
 ## 3. Strict Constraints
 - Generate an isolated folder for each requested theme (e.g., `designs/[slug]/`).
 - Inside that folder, compile exactly one set of HTML files, one logo, one favicon, one hero image, and one portrait image.
