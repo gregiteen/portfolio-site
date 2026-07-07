@@ -1,7 +1,7 @@
 # PORTFOLIO_PROJECT_ARCHITECTURE
 
 ## Core Topology
-- **Static Generation (`scripts/build-site.mjs`)**: Parses `vault/pages/**/*.md` and constructs the raw HTML in `dist/site/`. Supports a `--design [slug]` flag to build completely isolated, standalone copies of the entire website using a generated layout.
+- **Static Generation (`scripts/build-site.mjs`)**: Parses `vault/pages/**/*.md` and constructs the raw HTML in `dist/site/`. Supports a `--design [slug]` flag to build completely isolated, standalone copies of the entire website. These isolated builds are FULL site compilations that perfectly retain all copy and layout from the user's manual software projects and graphic design portfolio items, rendered entirely through the lens of the AI-generated layout.
 - **Stateless Node Daemon (`scripts/serve.mjs`)**: Directly serves the `dist/site/` folder. Handles the `/generate-theme` POST endpoint and the `/generate-status` polling logic, returning the exact `latestUrl` for redirects.
 - **Theme Generation (`scripts/compile-theme.mjs`)**: Ingests prompts, executes a critique-and-planning phase to generate bespoke design specs and image prompts, and generates a dedicated `DESIGN.md` inside `vault/pages/designs/`. Afterwards, it automatically triggers an asynchronous background rebuild of the main site and an isolated build of the new design site. Portrait image styling strictly enforces the `greg-portrait-source.png` canonical identity base.
 - **Arrow Flipper UI**: A sticky Javascript-powered navigation bar (`id="ai-design-flipper"`) injected into the top of every generated HTML page. It dynamically traverses `window.location.pathname` to hyperlink visitors seamlessly between the root index and all isolated AI-generated design folders.
