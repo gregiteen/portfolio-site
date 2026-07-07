@@ -225,13 +225,14 @@ function setBtn(btn,label,busy){
 }
 
 // ── Progress polling ──
-let verified=false,themeReady=false;
+let verified=false,themeReady=false,targetUrl='/';
 const phaseMap={'[1/4]':15,'[2/4]':45,'[3/4]':70,'[4/4]':90};
 
 function pollProgress(){
   fetch('/generate-status').then(r=>r.json()).then(d=>{
     const status=document.getElementById('progressStatus');
     const bar=document.getElementById('progressBar');
+    if(d.latestUrl) targetUrl=d.latestUrl;
     if(d.status==='done'){
       themeReady=true;bar.style.width='100%';
       status.textContent='Design ready.';
@@ -254,7 +255,7 @@ function maybeRedirect(){
   if(verified){
     document.getElementById('card').classList.add('verified');
     document.getElementById('heading').textContent='You\'re in.';
-    setTimeout(()=>window.location.href='/',1500);
+    setTimeout(()=>window.location.href=targetUrl,1500);
   }
 }
 

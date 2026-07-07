@@ -631,14 +631,14 @@ const FLIPPER_SCRIPT_TEMPLATE = `<script>
   const next = designs[(currentIndex + 1) % designs.length];
 
   let subPath = currentUrl;
-  const currentBase = designs[currentIndex].url.replace('/index.html', '').replace(/\/$/, '');
+  const currentBase = designs[currentIndex].url.replace('/index.html', '').replace(/\\/$/, '');
   if (currentBase && currentUrl.startsWith(currentBase)) {
     subPath = currentUrl.substring(currentBase.length);
   }
   if (!subPath || subPath === '/') subPath = '/index.html';
 
-  const prevBase = prev.url.replace('/index.html', '').replace(/\/$/, '');
-  const nextBase = next.url.replace('/index.html', '').replace(/\/$/, '');
+  const prevBase = prev.url.replace('/index.html', '').replace(/\\/$/, '');
+  const nextBase = next.url.replace('/index.html', '').replace(/\\/$/, '');
 
   const prevUrl = prevBase + subPath;
   const nextUrl = nextBase + subPath;
