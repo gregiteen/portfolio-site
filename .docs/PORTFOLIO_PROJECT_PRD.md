@@ -17,9 +17,9 @@ Provide a local, file-native portfolio site that showcases real software and des
 ## 3. The User Journey Walkthrough
 
 ### Phase 1: Arrival & The B&W Baseline
-1. The user navigates to the standalone `splash.html` page, which is the sole location for the design aesthetic prompt box.
+1. The user navigates to the standalone `splash.html` page, which is the sole entry point and location for the design aesthetic prompt box.
 2. They are greeted by a stark, high-contrast, film-grain aesthetic.
-3. If they skip the prompt, they proceed to the homepage (`index.html`) and navigate through `/projects` and `/designs`, reading the authentic portfolio content compiled from the vault.
+3. They CANNOT skip the prompt. They must generate a design and verify their email to enter the portfolio.
 
 ### Phase 2: Generation & Lead Capture
 1. The user submits a design prompt (e.g., "A hyper-modern cyberpunk UI").
