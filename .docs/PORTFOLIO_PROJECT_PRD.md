@@ -1,15 +1,15 @@
 # PORTFOLIO_PROJECT_PRD
 
 ## 1. Goal
-Provide a local, file-native portfolio site that showcases real software and design projects, while featuring a highly engaging "AI Gimmick" that allows visitors to completely re-skin the active site into bespoke aesthetic universes. The system must remain entirely stateless and database-free.
+Provide a local, file-native portfolio site that showcases real software and design projects, while featuring a highly engaging "Design Aesthetic" gimmick that allows visitors to completely re-skin the active site into bespoke aesthetic universes. The system must remain entirely stateless and database-free.
 
 ## 2. Core Architecture & Concepts
 - **The Vault (Source of Truth)**: The entire core portfolio application lives inside `vault/pages/`.
   - `vault/pages/projects/` contains manual software engineering projects.
   - `vault/pages/designs/` contains manual HTML graphic design projects.
 - **The Base Build**: `scripts/build-site.mjs` parses the vault and builds the raw HTML into `dist/site/`. The default root site is the **B&W Agency Splash Page**—a high-contrast, Archivo Black display, grayscale/contrast hero with film-grain overlay.
-- **The Gimmick (AI Theme Generator)**: An interactive feature where visitors can submit a prompt to re-skin the site. The generator outputs its spec (`DESIGN.md`) and newly generated assets into an isolated folder at `designs/[slug]/`. It NEVER touches the vault.
-- **Full Site Rebuilds**: When a new AI design is generated, `build-site.mjs` rebuilds the *entire* portfolio site (retaining all the real vault content) but renders it through the lens of the AI-generated layout. The output of this full rebuild is saved inside `dist/site/designs/[slug]/`.
+- **The Design Aesthetic Engine (Gimmick)**: An interactive feature strictly restricted to the standalone `splash.html` page where visitors can submit a prompt to re-skin the active site. The engine outputs its spec (`DESIGN.md`) and newly generated assets into an isolated folder at `designs/[slug]/`. It NEVER touches the vault.
+- **Full Site Rebuilds**: When a new design is generated, `build-site.mjs` rebuilds the *entire* portfolio site (retaining all the real vault content) but renders it through the lens of the generated layout. The output of this full rebuild is saved inside `dist/site/designs/[slug]/`.
 - **The UI Flipper**: A sticky Javascript navigation bar (`ai-design-flipper`) injected into the top of every generated HTML page. It dynamically traverses `window.location.pathname` to hyperlink visitors seamlessly between the root index and all isolated AI-generated design folders, preserving their current reading path (e.g., flipping from `/projects/festech.html` on the B&W site directly to `/designs/[slug]/projects/festech.html` on the reskinned site).
 - **Stateless Node Daemon (`serve.mjs`)**: Directly serves the `dist/site/` folder, handles the AI generation endpoints, and manages the marketing/visitor loop.
 - **Deployment**: Synchronizes the local `dist/site/` folder to a DigitalOcean droplet via `rsync -avz --delete`. The local `dist/site/` is the absolute strict source of truth for production.
@@ -17,10 +17,9 @@ Provide a local, file-native portfolio site that showcases real software and des
 ## 3. The User Journey Walkthrough
 
 ### Phase 1: Arrival & The B&W Baseline
-1. The user navigates to the root URL and lands on the **B&W Agency Splash Page**.
+1. The user navigates to the standalone `splash.html` page, which is the sole location for the design aesthetic prompt box.
 2. They are greeted by a stark, high-contrast, film-grain aesthetic.
-3. They explore the site, navigating through `/projects` and `/designs`, reading the authentic portfolio content compiled from the vault.
-4. On the homepage, they encounter the "AI Theme Generator" input box, inviting them to describe a new aesthetic universe.
+3. If they skip the prompt, they proceed to the homepage (`index.html`) and navigate through `/projects` and `/designs`, reading the authentic portfolio content compiled from the vault.
 
 ### Phase 2: Generation & Lead Capture
 1. The user submits a design prompt (e.g., "A hyper-modern cyberpunk UI").
@@ -40,7 +39,7 @@ Provide a local, file-native portfolio site that showcases real software and des
 6. Because the flipper tracks their exact path (`subPath`), if they are reading the "Total Recall" project page and click "Next Design", they land perfectly on the "Total Recall" project page of the *next* aesthetic universe.
 
 ## 4. Strict Constraints
-- **Absolute Vault Isolation**: The AI Theme Generator MUST NEVER write files into `vault/pages/`. It must exclusively dump its output into `designs/[slug]/`. The manual portfolio items in the vault must never be polluted by AI-generated skins.
+- **Absolute Vault Isolation**: The design engine MUST NEVER write files into `vault/pages/`. It must exclusively dump its output into `designs/[slug]/`. The manual portfolio items in the vault must never be polluted by generated skins.
 - **No Theme Pills**: Do NOT use or generate `theme-[id]` or `design-[id]` files in the vault. The site relies entirely on isolated folders compiled via `--design [slug]`, not global CSS hot-swapping or theme pills.
 - **Image Generation Constraints**: The generation pipeline MUST run a planning phase to generate bespoke image prompts for logos and heroes that match the design brief. Do NOT use generic monogram fallbacks.
 - **Bio Photo Constraints**: The portrait generation MUST strictly use the canonical `assets/greg-portrait-source.png` high-res photo, enforcing identity preservation via the A/B tested prompt formula. NEVER use `assets/greg-portrait-base.jpg`.
