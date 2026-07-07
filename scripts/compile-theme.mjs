@@ -212,41 +212,8 @@ async function run() {
   const portraitPath = join(genDir, 'portrait.jpg');
   const basePortrait = join(assetsDir, 'greg-portrait-base.jpg');
 
-  // ── Phase 1: Images (parallel with theme gen) ──
-  console.log(`[1/3] Images → designs/${styleName}/assets/`);
-
-  const logoPrompt = `Create a clean, professional monogram logo combining "G" and "I" (Greg Iteen). Style: ${prompt}. Bold, distinctive, works at small sizes. CRITICAL: FULLY TRANSPARENT background (PNG alpha). Colors matching the style. No background shape — just the monogram on transparency. Vector-style, geometric, minimal.`;
-  const heroPrompt = `Create an atmospheric, wide hero background image for a portfolio website. Style: ${prompt}. Abstract/textural, suitable behind text. Rich in mood and color with depth. No text, no faces, no logos. Cinematic quality, 16:9.`;
-
-  async function genLogoAndFavicon() {
-    const ok = await generateImage(logoPrompt, logoPath);
-    if (ok) {
-      const fp = `Create a tiny square favicon (64x64) "GI" monogram. Style: ${prompt}. TRANSPARENT background. Tightly cropped, fills square, bold at small sizes. Simple, iconic.`;
-      await generateImage(fp, faviconPath);
-    }
-  }
-
-  async function genHero() {
-    await generateImage(heroPrompt, heroPath);
-  }
-
-  // Themed portrait: restyle Greg's real photo to match the brief (image-to-image).
-  const portraitPrompt = `Art-direct this portrait for a portfolio site whose design brief is "${prompt}". Preserve the subject's identity exactly — same face, same friendly expression, natural human eyes, same pose. Completely replace the setting: re-render the wardrobe, backdrop, lighting, and color grade so the portrait belongs to that visual world (do not keep the original office background). Editorial photography quality, tasteful, portfolio-grade. No text, no watermarks.`;
-
-  async function genPortrait() {
-    try {
-      await generateImage(portraitPrompt, portraitPath, basePortrait);
-    } catch (err) {
-      console.error('Theme generation failed:', String(err));
-    }
-  }
-
-  const imagePromise = GOOGLE_API_KEY
-    ? Promise.allSettled([genLogoAndFavicon(), genHero(), genPortrait()])
-    : (console.warn('  ⚠ GOOGLE_API_KEY not set — skipping images'), Promise.resolve([]));
-
-  // ── Phase 2: Theme generation (lazy loaded + analyze & improve) ──
-  console.log(`[2/3] Theme generation (multi-pass lazy loading)…`);
+  // ── Phase 1: Planning and Architecture (including Image Prompts) ──
+  console.log(`[1/3] Theme Architecture and Image Planning…`);
 
   const frontendSkillPath = join(__dirname, '..', '.agent', 'skills', 'frontend-design', 'SKILL.md');
   const frontendSkill = await import('node:fs/promises').then(m => m.readFile(frontendSkillPath, 'utf8')).catch(() => '');
@@ -288,14 +255,40 @@ IMAGES (already generated, use them):
 
   // Pass 1: Planning and Architecture
   console.log('  → Pass 1: Planning and Architecture');
-  let plan = await callAgent(`${baseContext}
+  let rawPlan = await callAgent(`${baseContext}
 
 You are starting a new design build. Before writing any code, you must deeply plan out the architecture and visual identity.
 1. Analyze the brief.
 2. Decide on typography, color palette, layouts, and interactive elements.
 3. Critique your own plan and improve it to make it radically bespoke. Do NOT settle for the first idea.
+4. Write 4 image generation prompts (logo, favicon, hero background, and portrait restyle) that perfectly fit this bespoke design. For the logo and favicon, DO NOT just use generic monograms if it doesn't fit the design.
 
-OUTPUT: Return your thought process in plain text. Do not return JSON yet.`);
+OUTPUT: Return exactly one JSON object with your plan and image prompts:
+{
+  "thought_process": "Your deep analysis and critique...",
+  "image_prompts": {
+    "logo": "Create a logo for Greg Iteen. Style: [Your bespoke style]. CRITICAL: FULLY TRANSPARENT background (PNG alpha)...",
+    "favicon": "Crop and optimize the provided logo into a tiny square favicon (64x64). TRANSPARENT background...",
+    "hero": "Create an atmospheric, wide hero background image... Cinematic quality, 16:9...",
+    "portrait": "Art-direct this portrait... Preserve the subject's identity exactly — same face, same expression, same pose. Completely replace the setting, wardrobe, lighting to match [Your bespoke style]..."
+  }
+}`);
+  let planObj = extractJson(rawPlan);
+  let plan = planObj.thought_process || 'No plan provided.';
+  
+  // Now that we have the image prompts, kick off the image generation in the background!
+  console.log(`[2/3] Generating Images in background using bespoke prompts…`);
+  const imagePromise = GOOGLE_API_KEY
+    ? Promise.allSettled([
+        (async () => {
+          if (await generateImage(planObj.image_prompts?.logo || 'Logo', logoPath)) {
+            await generateImage(planObj.image_prompts?.favicon || 'Favicon', faviconPath, logoPath);
+          }
+        })(),
+        generateImage(planObj.image_prompts?.hero || 'Hero', heroPath),
+        generateImage(planObj.image_prompts?.portrait || 'Portrait', portraitPath, basePortrait).catch(e => console.error('Portrait gen failed', e))
+      ])
+    : (console.warn('  ⚠ GOOGLE_API_KEY not set — skipping images'), Promise.resolve([]));
 
   // Pass 2: Base CSS & Core Pages
   console.log('  → Pass 2: DESIGN.md, CSS, home, projects_index');
