@@ -261,7 +261,7 @@ You are starting a new design build. Before writing any code, you must deeply pl
 1. Analyze the brief.
 2. Decide on typography, color palette, layouts, and interactive elements.
 3. Critique your own plan and improve it to make it radically bespoke. Do NOT settle for the first idea.
-4. Write 4 image generation prompts (logo, favicon, hero background, and portrait restyle) that perfectly fit this bespoke design. For the logo and favicon, DO NOT just use generic monograms if it doesn't fit the design.
+4. Write 3 image generation prompts (logo, favicon, hero background) that perfectly fit this bespoke design. For the logo and favicon, DO NOT just use generic monograms if it doesn't fit the design.
 
 OUTPUT: Return exactly one JSON object with your plan and image prompts:
 {
@@ -269,12 +269,14 @@ OUTPUT: Return exactly one JSON object with your plan and image prompts:
   "image_prompts": {
     "logo": "Create a logo for Greg Iteen. Style: [Your bespoke style]. CRITICAL: FULLY TRANSPARENT background (PNG alpha)...",
     "favicon": "Crop and optimize the provided logo into a tiny square favicon (64x64). TRANSPARENT background...",
-    "hero": "Create an atmospheric, wide hero background image... Cinematic quality, 16:9...",
-    "portrait": "Art-direct this portrait... Preserve the subject's identity exactly — same face, same expression, same pose. Completely replace the setting, wardrobe, lighting to match [Your bespoke style]..."
+    "hero": "Create an atmospheric, wide hero background image... Cinematic quality, 16:9..."
   }
 }`);
   let planObj = extractJson(rawPlan);
   let plan = planObj.thought_process || 'No plan provided.';
+  
+  // The portrait uses a strict A/B tested prompt to perfectly preserve identity while styling to match the theme.
+  const portraitPrompt = `Art-direct this portrait for a portfolio site whose design brief is "${prompt}". Preserve the subject's identity exactly — same face, same friendly expression, natural human eyes, same pose. Completely replace the setting: re-render the wardrobe, backdrop, lighting, and color grade so the portrait belongs to that visual world (do not keep the original office background). Editorial photography quality, tasteful, portfolio-grade. No text, no watermarks.`;
   
   // Now that we have the image prompts, kick off the image generation in the background!
   console.log(`[2/3] Generating Images in background using bespoke prompts…`);
@@ -286,7 +288,7 @@ OUTPUT: Return exactly one JSON object with your plan and image prompts:
           }
         })(),
         generateImage(planObj.image_prompts?.hero || 'Hero', heroPath),
-        generateImage(planObj.image_prompts?.portrait || 'Portrait', portraitPath, basePortrait).catch(e => console.error('Portrait gen failed', e))
+        generateImage(portraitPrompt, portraitPath, basePortrait).catch(e => console.error('Portrait gen failed', e))
       ])
     : (console.warn('  ⚠ GOOGLE_API_KEY not set — skipping images'), Promise.resolve([]));
 
