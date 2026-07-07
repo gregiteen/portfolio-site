@@ -138,7 +138,7 @@ function geminiApiCall(model, bodyObj) {
           }
           resolve(json.candidates[0].content.parts);
         } catch (e) {
-          reject(new Error(`Failed to parse Gemini response: ${e.message}`));
+          reject(new Error(`Failed to parse Gemini response: ${String(e)}`));
         }
       });
     });
@@ -237,7 +237,7 @@ async function run() {
     try {
       await generateImage(portraitPrompt, portraitPath, basePortrait);
     } catch (err) {
-      console.warn(`  ⚠ Portrait generation failed: ${err.message} — keeping previous portrait`);
+      console.error('Theme generation failed:', String(err));
     }
   }
 
@@ -280,7 +280,7 @@ IMAGES (already generated, use them):
         console.log(`  → API response (${Math.round(raw.length / 1024)}KB)`);
         return raw;
       } catch (err) {
-        console.warn(`  ⚠ API failed (${err.message}), falling back to CLI…`);
+        console.error('Icon conversion failed:', String(err));
       }
     }
     return executeAgentCall(p);

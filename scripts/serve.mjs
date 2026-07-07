@@ -457,7 +457,7 @@ createServer(async (req, res) => {
 
       // Send email (don't block the response on it)
       sendVerificationEmail(email, code).catch(err => {
-        console.error(`[Auth] Failed to send email to ${email}:`, err.message);
+        console.error('Failed to send magic link:', String(err));
       });
 
       // Start (or queue) theme generation in background — never dropped
@@ -467,7 +467,7 @@ createServer(async (req, res) => {
 
       return sendJson(res, 200, { success: true });
     } catch (err) {
-      return sendJson(res, 400, { success: false, error: err.message });
+      return sendJson(res, 400, { success: false, error: String(err) });
     }
   }
 
@@ -528,7 +528,7 @@ createServer(async (req, res) => {
 
       // Log visitor and notify Greg with full session info
       const sessionInfo = { email: emailKey, style, optIn, ip: req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '', userAgent: req.headers['user-agent'] || '' };
-      logVisitor(sessionInfo).catch(err => console.error('[Visitors] Log error:', err.message));
+      logVisitor(sessionInfo).catch(err => console.error('Event stream error:', String(err)));
       notifyOwner(sessionInfo).catch(err => console.error('[Visitors] Notify error:', err.message));
 
       // First visit → personal confirmation/welcome email from sales@
@@ -543,7 +543,7 @@ createServer(async (req, res) => {
       res.end(JSON.stringify({ success: true, redirect: '/' }));
       return;
     } catch (err) {
-      return sendJson(res, 400, { success: false, error: err.message });
+      return sendJson(res, 400, { success: false, error: String(err) });
     }
   }
 

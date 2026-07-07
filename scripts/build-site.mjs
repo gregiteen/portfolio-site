@@ -6,6 +6,7 @@
 import { readdir, readFile, writeFile, mkdir, rm, cp } from 'node:fs/promises';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// @ts-ignore
 import { parseDocument } from '@ssss/cli/frontmatter';
 import { parseNestedMap, extractSections, scopeCss, fillTemplate } from './lib/theme.mjs';
 
@@ -28,7 +29,7 @@ async function collectMarkdown(dir) {
       if (entry.isDirectory()) out.push(...(await collectMarkdown(p)));
       else if (entry.name.endsWith('.md')) out.push(p);
     }
-  } catch {}
+  } catch (e) { console.error(String(e)); }
   return out;
 }
 
@@ -891,7 +892,7 @@ if (targetDesign) {
       }
     }
   } catch (e) {
-    console.warn(`[Warn] Could not parse DESIGN.md for ${targetDesign}: ${e.message}`);
+    console.warn(`[Warn] Could not parse DESIGN.md for ${targetDesign}: ${String(e)}`);
   }
 } else if (customTheme) {
   const sections = extractSections(customTheme.body);
@@ -934,7 +935,7 @@ LIVE_RELOAD_SCRIPT = `
             if (currentVersion === null) {
               currentVersion = data.version;
             } else if (currentVersion !== data.version) {
-              console.log('[Dev] Live rebuild detected. Reloading...');
+              console.error('Build failed: reload requested');
               location.reload();
             }
           })

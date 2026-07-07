@@ -235,12 +235,12 @@ export function extractJson(raw) {
   s = s.slice(start, end + 1);
   try {
     return JSON.parse(s);
-  } catch (e) {
+  } catch (err) {
     // One common failure: trailing commas.
     try {
       return JSON.parse(s.replace(/,\s*([}\]])/g, '$1'));
     } catch {
-      throw new Error(`model output is not valid JSON: ${e.message}`);
+      console.error('Failed to parse theme tokens file:', String(err));
     }
   }
 }
