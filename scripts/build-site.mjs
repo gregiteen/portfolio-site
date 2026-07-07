@@ -10,16 +10,18 @@ import { fileURLToPath } from 'node:url';
 import { parseDocument } from '@ssss/cli/frontmatter';
 import { parseNestedMap, extractSections, scopeCss, fillTemplate } from './lib/theme.mjs';
 
-let targetDesign = null;
+let targetDesign = 'an-architectural-brutalist-site-inspired';
+let isIsolated = false;
 const designArgIdx = process.argv.indexOf('--design');
 if (designArgIdx >= 0 && designArgIdx + 1 < process.argv.length) {
   targetDesign = process.argv[designArgIdx + 1];
+  isIsolated = true;
 }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pagesDir = join(root, 'vault', 'pages');
 const assetsDir = join(root, 'assets');
-const outDir = targetDesign ? join(root, 'dist', 'site', 'designs', targetDesign) : join(root, 'dist', 'site');
+const outDir = isIsolated ? join(root, 'dist', 'site', 'designs', targetDesign) : join(root, 'dist', 'site');
 
 async function collectMarkdown(dir) {
   const out = [];
