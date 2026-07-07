@@ -834,7 +834,7 @@ function layout({ title, description, nav, content, activeSlug, sourcePath }) {
     ? [scopedCustomCss].filter(Boolean).join('\n')
     : [themeCss, STYLE, scopedCustomCss].filter(Boolean).join('\n');
 
-  let finalHtml = `<!doctype html>
+  const headContent = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -852,8 +852,23 @@ ${FONTS}
 ${FAVICON}
 ${TRANSITIONS}
 <style>${stylesheet}</style>
-</head>
-<body>
+</head>`;
+
+  if (customLayouts.shell) {
+    const customHtml = fillTemplate(customLayouts.shell, {
+      CONTENT: content,
+      NAV_LINKS: navHtml,
+      THEME_PILLS: themePillsHtml,
+      SOURCE_PATH: escapeHtml(sourcePath)
+    });
+    
+    // Ensure the AI provided a body tag, otherwise wrap it
+    const finalBody = customHtml.includes('<body') ? customHtml : `<body>\n${customHtml}\n</body>`;
+    
+    return headContent + finalBody + '\n</html>';
+  }
+
+  return headContent + `<body>
 <div class="ambient-glows">
   <div class="glow-blob glow-1"></div>
   <div class="glow-blob glow-2"></div>
@@ -1203,6 +1218,16 @@ for (const page of pages) {
 <ul class="index">
 ${featured.map(projectRow).join('\n')}
 </ul>`;
+
+    const generatorForm = `<div class="custom-generator">
+  <div class="gen-label">Initiate Layout Generation</div>
+  <form class="gen-form">
+    <input type="text" placeholder="Prompt the aesthetic..." required>
+    <button type="submit">Execute</button>
+  </form>
+  <div class="gen-status"></div>
+</div>`;
+    const ensureGeneratorForm = (html) => html.includes('class="gen-form"') ? html : html + '\n' + generatorForm;
     const customContent = customLayouts.home
       ? ensureGeneratorForm(fillTemplate(customLayouts.home, {
           HEADLINE: headline,

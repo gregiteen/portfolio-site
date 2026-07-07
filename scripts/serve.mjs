@@ -391,6 +391,7 @@ function isPublicPath(urlPath) {
   if (urlPath === '/splash.html' || urlPath === '/verify.html') return true;
   if (urlPath.startsWith('/api/')) return true;
   if (urlPath.startsWith('/assets/')) return true;
+  if (urlPath.startsWith('/designs/')) return true;
   // Dev/generation endpoints are API-like
   if (urlPath === '/dev-status' || urlPath === '/generate-status' || urlPath === '/generate-theme') return true;
   return false;

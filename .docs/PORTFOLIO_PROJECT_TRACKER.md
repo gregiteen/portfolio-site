@@ -29,3 +29,4 @@
 | [x] | Submit Gates | Pass `npm test`, code review, and build gates (Gate A). |
 | [x] | Post-Deploy Audit | Perform silent refresh, console/network audit, and re-deploy (Gate B). |
 | [x] | Final Site Sweep | Audit for broken links, missing meta/OG tags, and 404s (Gate C). |
+| [x] | Generate 5 Agency Sites | Execute local generation of 5 strictly non-slop, structurally unique agency designs, bypassing the failed remote CLI agents, and sync to production. |

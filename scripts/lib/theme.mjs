@@ -7,6 +7,10 @@
 
 /** Placeholder contract per layout template. `required` slots must appear. */
 export const LAYOUT_SPECS = {
+  shell: {
+    required: ['{{CONTENT}}'],
+    optional: ['{{NAV_LINKS}}', '{{THEME_PILLS}}', '{{SOURCE_PATH}}'],
+  },
   home: {
     required: ['{{FEATURED_PROJECTS}}'],
     optional: ['{{HEADLINE}}', '{{TAGLINE}}', '{{INTRO}}', '{{FEATURED_COUNT}}', '{{GENERATOR_FORM}}'],

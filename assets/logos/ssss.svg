@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <rect width="400" height="400" fill="#fcfcfc" />
+  <!-- Elegant structural composition: Bauhaus inspired -->
+  <circle cx="150" cy="200" r="80" fill="#111111" />
+  <rect x="180" y="80" width="80" height="180" fill="#db3a34" />
+  <polygon points="120,320 280,320 200,180" fill="#ffc857" opacity="0.9" style="mix-blend-mode: multiply;" />
+</svg>

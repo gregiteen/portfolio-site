@@ -299,13 +299,13 @@ OUTPUT: Return exactly one JSON object with your plan and image prompts:
 Here is your approved architectural plan:
 ${plan}
 
-OUTPUT: One JSON object. Generate the DESIGN.md, the complete CSS, and the first 2 pages (home, projects_index):
+OUTPUT: One JSON object. Generate the DESIGN.md, the complete CSS, and the first 3 layouts (shell, home, projects_index). The shell layout MUST wrap the entire page structure inside the body, using the provided placeholders.
 {
   "name": "Short Theme Name",
   "accent": "#rrggbb",
   "designSpec": "A strict Google Standard DESIGN.md file format...",
   "css": "…complete stylesheet…",
-  "layouts": { "home": "…", "projects_index": "…" }
+  "layouts": { "shell": "…", "home": "…", "projects_index": "…" }
 }`);
   let payload = extractJson(raw1);
 

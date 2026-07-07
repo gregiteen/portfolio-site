@@ -44,5 +44,6 @@ Provide a local, file-native portfolio site that showcases real software and des
 - **Image Generation Constraints**: The generation pipeline MUST run a planning phase to generate bespoke image prompts for logos and heroes that match the design brief. Do NOT use generic monogram fallbacks.
 - **Bio Photo Constraints**: The portrait generation MUST strictly use the canonical `assets/greg-portrait-source.png` high-res photo, enforcing identity preservation via the A/B tested prompt formula. NEVER use `assets/greg-portrait-base.jpg`.
 - **Design Philosophy**: EVERYTHING MUST BE COMPLETELY DIFFERENT. Themes must not look generic or similar. Each isolated theme must enforce radically different aesthetics, layouts, and typography across generations.
+- **NO AI SLOP**: DO NOT generate "neon cyan", "holographic gradients", "Y2K", or other lazy, generic AI tropes unless explicitly prompted. Adhere strictly to high-end, brutalist, editorial, or highly deliberate design principles matching the frontend-design skill rules. Avoid templated dark modes and cream backgrounds.
 - **UI-Matched Email Suite**: All outbound emails (2FA, confirmation, owner alerts) must visually match the B&W UI via the shared `emailShell()` template.
 - **Google Standard `DESIGN.md`**: The AI spec must use standard frontmatter (`name`, `accent`, `style`) and a `# Design System` markdown body.
