@@ -21,8 +21,8 @@
 | [x] | Atomic Sessions | Implemented `.data/sessions.json` and 30-day tokens for persistent login. |
 | [x] | Welcome Email Gate | First-visit-only trigger logic deployed for confirmation emails. |
 | [x] | 3D CSS Transitions | Wrapped theme switches in `startViewTransition` with rotateX/blur morphs. |
-| [ ] | Mobile/Desktop Polish | Finalize mobile (375px) and desktop (1280px+) design passes. |
-| [ ] | Monochrome Assets | Build monochrome logo and favicon treatment. |
+| [x] | Mobile/Desktop Polish | Finalize mobile (375px) and desktop (1280px+) design passes. |
+| [x] | Monochrome Assets | Build monochrome logo and favicon treatment. |
 | [ ] | Email Deliverability | Perform final deliverability check across Gmail and other clients. |
 | [ ] | Animate Gallery | Build animated switching between generated designs in gallery. |
 | [ ] | Performance Check | Ensure 60fps on mid hardware and zero CLS on load. |

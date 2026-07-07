@@ -100,7 +100,7 @@ body::after {
 a { color: inherit; text-decoration: none; }
 ::selection { background: var(--accent); color: var(--ink); }
 
-.frame { max-width: 1100px; margin: 0 auto; padding: 0 clamp(1.2rem, 4vw, 3rem); }
+.frame { max-width: 1200px; margin: 0 auto; padding: 0 clamp(1.2rem, 4vw, 3rem); }
 
 /* ---------- nav ---------- */
 header {
@@ -403,7 +403,15 @@ main { min-height: 60vh; }
 
 @media (max-width: 767px) {
   /* Mobile container padding relaxation */
-  .frame { padding: 0 clamp(0.8rem, 4vw, 1.2rem); }
+  .frame { padding: 0 clamp(1rem, 5vw, 1.5rem); }
+}
+
+@media (max-width: 375px) {
+  h1.display { font-size: 2.3rem; letter-spacing: -0.03em; }
+  .hero { padding: 2.5rem 0 2rem; }
+  .kicker h2 { font-size: 1.4rem; }
+  .row .body h3 { font-size: 1.15rem; }
+  .design-card { flex: 0 0 88vw; }
 }
 
 @media (max-width: 640px) {
