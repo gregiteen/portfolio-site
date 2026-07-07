@@ -14,5 +14,6 @@ Provide a local, file-native portfolio site that is infinitely re-skinnable via 
 - Inside that folder, compile exactly one set of HTML files, one logo, one favicon, one hero image, and one portrait image.
 - **Image Generation Constraints**: The generation pipeline MUST run a planning phase to generate bespoke image prompts for logos and heroes that match the design brief. Do NOT use generic monogram fallbacks.
 - **Bio Photo Constraints**: The portrait generation MUST strictly use the canonical `assets/greg-portrait-source.png` high-res photo, enforcing identity preservation via the A/B tested prompt formula. NEVER use `assets/greg-portrait-base.jpg`.
+- **Design Philosophy**: EVERYTHING MUST BE COMPLETELY DIFFERENT. Themes must not look generic or similar. Each theme must be generated using a unique `DESIGN.md` spec to enforce radically different aesthetics, layouts, and typography across generations.
 - Drop a `DESIGN.md` (the Google Standard) directly into that folder. It must use standard frontmatter (`name`, `accent`, `style`) and a `# Design System` markdown body.
 - Do NOT use or generate `theme-[id]` or `design-[id]` files. The site relies entirely on isolated folders, not global CSS hot-swapping or theme pills.
