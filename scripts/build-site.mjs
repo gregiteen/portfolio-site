@@ -10,18 +10,16 @@ import { fileURLToPath } from 'node:url';
 import { parseDocument } from '@ssss/cli/frontmatter';
 import { parseNestedMap, extractSections, scopeCss, fillTemplate } from './lib/theme.mjs';
 
-let targetDesign = 'an-architectural-brutalist-site-inspired';
-let isIsolated = false;
+let targetDesign = null;
 const designArgIdx = process.argv.indexOf('--design');
 if (designArgIdx >= 0 && designArgIdx + 1 < process.argv.length) {
   targetDesign = process.argv[designArgIdx + 1];
-  isIsolated = true;
 }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pagesDir = join(root, 'vault', 'pages');
 const assetsDir = join(root, 'assets');
-const outDir = isIsolated ? join(root, 'dist', 'site', 'designs', targetDesign) : join(root, 'dist', 'site');
+const outDir = targetDesign ? join(root, 'dist', 'site', 'designs', targetDesign) : join(root, 'dist', 'site');
 
 async function collectMarkdown(dir) {
   const out = [];
@@ -870,7 +868,7 @@ ${TRANSITIONS}
     return headContent + finalBody + '\n</html>';
   }
 
-  return headContent + `<body>
+  let finalHtml = headContent + `<body>
 <div class="ambient-glows">
   <div class="glow-blob glow-1"></div>
   <div class="glow-blob glow-2"></div>
@@ -1433,7 +1431,7 @@ if (!targetDesign) {
     try {
       execSync(`node scripts/build-site.mjs --design ${slug}`, { stdio: 'inherit' });
     } catch (e) {
-      console.error(`Failed to build design ${slug}:`, e.message);
+      console.error(`Failed to build design ${slug}:`, String(e));
     }
   }
 }

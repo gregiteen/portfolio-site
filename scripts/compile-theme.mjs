@@ -434,6 +434,9 @@ ${blocks}
       return `${k}: ${JSON.stringify(String(v))}`;
     }).join('\n');
   
+  const vaultDesignMd = `---\ntype: page\n${specFm}\n---\n\n${designBody.trim()}\n`;
+  await writeFile(join(__dirname, '..', 'vault', 'pages', 'designs', `${styleName}.md`), vaultDesignMd, 'utf8');
+  
   const elapsed = Math.round((Date.now() - t0) / 1000);
   console.log(`[Success] "${theme.name}" → designs/${styleName} [${elapsed}s]`);
 
