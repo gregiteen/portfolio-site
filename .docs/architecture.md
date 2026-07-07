@@ -4,7 +4,7 @@
 - **Static Generation (`scripts/build-site.mjs`)**: Parses `vault/pages/**/*.md` and constructs the raw HTML in `dist/site/`.
 - **Stateless Node Daemon (`scripts/serve.mjs`)**: Directly serves the `dist/site/` folder, managing the Drip Campaign automation loop in memory, dispatching emails on intervals based on transient visitor profile state.
 - **Theme Generation (`scripts/compile-theme.mjs`)**: Ingests prompts and generates an isolated, self-contained mini-site for that design. It creates a dedicated folder (e.g. `designs/[slug]/`). Inside this folder, it places all generated HTML files, the isolated generated image assets (logo, favicon, hero, portrait), and the Google Standard `DESIGN.md`.
-- **Google Standard `DESIGN.md`**: The sole source of truth for a theme (see [Google DESIGN.md Spec](file:///Users/greg/Github/portfolio-site/.docs/google_design_md_spec.md)). It sits inside the isolated folder. The format strictly enforces frontmatter (`name`, `accent`, `style`) and a `# Design System` markdown body. No `theme-[id]` or `design-[id]` files are used.
+- **Google Standard `DESIGN.md`**: Governed explicitly by the local project skill `.agent/skills/frontend-design/SKILL.md`. This is the sole source of truth for a theme (see [Google DESIGN.md Spec](file:///Users/greg/Github/portfolio-site/.docs/google_design_md_spec.md)). It sits inside the isolated folder. The format strictly enforces frontmatter (`name`, `accent`, `style`) and a `# Design System` markdown body. No `theme-[id]` or `design-[id]` files are used.
 
 ## Deployment Pipeline & Legacy Architecture
 - **Sync Method**: Deployment runs via `rsync -avz --delete dist/site/ root@$DROPLET_IP:/var/www/gregiteen.xyz/`.
