@@ -23,9 +23,9 @@
 | [x] | 3D CSS Transitions | Wrapped theme switches in `startViewTransition` with rotateX/blur morphs. |
 | [x] | Mobile/Desktop Polish | Finalize mobile (375px) and desktop (1280px+) design passes. |
 | [x] | Monochrome Assets | Build monochrome logo and favicon treatment. |
-| [ ] | Email Deliverability | Perform final deliverability check across Gmail and other clients. |
-| [ ] | Animate Gallery | Build animated switching between generated designs in gallery. |
-| [ ] | Performance Check | Ensure 60fps on mid hardware and zero CLS on load. |
-| [ ] | Submit Gates | Pass `npm test`, code review, and build gates (Gate A). |
-| [ ] | Post-Deploy Audit | Perform silent refresh, console/network audit, and re-deploy (Gate B). |
-| [ ] | Final Site Sweep | Audit for broken links, missing meta/OG tags, and 404s (Gate C). |
+| [x] | Email Deliverability | Perform final deliverability check across Gmail and other clients. |
+| [x] | Animate Gallery | Build animated switching between generated designs in gallery. |
+| [x] | Performance Check | Ensure 60fps on mid hardware and zero CLS on load. |
+| [x] | Submit Gates | Pass `npm test`, code review, and build gates (Gate A). |
+| [x] | Post-Deploy Audit | Perform silent refresh, console/network audit, and re-deploy (Gate B). |
+| [x] | Final Site Sweep | Audit for broken links, missing meta/OG tags, and 404s (Gate C). |
