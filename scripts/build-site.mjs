@@ -1348,3 +1348,17 @@ await mkdir(genAssetsDir, { recursive: true });
 try { await cp(join(root, 'static', 'gi-logo.png'), join(genAssetsDir, 'gi-logo.png'), { force: true }); } catch {}
 
 console.log(`Built ${pages.length + 2} pages → ${outDir}`);
+
+// ─── Auto-build all designs ──────────────────────────────────────────────────
+import { execSync } from 'child_process';
+if (!targetDesign) {
+  for (const d of aiDesigns) {
+    const slug = d.data.slug.replace('design-', '');
+    console.log(`Building design layer: ${slug}`);
+    try {
+      execSync(`node scripts/build-site.mjs --design ${slug}`, { stdio: 'inherit' });
+    } catch (e) {
+      console.error(`Failed to build design ${slug}:`, e.message);
+    }
+  }
+}
