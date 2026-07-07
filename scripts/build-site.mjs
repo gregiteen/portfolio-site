@@ -751,6 +751,7 @@ const GENERATOR_FORM = `<div class="custom-generator">
  */
 function withCustomLayer(defaultHtml, customHtml) {
   if (!customHtml) return defaultHtml;
+  if (targetDesign) return customHtml;
   return `<div class="tl tl-default">\n${defaultHtml}\n</div>\n<div class="tl tl-custom">\n${customHtml}\n</div>`;
 }
 
@@ -771,6 +772,10 @@ function navLinksHtml(nav, activeSlug, itemTemplate) {
 }
 
 function layout({ title, description, nav, content, activeSlug, sourcePath }) {
+  if (targetDesign && content && content.trim().match(/^<!doctype/i)) {
+    return content;
+  }
+
   const defaultLinks = navLinksHtml(nav, activeSlug, null);
   const customNavTpl = customLayouts.nav_item;
   const navHtml = customNavTpl
@@ -1132,6 +1137,7 @@ function customDesignList(list) {
 // the {{GENERATOR_FORM}} slot — otherwise you could never flip designs again
 // from within the custom skin.
 function ensureGeneratorForm(html) {
+  if (targetDesign) return html.replace('{{GENERATOR_FORM}}', '');
   return html.includes(GENERATOR_FORM) ? html : `${html}\n${GENERATOR_FORM}`;
 }
 
@@ -1167,7 +1173,7 @@ ${featured.map(projectRow).join('\n')}
           INTRO: page.html,
           FEATURED_PROJECTS: customProjectList(featured),
           FEATURED_COUNT: featuredCount,
-          GENERATOR_FORM,
+          GENERATOR_FORM: targetDesign ? '' : GENERATOR_FORM,
         }))
       : null;
     content = withCustomLayer(defaultContent, customContent);
@@ -1323,11 +1329,11 @@ const designsDefault = `<section class="hero" style="padding-bottom:1rem">
 ${designs.map(designCard).join('\n')}
 </div>`;
 const designsCustom = customLayouts.designs_index
-  ? fillTemplate(customLayouts.designs_index, {
-      DESIGN_CARDS: customDesignList(designs),
-      DESIGN_COUNT: String(designs.length).padStart(2, '0'),
-      GENERATOR_FORM: '',
-    })
+  ? ensureGeneratorForm(fillTemplate(customLayouts.designs_index, {
+      DESIGN_CARDS: customDesignList(aiDesigns),
+      DESIGN_COUNT: String(aiDesigns.length).padStart(2, '0'),
+      GENERATOR_FORM: targetDesign ? '' : GENERATOR_FORM,
+    }))
   : null;
 
 await writeFile(
