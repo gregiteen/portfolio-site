@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { parseDocument } from '@ssss/cli/frontmatter';
 import { parseNestedMap, extractSections, scopeCss, fillTemplate } from './lib/theme.mjs';
 
-let targetDesign = 'ethereal-minimalist-gallery-soft-off-whi';
+let targetDesign = null;
 const designArgIdx = process.argv.indexOf('--design');
 if (designArgIdx >= 0 && designArgIdx + 1 < process.argv.length) {
   targetDesign = process.argv[designArgIdx + 1];
