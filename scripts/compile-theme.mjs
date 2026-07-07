@@ -434,8 +434,9 @@ ${blocks}
       return `${k}: ${JSON.stringify(String(v))}`;
     }).join('\n');
   
+  // Write the theme spec so the UI flipper can read it from the vault
   await writeFile(
-    join(vaultDir, 'pages', 'designs', `${styleName}.md`),
+    join(vaultDir, 'pages', 'themes', `${styleName}.md`),
     `---\ntype: page\n${specFm}\n---\n\n${(payload.designSpec || '').trim() || `Generated design for: ${prompt}`}\n`,
     'utf8'
   );
