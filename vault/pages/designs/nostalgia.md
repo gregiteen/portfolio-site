@@ -14,6 +14,7 @@ x_tags:
   - "Festival"
   - "Sponsorship Deck"
   - "Branding"
+x_link: "https://nostalgia.thetwc.xyz/"
 x_preview: "assets/designs/nostalgia-preview.png"
 ---
 
