@@ -132,7 +132,10 @@ was removed — see Discrepancy Log in the tracker).
 - Generation queue (`genJob`/`genQueue`) spawning compile-theme.mjs
 - CNA (`/api/cna`), proposal generation + revision loop
   (`/api/proposal-reply` webhook, `sendProposalToClient()`,
-  `reviseProposal()`), decision endpoint
+  `reviseProposal()`), decision endpoint. All Gemini→JSON responses parse via
+  `extractJson` (not bare `JSON.parse` — models fence output and emit trailing
+  commas; bare parse leaked raw JSON to CNA users and stubbed out drafts —
+  fixed 2026-07-08g). Residual bad-escape tail tracked as Phase 4.4.
 - Deferred notifications (`pendingVisitEmails` + sendBeacon `/api/leaving` +
   30-min fallback), re-armed from persisted state at boot
 - Admin API + dashboard; daily improvement cron; drip scheduler (FR-F)
@@ -147,8 +150,20 @@ was removed — see Discrepancy Log in the tracker).
   → index.html fix in serve.mjs static handler)
 
 ### 3.7 Continuous Improvement (`scripts/improve-theme.mjs`, `promote-theme.mjs`)
-- Daily 3 AM cron in serve.mjs runs improve-theme on ALL skins; swap-if-better;
-  deterministic model rotation (flash/pro)
+- **Intended flow: serve the first generation immediately, then improve it
+  asynchronously and hot-swap the better version in while the visitor is still
+  viewing** — get the design out first, refine it live. (Wiring the post-generation
+  improve trigger into serve.mjs is tracked in the improve-pipeline work.)
+- Daily 3 AM cron in serve.mjs also runs improve-theme on ALL skins; swap-if-better;
+  deterministic day+slug model rotation over **current-generation** IDs only
+  (`gemini-3.5-flash`, `gemini-3.1-pro-preview`, `gemini-3-flash-preview`).
+  **Gemini 2.5-pro is banned — older generation, never use it.**
+- Score/layout parsing goes through `extractJson` (lib/theme.mjs), whose
+  contract is **return object or throw** — improve-theme relies on the throw to
+  skip a bad model response instead of crashing (fixed 2026-07-08e). Note: the
+  new models still intermittently emit unparseable JSON (bad escapes) — the
+  durable fix is responseSchema / delimited out-of-band text, NOT falling back
+  to an old model.
 - `promote-theme.mjs` promotes a mature skin to the portfolio Designs index
 - Admin dashboard has a manual improvement trigger
 
@@ -208,7 +223,7 @@ email: "jane@acme.com"
 first_seen: 2026-07-07T18:00:00Z
 last_seen: 2026-07-08T02:11:00Z
 visits: 3
-style_prompt: "super mario"
+style_prompt: "midnight teal art-deco jazz lounge"
 generation_count: 1
 opt_in: true
 enrichment:            # screen, timezone, language, referrer, platform, touch, company inference

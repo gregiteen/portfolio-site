@@ -158,7 +158,7 @@ button or inline link in any built page (`grep -ri "design-spec\|design.md" dist
 
 **2.1 [droplet] Live-site smoke (old T1).**
 **Verify:** clown-car and all fossil URLs → 404; flipper swaps themes; all
-super-mario assets 200; designs index shows exactly Nostalgia + HSFD;
+whatever skin(s) are live serve 200; designs index shows exactly Nostalgia + HSFD;
 site root → 302 visitor gate.
 
 **2.2 [droplet] Restart durability scenario (old T2).** Seed a proposal +

@@ -261,7 +261,7 @@ Designs index; they are reachable via the flipper and standalone URLs only.
 #### FR-A — Droplet hygiene & deploy safety (G1) — *implemented, verified in Phase 1*
 - A1. All pre-clean-slate artifacts removed from the droplet. Only
   Nostalgia + HSFD remain as portfolio designs; only legitimately generated
-  skins (e.g. super-mario) remain as flipper themes.
+  skins (e.g. midnight-teal-art-deco-jazz-lounge) remain as flipper themes.
 - A2. Deploy skill Step 2 uses `--delete` with an explicit, documented
   exclude list covering every runtime-data path (Architecture §4.1), with the
   anchored-pattern warning (leading `/` is load-bearing).
@@ -399,14 +399,14 @@ Designs index; they are reachable via the flipper and standalone URLs only.
 | Extension registry (`vault-registry/` + `scripts/sync-registry.mjs`) | portfolio | ✅ built (Phase 2) |
 | Runtime store (visitors/proposals/runs, debounced atomic writes) | portfolio `scripts/runtime-store.mjs` | ✅ built (Phase 2) |
 | Bearer machine auth + export/decision endpoints | portfolio `scripts/serve.mjs` | ✅ built (Phase 3) |
-| Sync job + status | total-recall `src/core/portfolio-sync.mjs` | ✅ built (Phase 3) — unpushed? verify (FR-H) |
-| Docs API + saved views + VaultPage + InboxPage | total-recall | ✅ built (Phase 4) — unpushed? verify (FR-H) |
+| Sync job + status | total-recall `src/core/portfolio-sync.mjs` | ✅ built (Phase 3) — **committed + pushed** to `origin/main` (audit 0.5, 2026-07-08) |
+| Docs API + saved views + VaultPage + InboxPage | total-recall | ✅ built (Phase 4) — **committed + pushed** to `origin/main` (audit 0.5; files are `.tsx`) |
 | Hardened deploy skill (`--delete` + anchored excludes) | `~/.agent/skills/deploy/SKILL.md` (canonical, symlinked) | ✅ rewritten + verified |
 | Memory-node CRUD REST API w/ scoped PAT auth | total-recall `src/server/routes/memory.mjs` | ✅ pre-existing |
 | Session/profile persistence (atomic, debounced) | portfolio `serve.mjs` → `.data/sessions.json` | ✅ pre-existing |
-| Admin dashboard + `/api/admin/*` | portfolio `static/admin.html` + serve.mjs | ✅ built (P4) — unverified |
-| CNA chat + proposal generation + email loop | portfolio `static/consult.html` + serve.mjs | ✅ built (P3) — unverified |
-| Visitor enrichment + deferred notification | portfolio serve.mjs | ✅ built (P3) — unverified |
+| Admin dashboard + `/api/admin/*` | portfolio `static/admin.html` + serve.mjs | ✅ built (P4) — **verified live** (1.8, 2026-07-08) |
+| CNA chat + proposal generation + email loop | portfolio `static/consult.html` + serve.mjs | ✅ built (P3) — **verified live** (1.6/1.7, 2026-07-08; 3 JSON-parse bugs fixed) |
+| Visitor enrichment + deferred notification | portfolio serve.mjs | ✅ built (P3) — **verified live** (1.5, 2026-07-08) |
 | Drip campaign engine | — | ❌ **does not exist** (FR-F) |
 | Proposal PDF / e-sign delivery | — | ❌ **does not exist** (FR-G) |
 | Total-recall pointer doc | — | ❌ fabricated previously; must be created (FR-H2) |
