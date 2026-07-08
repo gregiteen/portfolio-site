@@ -843,13 +843,13 @@ createServer(async (req, res) => {
     let latestUrl = null;
     try {
       const fs = await import('node:fs/promises');
-      const designsDir = join(__dirname, '..', 'vault', 'pages', 'designs');
-      const files = await fs.readdir(designsDir);
+      const skinsDir = join(__dirname, '..', 'vault', 'pages', 'skins');
+      const files = await fs.readdir(skinsDir);
       
       const stats = await Promise.all(
-        files.filter(f => f.endsWith('.md') && f !== 'nostalgia.md' && f !== 'high-stakes-field-day.md')
+        files.filter(f => f.endsWith('.md'))
              .map(async f => {
-                const s = await fs.stat(join(designsDir, f));
+                const s = await fs.stat(join(skinsDir, f));
                 return { name: f, mtime: s.mtimeMs };
              })
       );
