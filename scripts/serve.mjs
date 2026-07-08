@@ -7,7 +7,7 @@ import { watch } from 'node:fs';
 import { execFile, spawn } from 'node:child_process';
 import { join, normalize, extname, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { createTransport } from 'nodemailer';
 import https from 'node:https';
 import {
@@ -488,6 +488,56 @@ function geminiCall(apiKey, prompt) {
   });
 }
 
+
+async function sendProposalToClient(proposalId, thread) {
+  if (thread.status === 'sent') return { noop: true };
+  const clientSubject = thread.proposal.subject_line || `Project Proposal from Greg Iteen`;
+  await smtpTransport.sendMail({
+    from: mailFrom,
+    to: thread.clientEmail,
+    cc: mailOwner,
+    subject: clientSubject,
+    text: `${thread.proposal.client_email_draft}\n\n${'─'.repeat(40)}\n\n${thread.proposal.proposal_text}\n\n— Greg Iteen\ngregiteen.xyz`,
+  });
+  await smtpTransport.sendMail({
+    from: mailFrom,
+    to: mailOwner,
+    subject: `✓ Proposal sent to ${thread.clientEmail}`,
+    text: `Proposal ${proposalId} has been sent to ${thread.clientEmail}.\nYou were CC'd on the email.`,
+  });
+  thread.status = 'sent';
+  thread.decidedAt = new Date().toISOString();
+  proposalThreads.set(proposalId, thread);
+  await upsertProposal(proposalId, thread);
+  return { status: 'sent' };
+}
+
+async function reviseProposal(proposalId, thread, replyText) {
+  const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
+  if (!GOOGLE_API_KEY) throw new Error('No API key for revision');
+  thread.revisions++;
+  thread.status = 'revising';
+  const revisionPrompt = `You are revising a project proposal based on feedback from the author (Greg Iteen).\n\nCURRENT PROPOSAL:\n${thread.proposal.proposal_text}\n\nCURRENT CLIENT EMAIL DRAFT:\n${thread.proposal.client_email_draft}\n\nGREG'S FEEDBACK:\n${replyText}\n\nApply Greg's feedback precisely. Do not add anything he didn't ask for. Do not remove anything he didn't mention. If he gives specific wording, use it verbatim.\n\nOUTPUT: Return exactly one JSON object:\n{\n  "subject_line": "Updated subject line if needed",\n  "proposal_text": "The full revised proposal",\n  "client_email_draft": "The revised email to accompany the proposal",\n  "changes_made": "Brief summary of what changed"\n}`;
+  const revisionRaw = await geminiCall(GOOGLE_API_KEY, revisionPrompt);
+  const revision = JSON.parse(revisionRaw);
+  thread.revision_history = [
+    ...(Array.isArray(thread.revision_history) ? thread.revision_history : []),
+    { at: new Date().toISOString(), feedback: replyText, revision },
+  ];
+  thread.proposal = revision;
+  thread.status = 'pending_approval';
+  await upsertProposal(proposalId, thread);
+  const replyTo = `proposal-${proposalId}@${process.env.MAIL_DOMAIN || 'gregiteen.xyz'}`;
+  await smtpTransport.sendMail({
+    from: mailFrom,
+    to: mailOwner,
+    replyTo,
+    subject: `Re: [PROPOSAL] ${revision.subject_line || 'Revised'} — Rev ${thread.revisions}`,
+    text: `REVISION #${thread.revisions}\n${'─'.repeat(60)}\nCHANGES: ${revision.changes_made || 'Applied your feedback'}\n\n${'─'.repeat(60)}\nREVISED PROPOSAL\n${'─'.repeat(60)}\n${revision.proposal_text}\n\n${'─'.repeat(60)}\nREVISED CLIENT EMAIL\n${'─'.repeat(60)}\n${revision.client_email_draft}\n\n${'═'.repeat(60)}\nReply with more edits, or reply "send it" to send to ${thread.clientEmail}.\n${'═'.repeat(60)}`,
+  });
+  return { status: 'revised' };
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function sendJson(res, code, obj) {
@@ -540,11 +590,25 @@ function isAuthenticated(req) {
 function isAdmin(req) {
   const cookies = parseCookies(req.headers.cookie);
   const token = cookies.gi_auth;
-  if (!token) return false;
-  const session = authTokens.get(token);
-  if (!session) return false;
-  // Admin = the site owner's email
-  return session.email === mailOwner || session.email === process.env.ADMIN_EMAIL;
+  if (token) {
+    const session = authTokens.get(token);
+    if (session && (session.email === mailOwner || session.email === process.env.ADMIN_EMAIL)) {
+      return true;
+    }
+  }
+
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const provided = authHeader.slice(7).trim();
+    const expected = process.env.ADMIN_API_TOKEN;
+    if (expected && provided.length === expected.length) {
+      if (timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 // ─── Server ──────────────────────────────────────────────────────────────────
@@ -1155,131 +1219,40 @@ ${'═'.repeat(60)}`;
       // Check for "send it" command
       const cleaned = replyText.replace(/^>.*$/gm, '').trim().toLowerCase();
       if (cleaned === 'send it' || cleaned === 'send it.' || cleaned.startsWith('send it')) {
-        // FINALIZE: Send proposal to client
-        console.log(`[Proposal ${proposalId}] SENDING to client: ${thread.clientEmail}`);
-
-        const clientSubject = thread.proposal.subject_line || `Project Proposal from Greg Iteen`;
-
         try {
-          await smtpTransport.sendMail({
-            from: mailFrom,
-            to: thread.clientEmail,
-            cc: mailOwner,
-            subject: clientSubject,
-            text: `${thread.proposal.client_email_draft}\n\n${'─'.repeat(40)}\n\n${thread.proposal.proposal_text}\n\n— Greg Iteen\ngregiteen.xyz`,
-          });
-
-          // Notify Greg it was sent
-          await smtpTransport.sendMail({
-            from: mailFrom,
-            to: mailOwner,
-            subject: `✓ Proposal sent to ${thread.clientEmail}`,
-            text: `Proposal ${proposalId} has been sent to ${thread.clientEmail}.\nYou were CC'd on the email.`,
-          });
-
-          thread.status = 'sent';
-          thread.decidedAt = new Date().toISOString();
-          proposalThreads.set(proposalId, thread);
-          await upsertProposal(proposalId, thread);
-          console.log(`[Proposal ${proposalId}] Sent and closed.`);
-        } catch (/** @type {any} */ sendErr) {
+          const resObj = await sendProposalToClient(proposalId, thread);
+          return sendJson(res, 200, resObj);
+        } catch (sendErr) {
           console.error(`[Proposal ${proposalId}] Send failed:`, sendErr.message);
           await smtpTransport.sendMail({
             from: mailFrom, to: mailOwner,
             subject: `✗ Failed to send proposal ${proposalId}`,
             text: `Error: ${sendErr.message}\n\nThe proposal was NOT sent. Try again or send manually.`,
           }).catch(() => {});
+          return sendJson(res, 500, { error: sendErr.message });
         }
-
-        return sendJson(res, 200, { status: 'sent' });
       }
 
-      // REVISION: Greg wants edits — send feedback to AI, generate revised proposal
-      const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
-      if (!GOOGLE_API_KEY) {
-        return sendJson(res, 500, { error: 'No API key for revision' });
-      }
-
-      thread.revisions++;
-      thread.status = 'revising';
-      console.log(`[Proposal ${proposalId}] Revision #${thread.revisions}…`);
-
-      const revisionPrompt = `You are revising a project proposal based on feedback from the author (Greg Iteen).
-
-CURRENT PROPOSAL:
-${thread.proposal.proposal_text}
-
-CURRENT CLIENT EMAIL DRAFT:
-${thread.proposal.client_email_draft}
-
-GREG'S FEEDBACK:
-${replyText}
-
-Apply Greg's feedback precisely. Do not add anything he didn't ask for. Do not remove anything he didn't mention. If he gives specific wording, use it verbatim.
-
-OUTPUT: Return exactly one JSON object:
-{
-  "subject_line": "Updated subject line if needed",
-  "proposal_text": "The full revised proposal",
-  "client_email_draft": "The revised email to accompany the proposal",
-  "changes_made": "Brief summary of what changed"
-}`;
-
+      // REVISION
       try {
-        const revisionRaw = await geminiCall(GOOGLE_API_KEY, revisionPrompt);
-        const revision = JSON.parse(revisionRaw);
-        thread.revision_history = [
-          ...(Array.isArray(thread.revision_history) ? thread.revision_history : []),
-          { at: new Date().toISOString(), feedback: replyText, revision },
-        ];
-        thread.proposal = revision;
-        thread.status = 'pending_approval';
-        await upsertProposal(proposalId, thread);
-
-        // Email revised version back to Greg
-        const replyTo = `proposal-${proposalId}@${process.env.MAIL_DOMAIN || 'gregiteen.xyz'}`;
-        await smtpTransport.sendMail({
-          from: mailFrom,
-          to: mailOwner,
-          replyTo,
-          subject: `Re: [PROPOSAL] ${revision.subject_line || 'Revised'} — Rev ${thread.revisions}`,
-          text: `REVISION #${thread.revisions}
-${'─'.repeat(60)}
-CHANGES: ${revision.changes_made || 'Applied your feedback'}
-
-${'─'.repeat(60)}
-REVISED PROPOSAL
-${'─'.repeat(60)}
-${revision.proposal_text}
-
-${'─'.repeat(60)}
-REVISED CLIENT EMAIL
-${'─'.repeat(60)}
-${revision.client_email_draft}
-
-${'═'.repeat(60)}
-Reply with more edits, or reply "send it" to send to ${thread.clientEmail}.
-${'═'.repeat(60)}`,
-        });
-
-        console.log(`[Proposal ${proposalId}] Revision ${thread.revisions} sent to Greg.`);
-      } catch (/** @type {any} */ revErr) {
+        const resObj = await reviseProposal(proposalId, thread, replyText);
+        return sendJson(res, 200, resObj);
+      } catch (revErr) {
         console.error(`[Proposal ${proposalId}] Revision failed:`, revErr.message);
         await smtpTransport.sendMail({
           from: mailFrom, to: mailOwner,
           subject: `✗ Revision failed for proposal ${proposalId}`,
           text: `AI revision failed: ${revErr.message}\n\nYour feedback: ${replyText}\n\nReply again to retry.`,
         }).catch(() => {});
+        return sendJson(res, 500, { error: revErr.message });
       }
-
-      return sendJson(res, 200, { status: 'revised' });
-    } catch (/** @type {any} */ err) {
+    } catch (err) {
       console.error('[Proposal Reply] Error:', err.message);
       return sendJson(res, 500, { error: err.message });
     }
   }
 
-  // ── Admin: Protect admin page ──
+// ── Admin: Protect admin page ──
   if (urlPath === '/admin.html' && !isAdmin(req)) {
     res.writeHead(403, { 'content-type': 'text/plain' });
     res.end('Forbidden');
@@ -1388,6 +1361,71 @@ ${'═'.repeat(60)}`,
         return sendJson(res, 200, { success: true });
       } catch (/** @type {any} */ e) {
         return sendJson(res, 500, { error: e.message });
+      }
+    }
+
+
+    // POST /api/admin/proposals/:id/decision
+    const decisionMatch = adminPath.match(/^\/proposals\/([a-f0-9]+)\/decision$/);
+    if (decisionMatch && req.method === 'POST') {
+      const proposalId = decisionMatch[1];
+      const thread = proposalThreads.get(proposalId);
+      if (!thread) return sendJson(res, 404, { error: 'Proposal not found' });
+      try {
+        const { action, notes } = await readBody(req);
+        if (action === 'approve') {
+          const resObj = await sendProposalToClient(proposalId, thread);
+          return sendJson(res, 200, resObj);
+        } else if (action === 'revise') {
+          const resObj = await reviseProposal(proposalId, thread, notes || 'Please revise');
+          return sendJson(res, 200, resObj);
+        } else if (action === 'reject') {
+          thread.status = 'rejected';
+          thread.decidedAt = new Date().toISOString();
+          thread.decisionNotes = notes || '';
+          proposalThreads.set(proposalId, thread);
+          await upsertProposal(proposalId, thread);
+          return sendJson(res, 200, { status: 'rejected' });
+        } else {
+          return sendJson(res, 400, { error: 'Invalid action' });
+        }
+      } catch (e) {
+        return sendJson(res, 500, { error: e.message });
+      }
+    }
+
+    // GET /api/admin/export-bundle
+    if (adminPath === '/export-bundle' && req.method === 'GET') {
+      try {
+        const { spawnSync } = await import('node:child_process');
+        const ssssCmd = join(__dirname, '..', 'node_modules', '.bin', 'ssss');
+        const result = spawnSync(process.execPath, [ssssCmd, 'export', 'vault', '--profile', 'sale', '--registry', 'vault-registry'], { cwd: join(__dirname, '..'), stdio: ['ignore', 'pipe', 'pipe'] });
+        if (result.status !== 0) throw new Error(String(result.stderr));
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(result.stdout);
+        return;
+      } catch (/** @type {any} */ e) {
+        return sendJson(res, 500, { error: e.message, stderr: e.message });
+      }
+    }
+
+    // GET /api/admin/export-assets
+    if (adminPath === '/export-assets' && req.method === 'GET') {
+      try {
+        const { spawn } = await import('node:child_process');
+        res.writeHead(200, { 'content-type': 'application/gzip', 'content-disposition': 'attachment; filename="assets.tar.gz"' });
+        const child = spawn('tar', ['-czf', '-', 'designs', 'vault/pages/skins'], { cwd: join(__dirname, '..'), stdio: ['ignore', 'pipe', 'pipe'] });
+        let stderr = '';
+        child.stderr.on('data', (c) => stderr += String(c));
+        child.stdout.pipe(res);
+        child.on('close', (code) => {
+          if (code !== 0) console.error('[Export Assets] tar failed:', stderr);
+        });
+        return;
+      } catch (/** @type {any} */ e) {
+        if (!res.headersSent) return sendJson(res, 500, { error: e.message });
+        res.end();
+        return;
       }
     }
 

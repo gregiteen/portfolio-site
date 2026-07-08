@@ -37,9 +37,9 @@ the Discrepancy Log before working around it.
 
 ## ⏳ Phase 3: Sync Bridge
 
-- [ ] 3.1 [portfolio] Bearer auth in `isAdmin()` (timing-safe); token provisioned on droplet; 200/403/403 curl matrix verified
-- [ ] 3.2 [portfolio] `GET /api/admin/export-bundle` (validates via `ssss validate`) + `GET /api/admin/export-assets` (untars correctly)
-- [ ] 3.3 [portfolio] Decision endpoint; "send it"/revise logic extracted to shared functions; approve/revise/reject + idempotent re-approve verified
+- [x] 3.1 [portfolio] Bearer auth in `isAdmin()` (timing-safe); token provisioned on droplet; 200/403/403 curl matrix verified
+- [x] 3.2 [portfolio] `GET /api/admin/export-bundle` (validates via `ssss validate`) + `GET /api/admin/export-assets` (untars correctly)
+- [x] 3.3 [portfolio] Decision endpoint; "send it"/revise logic extracted to shared functions; approve/revise/reject + idempotent re-approve verified
 - [ ] 3.4 [total-recall] `src/core/portfolio-sync.mjs` + scheduler registration + config; `portfolio-sync.spec.mjs` green (success / unreachable / invalid-bundle)
 - [ ] 3.5 [total-recall] First real sync: bundle imported to `~/.agent/tenants/portfolio-site/vault/`; brain visible in `/api/brains` with node count > 0; re-sync idempotent
 - [ ] 3.6 [total-recall] `GET /api/sync/portfolio/status` reflects ok and failure states (bad-token drill performed)
