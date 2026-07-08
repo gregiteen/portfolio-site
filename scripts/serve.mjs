@@ -1522,7 +1522,10 @@ ${'═'.repeat(60)}`;
   }
 
   // ── Static file serving ──
-  let file = normalize(join(root, urlPath === '/' ? 'index.html' : urlPath));
+  let resolved = urlPath === '/' ? 'index.html' : urlPath;
+  // Directory URLs (trailing slash) → index.html
+  if (resolved.endsWith('/')) resolved += 'index.html';
+  let file = normalize(join(root, resolved));
   if (file !== root && !file.startsWith(root + sep)) { res.writeHead(403).end(); return; }
   try {
     const body = await readFile(file);
