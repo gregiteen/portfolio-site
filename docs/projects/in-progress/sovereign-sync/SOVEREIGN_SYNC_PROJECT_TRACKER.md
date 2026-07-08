@@ -33,7 +33,7 @@ the Discrepancy Log before working around it.
 - [x] 2.5 Deferred notifications persisted + re-armed at boot; restart test shows email still fires
 - [x] 2.6 `generation_run` docs written for each generation (verified lifecycle fields on a real run)
 - [x] 2.7 Portability proof: sale export with scratch runtime docs dropped `runtime/proposals/*`, `runtime/runs/*`, and `runtime/visitors/*`; backup export validates with `--registry vault-registry`; `.gitignore` has `vault/runtime/` and `vault/.events/`.
-- [ ] 2.8 Phase-2 deploy: droplet boot hydrates cleanly; droplet restart durability spot-check passed
+- [x] 2.8 Phase-2 deploy: droplet boot hydrates cleanly; droplet restart durability spot-check passed
 
 ## ⏳ Phase 3: Sync Bridge
 
