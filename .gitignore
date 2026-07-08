@@ -3,8 +3,23 @@ dist/
 *.ucw.json
 .DS_Store
 
-# agent-local state (contains tokens & personal memory)
-.agent/
+# agent-local state (contains tokens & personal memory) — memory/tenants stay
+# ignored, but THIS REPO'S skills are tracked tooling (no secrets) and shipped.
+.agent/*
+!.agent/skills/
+.agent/skills/*
+!.agent/skills/code-quality/
+!.agent/skills/database/
+!.agent/skills/deploy/
+!.agent/skills/email/
+!.agent/skills/frontend-design/
+!.agent/skills/marketing/
+!.agent/skills/project-management/
+!.agent/skills/push/
+!.agent/skills/security/
+# Total Recall skill + its embedded skills are global/symlinked — keep out
+.agent/skills/total-recall
+.agent/skills/tr-*
 .claude/
 .remember/
 
