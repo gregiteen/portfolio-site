@@ -669,7 +669,7 @@ const FLIPPER_SCRIPT_TEMPLATE = `<script>
   const nextUrl = nextBase + subPath;
 
   const flipperHtml = \`
-    <div id="ai-design-flipper" style="position:fixed; top:0; left:0; right:0; height:44px; background:#111; color:#eee; display:flex; align-items:center; justify-content:center; z-index:99999; font-family:monospace; font-size: 13px; border-bottom:1px solid #333; view-transition-name: theme-flipper;">
+    <div id="ai-design-flipper" style="position:fixed; top:0; left:0; right:0; height:44px; background:#111; color:#eee; display:flex; align-items:center; justify-content:center; z-index:99999; font-family:monospace; font-size: 13px; border-bottom:1px solid #333; view-transition-name: design-flipper;">
       <a href="\${prevUrl}" style="color:#aaa; text-decoration:none; padding:10px 20px;">&larr; Prev Design</a>
       <span style="margin:0 20px; font-weight:bold; color:#fff;">\${designs[currentIndex].name}</span>
       <a href="\${nextUrl}" style="color:#aaa; text-decoration:none; padding:10px 20px;">Next Design &rarr;</a>
