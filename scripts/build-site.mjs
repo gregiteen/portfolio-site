@@ -1147,7 +1147,6 @@ function designCard(d, i) {
     <span class="foot">
       <span class="year">${d.data.x_year ?? ''}</span>
       <span>
-        <a href="/api/design-spec?slug=${escapeHtml(d.data.slug)}" download="design.md" onclick="event.stopPropagation()" style="text-decoration: none; border-bottom: 1px solid var(--line); margin-right: 12px;">↓ DESIGN.md</a>
         <span class="visit">view live ↗</span>
       </span>
     </span>
