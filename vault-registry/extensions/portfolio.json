@@ -1,0 +1,30 @@
+{
+  "$schema": "https://ssss.dev/registry/v1",
+  "registry": "portfolio",
+  "extends": "core",
+  "spec_version": "0.3",
+  "description": "gregiteen.xyz runtime data primitives.",
+  "document_primitives": {
+    "visitor_profile": {
+      "family": "crm",
+      "canonical_path": "runtime/visitors/<email-slug>.md",
+      "append_only": false,
+      "portability": "tenant_private",
+      "required_fields": ["type", "email", "first_seen", "last_seen", "visits"]
+    },
+    "proposal": {
+      "family": "crm",
+      "canonical_path": "runtime/proposals/<id>.md",
+      "append_only": false,
+      "portability": "tenant_private",
+      "required_fields": ["type", "proposal_id", "client_email", "status", "created_at"]
+    },
+    "generation_run": {
+      "family": "ops",
+      "canonical_path": "runtime/runs/<id>.md",
+      "append_only": true,
+      "portability": "tenant_private",
+      "required_fields": ["type", "run_id", "prompt", "status", "started_at"]
+    }
+  }
+}

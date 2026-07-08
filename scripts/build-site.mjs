@@ -8,7 +8,7 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // @ts-ignore
 import { parseDocument } from '@ssss/cli/frontmatter';
-import { parseNestedMap, extractSections, scopeCss, fillTemplate } from './lib/theme.mjs';
+import { extractSections, fillTemplate } from './lib/theme.mjs';
 
 let targetDesign = null;
 const designArgIdx = process.argv.indexOf('--design');
@@ -64,6 +64,15 @@ function renderMarkdown(md) {
 
 const STYLE = /* css */ `
 :root {
+  /* Base design tokens — the permanent brutalist design system. */
+  --ink: #000000;
+  --bone: #ffffff;
+  --bone-dim: #aaaaaa;
+  --accent: #ff6a00;
+  --line: #333333;
+  --blur: 10px;
+  --grid-opacity: 0.15;
+  --grain-opacity: 0.08;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --serif: "Fraunces", Georgia, serif;
   --sans: "Archivo", -apple-system, Helvetica, Arial, sans-serif;
@@ -1003,31 +1012,18 @@ for (const file of files) {
   pages.push({ file, raw, data: doc.data, body: doc.body, html: renderMarkdown(doc.body) });
 }
 
-// ── SSSS dynamic themes from the vault ──────────────────────────────────────
-// Built-in themes declare token maps in x_variables. The canonical @ssss/cli
-// parser only records nested maps as present, so tokens are re-parsed from the
-// raw document — this is what feeds the [data-theme] blocks the flipper needs.
-const themes = pages.filter((p) => p.data.x_kind === 'theme');
-const builtinThemes = themes.filter((t) => t.data.slug !== 'theme-custom');
-const customTheme = themes.find((t) => t.data.slug === 'theme-custom') ?? null;
-
-// Emit the warm (default) tokens on :root FIRST, then every theme as a
-// higher-specificity html[data-theme] block — otherwise the fallback would
-// win the cascade tie and the flipper would be a no-op.
-const themeCssBlocks = [];
-for (const t of builtinThemes) {
-  if (targetDesign) continue;
-  const name = t.data.slug.replace('theme-', '');
-  const tokens = parseNestedMap(t.raw, 'x_variables');
-  const vars = Object.entries(tokens)
-    .map(([k, v]) => `  --${k.replace(/_/g, '-')}: ${v};`)
-    .join('\n');
-  const accent = tokens.accent ?? '#ffffff';
-  if (name === 'warm') themeCssBlocks.unshift(`:root {\n${vars}\n}`);
-  themeCssBlocks.push(`html[data-theme="${name}"] {\n${vars}\n}\n.theme-pill.${name}::after { background: ${accent}; }`);
+// ── Clean slate: built-in x_kind:theme themes are retired ────────────────────
+// The site's base design tokens live in the base :root (see STYLE above). The
+// only dynamic theming is the AI-generated skin flipper (x_kind:theme-skin,
+// below). Any stray x_kind:theme doc is a fossil — warn loudly and ignore it so
+// it can never again be baked into the site CSS.
+for (const t of pages.filter((p) => p.data.x_kind === 'theme')) {
+  console.warn(`[Warn] Ignoring stray x_kind:theme fossil: vault/pages/${t.data.slug}.md — built-in themes are retired (clean slate).`);
 }
+const themeCssBlocks = [];
 
-// The generated custom theme: scoped CSS + layout templates from fenced sections.
+// Individual AI-skin build (node build-site.mjs --design <slug>): pull scoped CSS
+// + layout templates from the generated designs/<slug>/DESIGN.md.
 if (targetDesign) {
   try {
     const designMdRaw = await readFile(join(root, 'designs', targetDesign, 'DESIGN.md'), 'utf8');
@@ -1042,17 +1038,6 @@ if (targetDesign) {
     }
   } catch (e) {
     console.warn(`[Warn] Could not parse DESIGN.md for ${targetDesign}: ${String(e)}`);
-  }
-} else if (customTheme) {
-  const sections = extractSections(customTheme.body);
-  if (sections.css) {
-    scopedCustomCss = scopeCss(sections.css);
-    customLayouts = {};
-    for (const [key, content] of Object.entries(sections)) {
-      if (key.startsWith('layout:')) customLayouts[key.slice('layout:'.length)] = content;
-    }
-    const customAccent = customTheme.data.x_accent || '#888888';
-    themeCssBlocks.push(`.theme-pill.custom::after { background: ${customAccent}; }`);
   }
 }
 

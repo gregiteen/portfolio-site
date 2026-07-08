@@ -6,10 +6,12 @@
   "description": "An SSSS-native project — Markdown vault as source of truth.",
   "scripts": {
     "ssss": "ssss",
+    "sync-registry": "node scripts/sync-registry.mjs",
+    "postinstall": "node scripts/sync-registry.mjs",
     "build": "node scripts/build-site.mjs",
     "dev": "node scripts/build-site.mjs && node scripts/serve.mjs",
     "test": "node --test",
-    "export": "ssss export vault --profile sale --out dist/bundle.ucw.json",
+    "export": "ssss export vault --profile sale --registry vault-registry --out dist/bundle.ucw.json",
     "validate": "ssss conformance --engine"
   },
   "dependencies": {

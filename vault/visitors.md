@@ -3,6 +3,8 @@ type: run
 title: Portfolio Visitors
 description: Append-only log of verified portfolio visitors (tenant_private, never exported).
 timestamp: 2026-07-06T19:00:00Z
+run_id: portfolio-visitors
+workflow_id: visitor-logging
 ---
 
 # Portfolio Visitors

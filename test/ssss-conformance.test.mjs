@@ -14,7 +14,9 @@ import { exportBundle, validateBundle, provisionBundle, importBundle } from '@ss
 
 const require = createRequire(import.meta.url);
 const { fixtures } = require('@ssss/cli/conformance/fixtures.json');
-const VAULT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'vault');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const VAULT = path.join(ROOT, 'vault');
+const REGISTRY = path.join(ROOT, 'vault-registry');
 
 test('engine implements the canonical Operation Contract (spec §6)', () => {
   const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'ssss-conf-'));
@@ -32,8 +34,8 @@ test('engine implements the canonical Operation Contract (spec §6)', () => {
 });
 
 test('this vault exports, validates, and round-trips as a sale bundle (spec §16/§17)', () => {
-  const bundle = exportBundle(VAULT, { profile: 'sale', name: 'starter' });
-  const { valid, errors } = validateBundle(bundle);
+  const bundle = exportBundle(VAULT, { profile: 'sale', name: 'starter', registryDir: REGISTRY });
+  const { valid, errors } = validateBundle(bundle, { registryDir: REGISTRY });
   assert.ok(valid, 'bundle invalid: ' + errors.join('; '));
   assert.ok(!bundle.files.some((f) => f.path.startsWith('tasks/')), 'tenant_private leaked into sale export');
 

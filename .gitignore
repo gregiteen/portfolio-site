@@ -11,3 +11,5 @@ dist/
 # secrets
 .env
 .data/
+vault/runtime/
+vault/.events/

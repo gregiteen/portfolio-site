@@ -10,6 +10,16 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes, createHash } from 'node:crypto';
 import { createTransport } from 'nodemailer';
 import https from 'node:https';
+import {
+  initRuntimeStore,
+  listVisitors,
+  listProposals,
+  upsertVisitor,
+  upsertProposal,
+  deleteProposal,
+  appendRun,
+  pendingNotifications,
+} from './runtime-store.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -62,7 +72,7 @@ watch(vaultDir, { recursive: true }, (eventType, filename) => {
 });
 
 // ─── Theme generation job (queued, async, polled via /generate-status) ────────
-const genJob = { status: 'idle', phase: '', prompt: '', error: null, startedAt: null, finishedAt: null };
+const genJob = { status: 'idle', phase: '', prompt: '', error: null, startedAt: null, finishedAt: null, runId: null };
 const genQueue = [];
 
 /** Start now if idle, otherwise queue — nothing gets silently dropped. */
@@ -81,12 +91,17 @@ function drainQueue() {
 }
 
 function startGeneration(prompt) {
+  const runId = randomBytes(8).toString('hex');
   genJob.status = 'running';
   genJob.phase = 'Starting generator…';
   genJob.prompt = prompt;
   genJob.error = null;
   genJob.startedAt = Date.now();
   genJob.finishedAt = null;
+  genJob.runId = runId;
+  appendRun({ run_id: runId, prompt, status: 'running', startedAt: genJob.startedAt }).catch((err) => {
+    console.error('[Runtime] Failed to persist generation start:', err.message);
+  });
 
   // Argument array — the prompt never touches a shell.
   const child = spawn(process.execPath, [compileScript, prompt], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -107,6 +122,9 @@ function startGeneration(prompt) {
     genJob.status = 'error';
     genJob.error = err.message;
     genJob.finishedAt = Date.now();
+    appendRun({ run_id: runId, prompt, status: 'failed', startedAt: genJob.startedAt, finishedAt: genJob.finishedAt, error: err.message }).catch((e) => {
+      console.error('[Runtime] Failed to persist generation failure:', e.message);
+    });
     drainQueue();
   });
   child.on('close', (code) => {
@@ -115,11 +133,17 @@ function startGeneration(prompt) {
       genJob.status = 'done';
       genJob.phase = 'Theme compiled';
       console.log(`[Generator] Done in ${Math.round((genJob.finishedAt - genJob.startedAt) / 1000)}s.`);
+      appendRun({ run_id: runId, prompt, status: 'done', startedAt: genJob.startedAt, finishedAt: genJob.finishedAt }).catch((e) => {
+        console.error('[Runtime] Failed to persist generation completion:', e.message);
+      });
       rebuild('generated theme'); // watcher usually catches it, but be certain
     } else {
       genJob.status = 'error';
       genJob.error = (stderrTail.trim().split('\n').pop() || `generator exited with code ${code}`).slice(0, 300);
       console.error(`[Generator] Failed:`, genJob.error);
+      appendRun({ run_id: runId, prompt, status: 'failed', startedAt: genJob.startedAt, finishedAt: genJob.finishedAt, error: genJob.error }).catch((e) => {
+        console.error('[Runtime] Failed to persist generation failure:', e.message);
+      });
     }
     drainQueue();
   });
@@ -156,8 +180,13 @@ async function loadSessions() {
     for (const [t, s] of Object.entries(raw.tokens ?? {})) {
       if (Date.now() - s.issuedAt < TOKEN_TTL) authTokens.set(t, s);
     }
-    for (const [e, p] of Object.entries(raw.profiles ?? {})) visitorProfiles.set(e, p);
-    console.log(`[Sessions] Restored ${authTokens.size} sessions, ${visitorProfiles.size} visitor profiles`);
+    for (const [e, p] of Object.entries(raw.profiles ?? {})) {
+      if (!visitorProfiles.has(e)) {
+        const migrated = await upsertVisitor(e, p);
+        visitorProfiles.set(e, migrated);
+      }
+    }
+    console.log(`[Sessions] Restored ${authTokens.size} sessions; runtime store has ${visitorProfiles.size} visitor profiles`);
   } catch { /* first boot — nothing to restore */ }
 }
 
@@ -169,14 +198,28 @@ function saveSessions() {
     await mkdir(dataDir, { recursive: true });
     const payload = JSON.stringify({
       tokens: Object.fromEntries(authTokens),
-      profiles: Object.fromEntries(visitorProfiles),
     });
     const tmp = sessionsFile + '.tmp';
     await writeFile(tmp, payload, 'utf8');
     await rename(tmp, sessionsFile);
   }, 250);
 }
+const runtimeCounts = await initRuntimeStore();
+for (const visitor of listVisitors()) visitorProfiles.set(visitor.email, visitor);
+for (const proposal of listProposals()) proposalThreads.set(proposal.id, proposal);
 await loadSessions();
+for (const pending of pendingNotifications()) {
+  const token = pending.pending_notification?.token;
+  const sessionInfo = pending.pending_notification?.sessionInfo;
+  if (!token || !sessionInfo) continue;
+  const sendAfter = Date.parse(pending.pending_notification.send_after || '') || Date.now() + 30 * 60 * 1000;
+  const delay = Math.max(0, sendAfter - Date.now());
+  const timer = setTimeout(() => {
+    sendDeferredNotification(token);
+  }, delay);
+  pendingVisitEmails.set(token, { sessionInfo, cnaData: pending.pending_notification.cnaData || null, timer });
+}
+console.log(`[Runtime] Hydrated ${runtimeCounts.visitors} visitor profiles, ${runtimeCounts.proposals} proposals, ${pendingVisitEmails.size} pending notifications`);
 
 /** SMTP transporter */
 const smtpTransport = createTransport({
@@ -395,6 +438,15 @@ function sendDeferredNotification(token) {
   if (cna) {
     // Visitor did CNA — include assessment in the notification
     info.cnaAssessment = cna;
+  }
+
+  const existing = visitorProfiles.get(info.email);
+  if (existing) {
+    const next = { ...existing, pending_notification: null };
+    visitorProfiles.set(info.email, next);
+    upsertVisitor(info.email, next).catch((err) => {
+      console.error('[Runtime] Failed to clear pending notification:', err.message);
+    });
   }
 
   notifyOwner(info).catch(err => console.error('[Visitors] Notify error:', err.message));
@@ -635,14 +687,18 @@ createServer(async (req, res) => {
       // Visitor memory: profile upsert (drives welcome-back + one-time confirmation email)
       const emailKey = email.toLowerCase();
       const prior = visitorProfiles.get(emailKey);
-      visitorProfiles.set(emailKey, {
+      const nextProfile = {
         style,
         optIn: prior?.optIn ?? optIn,
         firstSeen: prior?.firstSeen ?? Date.now(),
         lastSeen: Date.now(),
         visits: (prior?.visits ?? 0) + 1,
         generations: (prior?.generations ?? 0) + 1,
-      });
+        enrichment: prior?.enrichment || {},
+        pending_notification: prior?.pending_notification || null,
+      };
+      visitorProfiles.set(emailKey, nextProfile);
+      await upsertVisitor(emailKey, nextProfile);
       saveSessions();
 
       // Log visitor and notify Greg with full session info + enrichment
@@ -663,7 +719,19 @@ createServer(async (req, res) => {
       const exitTimer = setTimeout(() => {
         sendDeferredNotification(token);
       }, 30 * 60 * 1000); // 30 min fallback
+      const pendingNotification = {
+        token,
+        held_since: new Date().toISOString(),
+        send_after: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        sessionInfo,
+        cnaData: null,
+      };
       pendingVisitEmails.set(token, { sessionInfo, cnaData: null, timer: exitTimer });
+      const withPending = { ...nextProfile, enrichment: sessionInfo, pending_notification: pendingNotification };
+      visitorProfiles.set(emailKey, withPending);
+      upsertVisitor(emailKey, withPending).catch((err) => {
+        console.error('[Runtime] Failed to persist pending notification:', err.message);
+      });
 
       // First visit → personal confirmation/welcome email from sales@
       if (!prior) {
@@ -869,7 +937,23 @@ If NOT complete, respond with just:
 
       // Attach CNA to deferred visitor notification
       if (token && pendingVisitEmails.has(token)) {
-        pendingVisitEmails.get(token).cnaData = assessment;
+        const pending = pendingVisitEmails.get(token);
+        pending.cnaData = assessment;
+        const sessionEmail = pending.sessionInfo?.email;
+        const existing = sessionEmail ? visitorProfiles.get(sessionEmail) : null;
+        if (existing?.pending_notification) {
+          const next = {
+            ...existing,
+            pending_notification: {
+              ...existing.pending_notification,
+              cnaData: assessment,
+            },
+          };
+          visitorProfiles.set(sessionEmail, next);
+          upsertVisitor(sessionEmail, next).catch((err) => {
+            console.error('[Runtime] Failed to persist CNA notification payload:', err.message);
+          });
+        }
       }
 
       // Generate proposal in background — respond to client immediately
@@ -967,7 +1051,7 @@ OUTPUT: Return exactly one JSON object:
       }
 
       // Store proposal for email thread
-      proposalThreads.set(proposalId, {
+      const proposalThread = {
         clientEmail,
         assessment,
         enrichment,
@@ -975,7 +1059,10 @@ OUTPUT: Return exactly one JSON object:
         history: conversationText,
         revisions: 0,
         createdAt: Date.now(),
-      });
+        status: 'pending_approval',
+      };
+      proposalThreads.set(proposalId, proposalThread);
+      await upsertProposal(proposalId, proposalThread);
 
       // Step 3: Email Greg with the full package
       console.log(`[Proposal ${proposalId}] Emailing to Greg…`);
@@ -1090,7 +1177,10 @@ ${'═'.repeat(60)}`;
             text: `Proposal ${proposalId} has been sent to ${thread.clientEmail}.\nYou were CC'd on the email.`,
           });
 
-          proposalThreads.delete(proposalId);
+          thread.status = 'sent';
+          thread.decidedAt = new Date().toISOString();
+          proposalThreads.set(proposalId, thread);
+          await upsertProposal(proposalId, thread);
           console.log(`[Proposal ${proposalId}] Sent and closed.`);
         } catch (/** @type {any} */ sendErr) {
           console.error(`[Proposal ${proposalId}] Send failed:`, sendErr.message);
@@ -1111,6 +1201,7 @@ ${'═'.repeat(60)}`;
       }
 
       thread.revisions++;
+      thread.status = 'revising';
       console.log(`[Proposal ${proposalId}] Revision #${thread.revisions}…`);
 
       const revisionPrompt = `You are revising a project proposal based on feedback from the author (Greg Iteen).
@@ -1137,7 +1228,13 @@ OUTPUT: Return exactly one JSON object:
       try {
         const revisionRaw = await geminiCall(GOOGLE_API_KEY, revisionPrompt);
         const revision = JSON.parse(revisionRaw);
+        thread.revision_history = [
+          ...(Array.isArray(thread.revision_history) ? thread.revision_history : []),
+          { at: new Date().toISOString(), feedback: replyText, revision },
+        ];
         thread.proposal = revision;
+        thread.status = 'pending_approval';
+        await upsertProposal(proposalId, thread);
 
         // Email revised version back to Greg
         const replyTo = `proposal-${proposalId}@${process.env.MAIL_DOMAIN || 'gregiteen.xyz'}`;
@@ -1301,6 +1398,7 @@ ${'═'.repeat(60)}`,
         clientEmail: t.clientEmail,
         company: t.enrichment?.company_name || '',
         projectType: t.assessment?.project_type || '',
+        status: t.status || 'pending_approval',
         revisions: t.revisions,
         createdAt: t.createdAt,
       }));
@@ -1311,6 +1409,7 @@ ${'═'.repeat(60)}`,
     const deletePropMatch = adminPath.match(/^\/proposals\/([a-f0-9]+)$/);
     if (deletePropMatch && req.method === 'DELETE') {
       proposalThreads.delete(deletePropMatch[1]);
+      await deleteProposal(deletePropMatch[1]);
       return sendJson(res, 200, { success: true });
     }
 
@@ -1402,4 +1501,3 @@ function checkImproveCron() {
 // Check every 5 minutes
 setInterval(checkImproveCron, 5 * 60 * 1000);
 console.log('[Cron] Daily improvement cron scheduled (3:00 AM)');
-
