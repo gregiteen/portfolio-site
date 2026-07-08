@@ -4,7 +4,7 @@
 // dev-status endpoint, an async theme-generation job endpoint, and 2FA auth.
 import { createServer } from 'node:http';
 import { readFile, appendFile } from 'node:fs/promises';
-import { watch } from 'node:fs';
+import { watch, readdirSync, statSync } from 'node:fs';
 import { execFile, spawn } from 'node:child_process';
 import { join, normalize, extname, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -612,6 +612,17 @@ function isAdmin(req) {
   return false;
 }
 
+// ── Resolve latest generated skin ──
+function getLatestSkinBase() {
+  try {
+    const skinsDir = join(__dirname, '..', 'vault', 'pages', 'skins');
+    const files = readdirSync(skinsDir).filter(f => f.endsWith('.md'));
+    if (files.length === 0) return null;
+    files.sort((a, b) => statSync(join(skinsDir, b)).mtimeMs - statSync(join(skinsDir, a)).mtimeMs);
+    return `/designs/${files[0].replace('.md', '')}`;
+  } catch { return null; }
+}
+
 // ─── Server ──────────────────────────────────────────────────────────────────
 
 createServer(async (req, res) => {
@@ -625,11 +636,24 @@ createServer(async (req, res) => {
     return;
   }
 
-  // ── Returning user: splash → home redirect ──
+  // ── Returning user: splash → latest skin redirect ──
   if (urlPath === '/splash.html' && isAuthenticated(req)) {
-    res.writeHead(302, { 'Location': '/' });
+    const skinBase = getLatestSkinBase();
+    res.writeHead(302, { 'Location': skinBase ? skinBase + '/index.html' : '/' });
     res.end();
     return;
+  }
+
+  // ── Root-level page → redirect to latest skin version ──
+  const ROOT_PAGES = ['/', '/index.html', '/about.html', '/contact.html', '/projects.html', '/designs.html', '/consult.html'];
+  if (ROOT_PAGES.includes(urlPath) && isAuthenticated(req)) {
+    const skinBase = getLatestSkinBase();
+    if (skinBase) {
+      const page = urlPath === '/' ? '/index.html' : urlPath;
+      res.writeHead(302, { 'Location': skinBase + page });
+      res.end();
+      return;
+    }
   }
 
   // ── API: Logout ──
