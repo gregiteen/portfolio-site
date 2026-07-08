@@ -7,10 +7,24 @@ description: "Use this skill to deploy the site to the DigitalOcean droplet usin
 
 Execute the following sequence when the `/deploy` command is invoked.
 
-1. **Rebuild:** Run `npm run build` to compile all static assets.
-2. **Commit:** `git add . && git commit -m "Auto deploy via /deploy skill"`
-3. **Push to Main:** `git push origin main`
-4. **Deploy to Droplet:**
+## ⛔ NEVER auto-commit during deploy
+
+**Deploy MUST NOT run `git add .`, `git add -A`, or any commit/push.** Deploy ships
+the working tree to the droplet over rsync — it does **not** need a git commit to do
+so. A blind `git add . && git commit` sweeps *every* unrelated change in the tree
+(stray file deletions, half-finished work, scratch files) into a bogus "deploy"
+commit. That is exactly how the sovereign-sync verification docs got wiped and how
+half-done phases got committed as "done." Committing is a **separate, intentional
+act the user requests explicitly** — never a side effect of deploying.
+
+1. **Pre-flight guardrail — inspect, do not commit.** Run `git status --short`.
+   - If the tree is **dirty**, STOP and show the user exactly what changed. Do not
+     `git add` anything. Ask whether those changes are intended to go live. Only
+     proceed once the user confirms (deploy ships the working tree as-is) or after
+     they have committed/stashed intentionally themselves.
+   - If the tree is **clean**, proceed.
+2. **Rebuild:** Run `npm run build` to compile all static assets.
+3. **Deploy to Droplet:**
    - The Droplet IP is `138.197.199.217` (stored in `.env` as `DROPLET_IP`).
 
    **Step 1 — Static bundle → Nginx** (already idempotent):
