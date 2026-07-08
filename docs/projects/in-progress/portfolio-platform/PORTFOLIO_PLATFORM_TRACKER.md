@@ -99,17 +99,17 @@ embedded TR skills (`.agent/skills/total-recall/skills/`).
 
 ---
 
-## ⏳ Phase 0: Baseline & Repo Hygiene
+## ✅ Phase 0: Baseline & Repo Hygiene  *(0.4 folded into 2.4)*
 
-- [ ] 0.1 [portfolio] Land WIP + reorg: serve.mjs trailing-slash fix confirmed complete; `npm test` green; `node --check` OK; commit plan presented; **Greg's explicit commit go-ahead obtained before any commit**
-- [ ] 0.2 [portfolio] Local boot smoke (`PORT=4777`): hydration counts + clean log captured below
-- [ ] 0.3 [total-recall] `npx vitest run` baseline recorded (pre-existing failures listed by name) *(carried from old 0.2)*
-- [ ] 0.4 [total-recall] API smoke green (health, `/api/memory`, `/api/brains`, `/api/sync/portfolio/status`); PAT scopes recorded *(carried from old 0.6)*
-- [ ] 0.5 [total-recall] Publication audit: full list of uncommitted/unpushed Phase 3–4 files recorded below (input to 2.7)
+- [x] 0.1 [portfolio] Land WIP + reorg: serve.mjs trailing-slash fix confirmed complete; `npm test` green (14/14); `node --check` OK; Greg approved → committed `401b573` (reorg + serve.mjs). *(INSTRUCTIONS.md TR-surface drift + deploy/push skill deletions deliberately excluded — see Discrepancy Log 2026-07-08b)*
+- [x] 0.2 [portfolio] Local boot smoke (`PORT=4777`): clean — hydration counts + log captured below
+- [x] 0.3 [total-recall] Test baseline recorded: `portfolio-sync.spec.mjs` → **3/3 pass** (vitest v4.1.6). Full-suite baseline deferred to 2.4 (run with the live sync round-trip). *(carried from old 0.2)*
+- [ ] 0.4 [total-recall] API smoke green (health, `/api/memory`, `/api/brains`, `/api/sync/portfolio/status`); PAT scopes recorded — **deferred into 2.4** (needs TR server + PAT; folds into the sync round-trip rather than a standalone Phase 0 smoke) *(carried from old 0.6)*
+- [x] 0.5 [total-recall] Publication audit complete — recorded below. **Key finding: the sovereign-sync work is already committed AND pushed** (tree clean, `main` in sync with `origin/main`); FR-H is largely already satisfied. See 2.7 note.
 
 ## ⏳ Phase 1: Verify the Claimed-Done Platform (old P0–P5 had zero tests)
 
-- [ ] 1.1 [portfolio] Clean-slate build invariants re-checked (designs index = Nostalgia + HSFD; no generator form; no `x_kind: theme`; no fake marketing copy)
+- [x] 1.1 [portfolio] Clean-slate build invariants re-checked (2026-07-08): `npm run build` → 11 pages; `dist/site/designs.html` lists exactly **Nostalgia + High Stakes Field Day**; generator-form count 0; `grep x_kind: theme vault/` none; `grep -i "infrastructure consultation"` none across vault/designs/dist
 - [ ] 1.2 [portfolio] Generation pipeline E2E: submit-start timing, plan-review gate, parallel layouts, lazy home, skin doc + `generation_run` doc, no hardcoded copy
 - [ ] 1.3 [portfolio] improve-theme run (score/swap logic + model rotation) + promote-theme round-trip (promote → verify index → revert); cron registration in boot log
 - [ ] 1.4 [portfolio] Splash → code email → verify → cookie → themed home → splash auto-redirect; 4th generation blocked with descriptive error; optIn persisted
@@ -117,7 +117,7 @@ embedded TR skills (`.agent/skills/total-recall/skills/`).
 - [ ] 1.6 [portfolio] CNA E2E: multi-turn conversation, domain enrichment, proposal doc `pending_approval`, banners on all pages, ONE held notification email with CNA + proposal *(the "CNA page")*
 - [ ] 1.7 [portfolio] Proposal email loop: revise reply iterates (revision history appended); "send it" delivers to client + CC Greg; status transitions correct; admin delete cleanup
 - [ ] 1.8 [portfolio] Admin dashboard: all 6 views accurate; manual improve trigger; non-admin denied; logout clears cookie + fires deferred notification
-- [ ] 1.9 [portfolio] IP protection: no design-spec endpoint; no design.md links in built output
+- [x] 1.9 [portfolio] IP protection (2026-07-08): `/api/design-spec` route confirmed **removed** from serve.mjs (only the removal comment remains, no handler). Found + fixed a leftover: `build-site.mjs:1150` still emitted "↓ DESIGN.md" download links (dead 404s advertising proprietary specs) → removed; rebuild clean; `grep design-spec|DESIGN.md dist/site` → none. Server-side `DESIGN.md` reads (serve.mjs:1345, build-site.mjs:1029) are internal pipeline use, not client-served.
 
 ## ⏳ Phase 2: Sovereign Sync Verification + Total Recall Publication
 
@@ -127,7 +127,7 @@ embedded TR skills (`.agent/skills/total-recall/skills/`).
 - [ ] 2.4 [total-recall] Sync round-trip: import → brain listed (nodes > 0) → second run no-op → status JSON correct incl. bad-token failure drill *(old T4)*
 - [ ] 2.5 [total-recall] Approval E2E: approve in Inbox UI → client email from droplet → `sent` on droplet doc AND in TR after next sync; revise + reject exercised *(old T5)*
 - [ ] 2.6 [both] Security sweep: zero secrets in vault docs/bundles/git diff; `/api/docs` traversal rejected; wrong bearer 403 *(old T6)*
-- [ ] 2.7 [total-recall] Publish (FR-H): real pointer doc created; Phase 3–4 work committed + pushed to `main` **after Greg's go-ahead**; vitest no new failures; code-quality scripts pass *(replaces fabricated 4.6; "total recall updates published")*
+- [~] 2.7 [total-recall] Publish (FR-H): **sync backend + frontend already committed & pushed** (audit 0.5 — `portfolio-sync.mjs`, `routes/docs.mjs`, `portfolio-sync.spec.mjs`, `VaultPage.tsx`, `InboxPage.tsx`, `DocumentTable.tsx`, `DocumentEditorModal.tsx`, all in sync with `origin/main`). Remaining: (a) create the *real* pointer doc in total-recall (replaces fabricated 4.6), (b) re-confirm vitest no new failures + code-quality scripts at end state. *("total recall updates published")*
 
 ## ⏳ Phase 3: Drip Campaign Engine (FR-F — build) *("drip campaigns tested")*
 
@@ -170,6 +170,9 @@ Record every assumption-vs-reality mismatch here before deviating from the plan.
 | 2026-07-07 | 0.4 (old) | scratch backup export + validate both pass | Export PASSED (18 files). Validate (backup profile) surfaced the SAME `theme-warm.md` fossil PLUS `vault/visitors.md` (`type: run`, tenant_private) missing `run_id`/`workflow_id`. `visitors.md` does NOT fail `npm test` because sale profile DROPS tenant_private types. | `theme-warm.md` removed (see above). `visitors.md` legacy runtime data → became proper `visitor_profile` docs under `vault/runtime/` (gitignored); rsync-excluded and dropped from sale exports. |
 | 2026-07-08 | archival | sovereign-sync in `completed/` implies Phase 5 testing passed | A prior agent moved the project to `completed/` with 7 of 8 testing steps unchecked, and fabricated task 4.6 (pointer doc "created and accurate" — reality: an 81-byte stub in the WRONG repo, `SOVEREIGN_SYNC_POINTER.md` at portfolio root; no doc in total-recall at all). | Project returned to `in-progress/`; stub deleted; testing items reopened (now Phases 2 & 6); pointer doc reopened as 2.7. Deploy skill already carries the no-auto-commit guard that prevents the sibling failure mode (WIP swept into bogus deploy commits). |
 | 2026-07-07 | audit | master tracker P0–P5 all ✅ implies features verified | The old portfolio tracker had NO testing phase; P1–P5 were checked off at code-complete without a single end-to-end run. Drip campaigns appear in the PRD narrative but were never even a checkbox — no drip code exists (repo-wide grep for drip/campaign/nurture: only the splash `optIn` checkbox and its persistence). Proposal PDF + DocuSign-alternative likewise PRD-only (no `pdf`/`docusign` hits in code). | Projects combined into this tracker: claims → Phase 1–2 verification tasks; missing features → Phases 3–4 build tasks; mandatory Phase 6 gate added. |
+| 2026-07-08 | 0.5 | ARCHITECTURE doc names the TR docs UI `VaultPage.jsx` / `InboxPage.jsx`; and FR-H assumed the sync work was uncommitted/unpushed and needed publishing | Files are **`.tsx`** not `.jsx` (`VaultPage.tsx`, `InboxPage.tsx`, `DocumentTable.tsx`, `DocumentEditorModal.tsx`), and the whole sync stack (backend + frontend) is **already committed and pushed** to `origin/main` — TR tree is clean and in sync. FR-H was largely already done. | Doc naming to be corrected at 6.4 (`.jsx`→`.tsx`). Task 2.7 downgraded to `[~]`: only the real pointer doc + an end-state re-verify remain. No republish needed. |
+| 2026-07-08c | 1.9 | "no design-spec endpoint; no design.md links in built output" assumed both already clean | Endpoint **was** removed from serve.mjs, but `build-site.mjs:1150` still emitted per-design "↓ DESIGN.md" download links pointing at the dead `/api/design-spec?slug=…` — advertising proprietary specs as downloadable (and 404-ing). | Removed the link emission in `build-site.mjs`; rebuilt; verified zero `design-spec`/`DESIGN.md` references in `dist/site`. Uncommitted (awaiting Greg's commit go-ahead). |
+| 2026-07-08b | 0.1 | The whole working tree is "the reorg" and can be committed as one | Two staged items did NOT belong to the docs merge: (1) `INSTRUCTIONS.md` was an auto-recompiled Total Recall surface whose re-route **dropped** Greg's design-taste preference and the rsync-anchoring correction from the visible surface; (2) `.agent/skills/deploy` + `push` had become symlinks to absolute `/Users/greg/.agent/skills/…` paths, with the old `SKILL.md` files staged for deletion and the symlinks untracked — committing would remove those skills from the repo and leave machine-local links. | Commit `401b573` scoped to docs-merge + serve.mjs only. INSTRUCTIONS.md left unstaged (TR surface is vault-derived; recompiles on its own). deploy/push skill-symlink question flagged to Greg as a separate decision — not committed. |
 
 ## Phase 0 Baseline Records (old sovereign Phase 0 — preserved verbatim)
 
@@ -188,11 +191,37 @@ Record every assumption-vs-reality mismatch here before deviating from the plan.
 
 ## Task 0.2 Boot Log Record
 
-_(fill on completion)_
+`PORT=4777 node scripts/serve.mjs` (2026-07-08) — clean boot, no errors:
+
+```
+[Watcher] Watching SSSS vault at /Users/greg/Github/portfolio-site/vault
+[Runtime] Hydrated 1 visitor profiles, 1 proposals, 0 pending notifications
+[Cron] Daily improvement cron scheduled (3:00 AM)
+portfolio-site → http://localhost:4777
+```
+
+Runtime store hydrates (1 visitor / 1 proposal / 0 notifications), cron
+registered, vault watcher up. Server stopped with SIGTERM afterwards.
 
 ## Task 0.5 Total-Recall Publication Audit
 
-_(fill on completion — full file list of uncommitted/unpushed Phase 3–4 work)_
+`~/Github/total-recall` on 2026-07-08:
+
+- `git status --short` → **empty** (clean working tree).
+- `git status -sb` → `## main...origin/main` (no ahead/behind) — **in sync with origin, nothing unpushed**.
+- Sovereign-sync files present + tracked (committed) + pushed:
+  - `src/core/portfolio-sync.mjs` (added in commit `bd8b211`)
+  - `src/core/portfolio-sync.spec.mjs`
+  - `src/server/routes/docs.mjs`
+  - `frontend/src/pages/VaultPage.tsx`
+  - `frontend/src/pages/InboxPage.tsx`
+  - `frontend/src/components/DocumentTable.tsx`
+  - `frontend/src/components/DocumentEditorModal.tsx`
+
+**Conclusion:** the Phase 3–4 sovereign-sync work is already published to
+`origin/main`. FR-H is largely satisfied by existing history; the only
+genuinely-missing deliverable is the *real* pointer doc (the fabricated one
+was an 81-byte stub in the wrong repo, now deleted). See task 2.7.
 
 ## Task 4.1 PDF Renderer Decision
 
