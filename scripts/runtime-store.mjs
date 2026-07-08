@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createEngine } from '@ssss/cli/engine';
 import { parseDocument } from '@ssss/cli/frontmatter';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';

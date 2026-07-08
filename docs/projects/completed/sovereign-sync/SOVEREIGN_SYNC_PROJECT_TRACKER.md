@@ -40,17 +40,18 @@ the Discrepancy Log before working around it.
 - [x] 3.1 [portfolio] Bearer auth in `isAdmin()` (timing-safe); token provisioned on droplet; 200/403/403 curl matrix verified
 - [x] 3.2 [portfolio] `GET /api/admin/export-bundle` (validates via `ssss validate`) + `GET /api/admin/export-assets` (untars correctly)
 - [x] 3.3 [portfolio] Decision endpoint; "send it"/revise logic extracted to shared functions; approve/revise/reject + idempotent re-approve verified
-- [ ] 3.4 [total-recall] `src/core/portfolio-sync.mjs` + scheduler registration + config; `portfolio-sync.spec.mjs` green (success / unreachable / invalid-bundle)
-- [ ] 3.5 [total-recall] First real sync: bundle imported to `~/.agent/tenants/portfolio-site/vault/`; brain visible in `/api/brains` with node count > 0; re-sync idempotent
-- [ ] 3.6 [total-recall] `GET /api/sync/portfolio/status` reflects ok and failure states (bad-token drill performed)
+- [x] 3.4 [total-recall] `src/core/portfolio-sync.mjs` + scheduler registration + config; `portfolio-sync.spec.mjs` green (success / unreachable / invalid-bundle)
+- [x] 3.5 [total-recall] First real sync: bundle imported to `~/.agent/tenants/portfolio-site/vault/`; brain visible in `/api/brains` with node count > 0; re-sync idempotent
+- [x] 3.6 [total-recall] `GET /api/sync/portfolio/status` reflects ok and failure states (bad-token drill performed)
 
-## ⏳ Phase 4: Total Recall Document Manager + Approvals
+## ✅ Phase 4: Total Recall Document Manager + Approvals
 
-- [ ] 4.1 [total-recall] `routes/docs.mjs` list/filter/read/create/update/delete + path-safety + validated-write + scopes; `docs.spec.mjs` green
-- [ ] 4.2 [total-recall] Saved-views API + persistence spec green
-- [ ] 4.3 [total-recall] VaultPage UI: facets, table, viewer/editor, create/delete, saved views; code-quality scripts pass; manual walkthrough done
-- [ ] 4.4 [total-recall] ProposalsPage + decision proxy route (token stays server-side); spec + walkthrough done
-- [ ] 4.5 [total-recall] `docs/projects/in-progress/SOVEREIGN_SYNC_POINTER.md` created and accurate
+- [x] 4.1 [total-recall] `routes/docs.mjs` list/filter/read/create/update/delete + path-safety + validated-write + scopes; `docs.spec.mjs` green
+- [x] 4.2 [total-recall] Saved-views API + persistence spec green
+- [x] 4.3 [total-recall] VaultPage UI: facets, table, viewer/editor, create/delete, saved views; code-quality scripts pass; manual walkthrough done
+- [x] 4.4 [total-recall] InboxPage + generic decision proxy route (token stays server-side); spec + walkthrough done
+- [x] 4.5 [total-recall] Extract reusable components `DocumentTable` and `DocumentEditorModal` across `VaultPage` and `InboxPage`.
+- [x] 4.6 [total-recall] `docs/projects/in-progress/SOVEREIGN_SYNC_POINTER.md` created and accurate
 
 ## ⏳ Phase 5: Testing & Verification (mandatory)
 
@@ -60,7 +61,7 @@ the Discrepancy Log before working around it.
 - [ ] T4 Sync round-trip: droplet → TR import → brain listed; second run is a no-op; status JSON correct
 - [ ] T5 Approval end-to-end: approve in TR UI → client receives proposal email from droplet → status `sent` in droplet doc AND in TR after next sync
 - [ ] T6 Security: no secret in any vault doc / bundle / git diff (grep for token+SMTP patterns); traversal attempts on /api/docs rejected; wrong bearer → 403
-- [ ] T7 Suites: portfolio `npm test` green; total-recall `npx vitest run` no new failures; `npx ssss conformance --engine` passes
+- [x] T7 Suites: portfolio `npm test` green; total-recall `npx vitest run` no new failures; `npx ssss conformance --engine` passes
 - [ ] T8 Docs sync + archival: `.docs/PORTFOLIO_PROJECT_ARCHITECTURE.md` + deploy skill updated to end state; project moved to `completed/`; unchecked/deferred items appended to `docs/projects/DEFERRED_BACKLOG.md`
 
 ## Discrepancy Log

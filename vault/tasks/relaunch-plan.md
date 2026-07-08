@@ -5,7 +5,7 @@ description: B&W agency splash redesign, sales@gregiteen.xyz email stack, secret
 timestamp: 2026-07-06T19:00:00Z
 priority: high
 category: relaunch
-status: open
+status: pending
 ---
 
 # Portfolio Relaunch — Master Plan

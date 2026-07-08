@@ -5,7 +5,7 @@ description: Live checklist for the relaunch plan. Update statuses in place as w
 timestamp: 2026-07-06T19:00:00Z
 priority: high
 category: relaunch
-status: open
+status: pending
 ---
 
 # Relaunch Tracker

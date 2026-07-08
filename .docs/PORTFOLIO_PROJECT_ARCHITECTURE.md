@@ -98,11 +98,12 @@ vault/pages/*.md                          (Source of truth)
 - `fetch()` + `DOMParser` + `document.startViewTransition()` for full page swap
 - Preserves current sub-path across design switches
 
-### 7. CNA Form (NOT YET IMPLEMENTED)
-- AI-powered interactive needs assessment
-- Compares prospect needs against services/pricing/timelines
-- Generates PDF proposal
-- Sends to Greg for approval before delivery via open-source DocuSign
+### 7. CNA Form & Sovereign Sync Proposals
+- AI-powered interactive needs assessment (`scripts/compile-theme.mjs`)
+- Generates proposal SSSS primitive (`x_kind: "proposal"`)
+- Proposals are tracked in Total Recall registry via `ssss` sync
+- Sync API endpoints route approval/rejection decisions from Total Recall Inbox to the local runtime
+- Runtime store manages state (`scripts/runtime-store.mjs`) persisting visitor records and proposal mutations
 
 ### 8. Continuous Improvement (NOT YET IMPLEMENTED)
 - Daily cron: `improve-theme.mjs`

@@ -5,7 +5,7 @@ description: Starter private setup task that demonstrates tenant_private filteri
 timestamp: 2026-07-02T00:00:00Z
 priority: normal
 category: setup
-status: open
+status: pending
 ---
 
 # First task
