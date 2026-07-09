@@ -16,6 +16,7 @@ const dirs = {
   visitors: join(runtimeRoot, 'visitors'),
   proposals: join(runtimeRoot, 'proposals'),
   runs: join(runtimeRoot, 'runs'),
+  config: join(runtimeRoot, 'config'),
 };
 
 const engine = createEngine({ registryDir });
@@ -110,6 +111,8 @@ function proposalBody(proposal) {
       clientEmail: proposal.clientEmail || '',
       assessment: proposal.assessment || {},
       enrichment: proposal.enrichment || {},
+      bannerVariant: proposal.bannerVariant || null,
+      signingUrl: proposal.signingUrl || null,
       proposal: proposal.proposal || {},
       history: proposal.history || '',
       revision_history: revisions,
@@ -205,6 +208,8 @@ function normalizeProposalData(data, raw) {
       clientEmail: thread.clientEmail || data.client_email || '',
       assessment: thread.assessment || {},
       enrichment: thread.enrichment || { company_name: data.company || '' },
+      bannerVariant: thread.bannerVariant || null,
+      signingUrl: thread.signingUrl || null,
       proposal: thread.proposal || {},
       history: thread.history || '',
       revision_history: Array.isArray(thread.revision_history) ? thread.revision_history : [],
@@ -285,6 +290,7 @@ async function persistProposal(id, proposal) {
     client_email: proposal.clientEmail || '',
     company: proposal.enrichment?.company_name || '',
     project_type: proposal.assessment?.project_type || '',
+    banner_variant: proposal.bannerVariant || '',
     status,
     revisions: Number(proposal.revisions || 0),
     created_at: toIso(proposal.createdAt) || nowIso(),
@@ -303,6 +309,82 @@ export async function initRuntimeStore() {
   await loadDir(dirs.proposals, proposalCache, normalizeProposalData);
   initialized = true;
   return { visitors: visitorCache.size, proposals: proposalCache.size };
+}
+
+// ── Rate card (tenant_private singleton) ────────────────────────────────────
+// The sole source of pricing for AI-generated proposals. Written once through
+// the Operation Contract on first boot (ensureRateCardSeeded); after that,
+// Greg edits vault/runtime/config/rate-card.md directly like any other doc —
+// figures change without touching code or redeploying.
+async function readRuntimeConfigDoc(filename) {
+  try {
+    const raw = await readFile(join(dirs.config, filename), 'utf8');
+    return parseDocument(raw).body.trim();
+  } catch {
+    return null;
+  }
+}
+
+export async function getRateCard() {
+  return (await readRuntimeConfigDoc('rate-card.md')) || '';
+}
+
+export async function ensureRateCardSeeded(defaultBody) {
+  await mkdir(dirs.config, { recursive: true });
+  if (await readRuntimeConfigDoc('rate-card.md')) return false;
+  await writeDocument('runtime/config/rate-card.md', serializeRuntimeDocument({
+    type: 'rate_card',
+    title: 'Rate Card',
+    description: 'Source-of-truth pricing bands for AI-generated client proposals.',
+    timestamp: nowIso(),
+  }, defaultBody));
+  return true;
+}
+
+// ── Banner offers (structural — A/B-tested CTA copy, not private data) ─────
+function bannerOffersBody(offers) {
+  return ['# CNA Banner Offers', '', '## Variants JSON', jsonBlock(offers), ''].join('\n');
+}
+
+export async function getBannerOffers() {
+  try {
+    const raw = await readFile(join(dirs.config, 'banner-offers.md'), 'utf8');
+    return extractJsonBlock(parseDocument(raw).body, 'Variants JSON') || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function ensureBannerOffersSeeded(defaultOffers) {
+  await mkdir(dirs.config, { recursive: true });
+  const existing = await getBannerOffers();
+  if (existing.length) return false;
+  await writeDocument('runtime/config/banner-offers.md', serializeRuntimeDocument({
+    type: 'banner_offer',
+    title: 'CNA Banner Offers',
+    description: 'A/B-tested offer variants shown in the CNA CTA banner.',
+    timestamp: nowIso(),
+  }, bannerOffersBody(defaultOffers)));
+  return true;
+}
+
+// ── Banner events (append-only analytics log for the A/B test) ─────────────
+const bannerEventsRel = 'runtime/events/banner-events.md';
+
+export async function appendBannerEvent(evt) {
+  await mkdir(dirname(join(vaultRoot, bannerEventsRel)), { recursive: true });
+  let priorBody = '';
+  if (existsSync(join(vaultRoot, bannerEventsRel))) {
+    priorBody = parseDocument(await readFile(join(vaultRoot, bannerEventsRel), 'utf8')).body.replace(/\s+$/, '');
+  }
+  const line = `- ${nowIso()} event=${evt.event || 'unknown'} variant=${evt.variant || 'unknown'} trigger=${evt.trigger || '-'} email=${evt.email || 'anon'}`;
+  const body = priorBody ? `${priorBody}\n${line}\n` : `# Banner Events\n\n${line}\n`;
+  await writeDocument(bannerEventsRel, serializeRuntimeDocument({
+    type: 'banner_event_log',
+    title: 'Banner Events',
+    description: 'Append-only log of CNA banner impressions/clicks for A/B analysis.',
+    timestamp: nowIso(),
+  }, body));
 }
 
 export function getVisitor(email) {

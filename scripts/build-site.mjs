@@ -3,7 +3,7 @@
 // The vault is the source of truth: every page on the site is a `type: page`
 // document under vault/pages/, parsed with the canonical @ssss/cli frontmatter
 // parser. Output goes to dist/site/.
-import { readdir, readFile, writeFile, mkdir, rm, cp } from 'node:fs/promises';
+import { readdir, readFile, writeFile, mkdir, rm, cp, stat } from 'node:fs/promises';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // @ts-ignore
@@ -871,6 +871,89 @@ ${TRANSITIONS}
 <style>${stylesheet}</style>
 </head>`;
 
+  // CNA banner behavior, shared by both the default shell's in-flow banner and
+  // the fixed bar injected into AI-generated skins (same ids/classes in both).
+  // It stays hidden until the visitor shows real intent — a dwell timer or
+  // touching a form field — rather than nagging every visitor immediately.
+  // Offer copy is A/B-assigned client-side (sticky via cookie) from
+  // /api/banner-offers (vault/runtime/config/banner-offers.md), and
+  // impressions/clicks are logged to /api/banner-event for analysis; the CNA
+  // proposal flow reads the same cookie server-side to honor whatever offer
+  // was shown.
+  const CNA_BANNER_SCRIPT = `(function() {
+  var KEY = 'cna_variant';
+  function getCookie(name) {
+    var m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+  function setCookie(name, value) {
+    document.cookie = name + '=' + encodeURIComponent(value) + ';path=/;max-age=31536000;samesite=lax';
+  }
+  function track(event, variant, trigger) {
+    try {
+      fetch('/api/banner-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: event, variant: variant, trigger: trigger || null }),
+        keepalive: true
+      });
+    } catch (e) {}
+  }
+  function init(offers) {
+    var banner = document.getElementById('cnaBanner');
+    if (!banner || !offers || !offers.length) return;
+    var variantId = getCookie(KEY);
+    var offer = null;
+    for (var i = 0; i < offers.length; i++) { if (offers[i].id === variantId) { offer = offers[i]; break; } }
+    if (!offer) offer = offers[Math.floor(Math.random() * offers.length)];
+    setCookie(KEY, offer.id);
+    var textEl = document.getElementById('cnaText');
+    var ctaEl = document.getElementById('cnaCta');
+    if (textEl) textEl.textContent = offer.text;
+    if (ctaEl) ctaEl.textContent = offer.cta;
+
+    var shown = false;
+    function reveal(trigger) {
+      if (shown) return;
+      shown = true;
+      banner.classList.add('visible');
+      track('shown', offer.id, trigger);
+    }
+    var dwellTimer = setTimeout(function() { reveal('dwell'); }, 25000);
+    document.addEventListener('focusin', function(e) {
+      var t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) {
+        clearTimeout(dwellTimer);
+        reveal('form-engagement');
+      }
+    });
+    var link = banner.querySelector('.cna-link');
+    if (link) link.addEventListener('click', function() { track('click', offer.id); });
+  }
+  fetch('/api/banner-offers').then(function(r) { return r.json(); }).then(function(d) { init(d.offers || []); }).catch(function() {});
+})();`;
+
+  // Guarantees the CNA (client-needs-assessment) CTA banner on every
+  // AI-generated skin. Layout specialists are never told about it and can't
+  // be trusted to include it via prompt compliance alone (see: hero images,
+  // portraits, stray <script> tags), so it's injected mechanically here as a
+  // theme-agnostic fixed bar rather than relying on the custom shell's markup.
+  const CNA_BANNER_FIXED = `<aside class="cna-banner" id="cnaBanner">
+  <a href="/consult.html" class="cna-link">
+    <span class="cna-text" id="cnaText">Have a project in mind?</span>
+    <span class="cna-cta" id="cnaCta">Start a conversation →</span>
+  </a>
+</aside>
+<style>
+.cna-banner{position:fixed;left:0;right:0;bottom:0;z-index:9998;background:rgba(10,10,10,.92);backdrop-filter:blur(6px);border-top:1px solid rgba(255,255,255,.12);opacity:0;transform:translateY(100%);pointer-events:none;transition:opacity .6s ease,transform .6s ease}
+.cna-banner.visible{opacity:1;transform:translateY(0);pointer-events:auto}
+.cna-link{display:flex;justify-content:space-between;align-items:center;gap:12px;max-width:1400px;margin:0 auto;padding:14px 24px;text-decoration:none;transition:opacity .2s;font-family:system-ui,sans-serif}
+.cna-link:hover{opacity:.8}
+.cna-text{font-size:.85rem;color:rgba(255,255,255,.65)}
+.cna-cta{font-family:monospace;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:#c084fc}
+</style>
+<script>${CNA_BANNER_SCRIPT}</script>`;
+
   let finalHtml;
   if (customLayouts.shell) {
     let customHtml = fillTemplate(customLayouts.shell, {
@@ -879,15 +962,18 @@ ${TRANSITIONS}
       THEME_PILLS: themePillsHtml,
       SOURCE_PATH: escapeHtml(sourcePath)
     });
-    
+
     const headInjection = `\n${LIVE_RELOAD_SCRIPT}\n${FONTS}\n${FAVICON}\n${TRANSITIONS}\n<style>${stylesheet}</style>\n</head>`;
     if (customHtml.includes('</head>')) {
       customHtml = customHtml.replace('</head>', headInjection);
     } else {
       customHtml = headContent + customHtml;
     }
-    
+
     finalHtml = customHtml.includes('<body') ? customHtml : `<body>\n${customHtml}\n</body>\n</html>`;
+    finalHtml = finalHtml.includes('</body>')
+      ? finalHtml.replace('</body>', `${CNA_BANNER_FIXED}\n</body>`)
+      : finalHtml + CNA_BANNER_FIXED;
   } else {
     finalHtml = headContent + `<body>
 <div class="ambient-glows">
@@ -911,21 +997,23 @@ ${TRANSITIONS}
 ${content}
   </div>
 </main>
-<aside class="cna-banner">
+<aside class="cna-banner" id="cnaBanner">
   <div class="frame">
     <a href="/consult.html" class="cna-link">
-      <span class="cna-text">Have a project in mind?</span>
-      <span class="cna-cta">Start a conversation →</span>
+      <span class="cna-text" id="cnaText">Have a project in mind?</span>
+      <span class="cna-cta" id="cnaCta">Start a conversation →</span>
     </a>
   </div>
 </aside>
 <style>
-.cna-banner{background:rgba(255,255,255,0.03);border-top:1px solid rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.06)}
+.cna-banner{background:rgba(255,255,255,0.03);border-top:1px solid rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.06);opacity:0;transform:translateY(12px);pointer-events:none;transition:opacity .6s ease,transform .6s ease}
+.cna-banner.visible{opacity:1;transform:translateY(0);pointer-events:auto}
 .cna-link{display:flex;justify-content:space-between;align-items:center;padding:16px 0;text-decoration:none;transition:opacity .2s}
 .cna-link:hover{opacity:.8}
 .cna-text{font-size:.85rem;color:rgba(240,238,246,0.5)}
 .cna-cta{font-family:monospace;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:rgba(139,92,246,0.8)}
 </style>
+<script>${CNA_BANNER_SCRIPT}</script>
 <footer>
   <div class="frame">
     <p>rendered from <code>${escapeHtml(sourcePath)}</code> · vault → html, no database</p>
@@ -1003,13 +1091,28 @@ function logoTile(p) {
     : `<span class="logo-tile"></span>`;
 }
 
+// When building one AI skin, swap the shared contact-page portrait for that
+// skin's own AI-restyled portrait.jpg, if it generated one. Content is shared
+// across every design build, so without this every skin shows the same
+// generic photo despite each having its own restyled portrait sitting unused
+// in designs/<slug>/assets/.
+let portraitOverride = null;
+if (targetDesign) {
+  try {
+    await stat(join(root, 'designs', targetDesign, 'assets', 'portrait.jpg'));
+    portraitOverride = 'assets/portrait.jpg';
+  } catch { /* no per-design portrait — keep the shared default */ }
+}
+
 const files = await collectMarkdown(pagesDir);
 const pages = [];
 for (const file of files) {
   const raw = await readFile(file, 'utf8');
   const doc = parseDocument(raw);
   if (doc.data.type !== 'page') continue;
-  pages.push({ file, raw, data: doc.data, body: doc.body, html: renderMarkdown(doc.body) });
+  let html = renderMarkdown(doc.body);
+  if (portraitOverride) html = html.replace(/\/assets\/greg-portrait\.jpg/g, portraitOverride);
+  pages.push({ file, raw, data: doc.data, body: doc.body, html });
 }
 
 // ── Clean slate: built-in x_kind:theme themes are retired ────────────────────
@@ -1171,7 +1274,10 @@ function customProjectItem(p, i) {
     TECH_BADGES: badgesHtml(p.data.x_tech),
     LOGO: p.data.x_logo ? `<img src="/${escapeHtml(p.data.x_logo)}" alt="${escapeHtml(p.data.name)} logo">` : '',
     INDEX: String(i + 1).padStart(2, '0'),
-    REPO_URL: p.data.x_repo ? escapeHtml(p.data.x_repo) : '',
+    // Prefer the repo link; fall back to the live product link (ultrachat.app,
+    // festech.live, etc.) so cards always surface SOME outbound link when one
+    // exists — repo-less product projects were rendering an empty href before.
+    REPO_URL: escapeHtml(p.data.x_repo || p.data.x_link || ''),
   });
 }
 

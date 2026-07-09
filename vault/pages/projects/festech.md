@@ -16,7 +16,7 @@ x_tech:
 x_link: "https://festech.live"
 x_logo: "assets/logos/festech.png"
 x_logo_style: "cover"
-x_featured: false
+x_featured: true
 ---
 
 Event-tech experiments for live shows: automated scheduling with calendar

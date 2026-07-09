@@ -2,6 +2,7 @@ node_modules/
 dist/
 *.ucw.json
 .DS_Store
+.playwright-mcp/
 
 # agent-local state (contains tokens & personal memory) — memory/tenants stay
 # ignored, but THIS REPO'S skills are tracked tooling (no secrets) and shipped.

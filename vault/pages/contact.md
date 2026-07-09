@@ -12,7 +12,7 @@ x_nav_order: 3
 
 ## Get in touch
 
-![Greg Iteen](/assets/gen-portrait.jpg)
+![Greg Iteen](/assets/greg-portrait.jpg)
 
 - **Email** — [sales@gregiteen.xyz](mailto:sales@gregiteen.xyz)
 - **GitHub** — [github.com/gregiteen](https://github.com/gregiteen)

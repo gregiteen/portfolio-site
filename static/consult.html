@@ -307,7 +307,7 @@ submitProposal.addEventListener('click', async () => {
     const data = await res.json();
     if (data.success) {
       submitProposal.textContent = 'Proposal Sent to Greg ✓';
-      addMessage('Your proposal has been generated and sent to Greg for review. He\'ll be in touch shortly.', 'ai');
+      addMessage('Your proposal has been generated and sent to Greg for review. We will reply within 24 hours.', 'ai');
     } else {
       submitProposal.textContent = 'Error — Try Again';
       submitProposal.disabled = false;

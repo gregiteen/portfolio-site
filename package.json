@@ -9,6 +9,7 @@
     "sync-registry": "node scripts/sync-registry.mjs",
     "postinstall": "node scripts/sync-registry.mjs",
     "build": "node scripts/build-site.mjs",
+    "rate-card:pdf": "node scripts/generate-rate-card-pdf.mjs",
     "dev": "node scripts/build-site.mjs && node scripts/serve.mjs",
     "test": "node --test",
     "export": "ssss export vault --profile sale --registry vault-registry --out dist/bundle.ucw.json",
@@ -16,7 +17,10 @@
   },
   "dependencies": {
     "@ssss/cli": "github:gregiteen/ssss#v0.7.0",
-    "nodemailer": "^9.0.3"
+    "imapflow": "^1.4.6",
+    "mailparser": "^3.9.14",
+    "nodemailer": "^9.0.3",
+    "pdfkit": "^0.19.1"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",

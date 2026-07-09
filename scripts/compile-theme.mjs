@@ -29,6 +29,65 @@ const vaultDir = join(__dirname, '..', 'vault');
 const assetsDir = join(__dirname, '..', 'assets');
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
 
+// Response schemas for constrained decoding (see geminiText). Since the build
+// fans out into per-section CSS + per-layout specialists, each call returns one
+// small typed object — no monolithic full-payload schema is needed anymore.
+const ONE_LAYOUT_SCHEMA = {
+  type: 'OBJECT',
+  properties: { html: { type: 'STRING' } },
+  required: ['html'],
+};
+// Planning output: a single self-critiqued plan + the three image prompts.
+// Constrained decoding keeps the nested image_prompts object well-formed so the
+// (necessarily serial) planning step never needs a second corrective round-trip.
+const PLAN_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    plan: { type: 'STRING' },
+    image_prompts: {
+      type: 'OBJECT',
+      properties: { logo: { type: 'STRING' }, favicon: { type: 'STRING' }, hero: { type: 'STRING' } },
+    },
+  },
+  required: ['plan', 'image_prompts'],
+};
+// Few-shot exemplar handed to every layout specialist. One concrete, correct
+// layout — design-system classes reused, EVERY text slot a {{PLACEHOLDER}},
+// zero hardcoded copy — makes flash reproduce the contract on the first try
+// instead of inventing copy or a new visual language.
+const LAYOUT_EXEMPLAR = `EXEMPLAR — the "home" layout, given a design system that exposes classes .frame / .hero / .grid:
+{"html":"<section class=\\"frame\\"><div class=\\"hero\\"><h1 class=\\"display\\">{{HEADLINE}}</h1><p class=\\"lede\\">{{TAGLINE}}</p><div class=\\"prose\\">{{INTRO}}</div></div><div class=\\"grid\\">{{FEATURED_PROJECTS}}</div></section>"}
+Note: every piece of text is a {{PLACEHOLDER}}, the design system's real classes are reused, and nothing is hardcoded.`;
+// Director output: the SHARED design contract. No CSS or HTML here — just the
+// palette, tokens, and the ENUMERATED class vocabulary that every CSS-section
+// and layout specialist builds against in parallel. Small + fast; it is what
+// lets the whole build fan out with zero serial monolith.
+const STYLESPEC_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    name: { type: 'STRING' },
+    accent: { type: 'STRING' },
+    designSpec: { type: 'STRING' },
+    styleSpec: { type: 'STRING' },
+  },
+  required: ['name', 'accent', 'styleSpec'],
+};
+// One CSS section = one specialist's output.
+const CSS_SECTION_SCHEMA = {
+  type: 'OBJECT',
+  properties: { css: { type: 'STRING' } },
+  required: ['css'],
+};
+// The stylesheet is partitioned into independent sections, each a parallel
+// specialist. Concatenated in THIS order (tokens first so var(--…) resolves).
+const CSS_SECTIONS = [
+  { key: 'tokens', intent: 'The :root custom properties ONLY — every color, font stack, type-scale step, spacing step, radius, and shadow named in the contract, with concrete values. No selectors beyond :root.' },
+  { key: 'base', intent: 'Reset, box-sizing, html/body, base typography (headings, paragraphs, lists), links, images, and any global element defaults. Reference tokens via var(--…).' },
+  { key: 'layout', intent: 'Structural scaffolding: header/nav/footer, page containers/wrappers, and the grid/column systems. Style ONLY the layout-group classes the contract assigns.' },
+  { key: 'components', intent: 'Reusable pieces: cards, project/design items, badges/pills, buttons, forms, and their states/hover. Style ONLY the component-group classes the contract assigns.' },
+  { key: 'pages', intent: 'Page-specific styling, the hero, responsive @media rules, and tasteful interactive/animation flourishes. Style ONLY the page-group classes the contract assigns.' },
+];
+
 const prompt = process.argv.slice(2).join(' ').trim();
 if (!prompt) {
   console.error('Error: Prompt is required. Usage: node compile-theme.mjs "style description"');
@@ -133,26 +192,53 @@ function geminiApiCall(model, bodyObj) {
       res.on('end', () => {
         try {
           const json = JSON.parse(data);
-          if (!json.candidates?.[0]?.content?.parts) {
+          const cand = json.candidates?.[0];
+          if (!cand?.content?.parts) {
             return reject(new Error(`Gemini API error: ${data.slice(0, 300)}`));
           }
-          resolve(json.candidates[0].content.parts);
+          // A MAX_TOKENS finish means the payload was truncated mid-string —
+          // with a responseSchema that yields unterminated JSON downstream.
+          // Fail loudly so the caller retries/falls back instead of parsing
+          // a half-written CSS blob.
+          if (cand.finishReason === 'MAX_TOKENS') {
+            return reject(new Error('Gemini response truncated (MAX_TOKENS) — raise maxOutputTokens or split the payload'));
+          }
+          resolve(cand.content.parts);
         } catch (e) {
           reject(new Error(`Failed to parse Gemini response: ${String(e)}`));
         }
       });
     });
     req.on('error', reject);
-    req.setTimeout(180_000, () => { req.destroy(); reject(new Error('Gemini API timeout')); });
+    // 300s: schema-constrained payloads (full CSS + all layouts) can run past
+    // 180s. Generation is buffered by the email-verification wait, so a longer
+    // ceiling trades a rare slow run for far fewer hard failures.
+    req.setTimeout(300_000, () => { req.destroy(); reject(new Error('Gemini API timeout')); });
     req.write(body);
     req.end();
   });
 }
 
-async function geminiText(userPrompt) {
+async function geminiText(userPrompt, schema = null, maxOutputTokens = 65536) {
+  // maxOutputTokens bounds THINKING + output combined on flash. It is
+  // per-call: big CSS sections need the generous 65536 ceiling, but small
+  // calls (planning, director) get a tight cap so a flaky output runaway
+  // truncates in seconds instead of grinding out 65K tokens for ~190s before
+  // failing over to the slow antigravity fallback.
+  const generationConfig = { responseMimeType: 'application/json', maxOutputTokens };
+  // Bound thinking. flash is a thinking model and its thinking tokens count
+  // against maxOutputTokens. Capping thinking keeps room for real output and
+  // stops open-ended prompts from spiralling. A normal plan needs <2K thinking
+  // tokens, so 8192 is generous headroom.
+  generationConfig.thinkingConfig = { thinkingBudget: 8192 };
+  // A strict responseSchema puts Gemini into constrained decoding, which emits
+  // valid, properly-escaped JSON — the durable fix for the bad-escape failures
+  // that made theme generation die ~half the time (a `\` inside a CSS/HTML
+  // string value would break the whole payload).
+  if (schema) generationConfig.responseSchema = schema;
   const parts = await geminiApiCall('gemini-3.5-flash', {
     contents: [{ parts: [{ text: userPrompt }] }],
-    generationConfig: { responseMimeType: 'application/json' },
+    generationConfig,
   });
   return parts.map(p => p.text || '').join('');
 }
@@ -247,76 +333,53 @@ IMAGES (already generated, use them):
 - assets/logo.png — GI monogram, transparent PNG. Use as logo.
 - assets/favicon.png — GI favicon. Use in <link rel="icon">.
 - assets/hero.jpg — hero background. Use prominently.
-- assets/portrait.jpg — portrait of Greg restyled to match this theme. It appears inside page content (class .md-img) on the contact page — style it to sit well in your layout.
+- assets/portrait.jpg — portrait of Greg restyled to match this theme. It is placed automatically inside page content (class .md-img) on the contact page — style .md-img to sit well in your layout.
+These four fixed paths are NOT hardcoded copy — referencing them via url(assets/hero.jpg) or <img src="assets/logo.png"> etc. is REQUIRED, not a violation of the "no hardcoded text" rule. That rule is about words, never about these image paths.
+
+NO INLINE <script> TAGS. Layouts are inert markup only — never write <script>…</script> or any inline JS. Interactivity must come from CSS alone (:hover, :focus, transitions, animations). Any layout containing a script tag will have it stripped, so it is always wasted effort.
 `;
 
-  async function callAgent(p) {
+  async function callAgent(p, schema = null, maxOutputTokens = 65536) {
     if (GOOGLE_API_KEY) {
       try {
-        const raw = await geminiText(p);
+        const raw = await geminiText(p, schema, maxOutputTokens);
         console.log(`  → API response (${Math.round(raw.length / 1024)}KB)`);
         return raw;
       } catch (err) {
-        console.error('Icon conversion failed:', String(err));
+        console.error('Gemini call failed, falling back:', String(err));
       }
     }
     return executeAgentCall(p);
   }
 
-  // Pass 1: Planning and Architecture
-  console.log('  → Pass 1: Planning and Architecture');
+  // Pass 1: Plan + self-critique in ONE call. The plan feeds both image
+  // generation and the CSS foundation, so it is necessarily serial — but the
+  // old separate "plan review gate" was a second serial round-trip improving a
+  // plan this prompt already self-critiques. Folded into one call (constrained
+  // decoding via PLAN_SCHEMA), it keeps the quality bar and drops ~9s off the
+  // critical path.
+  console.log('  → Pass 1: Planning (plan + self-critique, single pass)');
   let rawPlan = await callAgent(`${baseContext}
 
-You are starting a new design build. Before writing any code, you must deeply plan out the architecture and visual identity.
-1. Analyze the brief.
-2. Decide on typography, color palette, layouts, and interactive elements.
-3. Critique your own plan and improve it to make it radically bespoke. Do NOT settle for the first idea.
-4. Write 3 image generation prompts (logo, favicon, hero background) that perfectly fit this bespoke design. For the logo and favicon, DO NOT just use generic monograms if it doesn't fit the design.
+You are starting a new design build. Plan the architecture and visual identity, silently critiquing and improving your first idea before you write — never settle for a generic result.
+1. Analyze the brief; decide typography, color palette, layouts, and interactive mechanics.
+2. Reject generic AI tropes (neon gradients, generic dark modes, lazy cyberpunk); reference real design movements, specific typographic choices, and concrete palettes.
+3. Write 3 bespoke image-generation prompts (logo, favicon, hero) that fit the design. For logo/favicon, do NOT default to a generic monogram if it does not fit.
 
-OUTPUT: Return exactly one JSON object with your plan and image prompts:
+CRITICAL: Be CONCISE. The "plan" must be a tight brief of ~250-350 words — enough to direct the build, NOT an essay. Do not narrate your scoring or critique; output only the final plan. A rambling plan is a failure.
+
+OUTPUT: exactly one JSON object:
 {
-  "thought_process": "Your deep analysis and critique...",
+  "plan": "A tight ~300-word design brief: identity, palette, type, layout, interaction.",
   "image_prompts": {
     "logo": "Create a logo for Greg Iteen. Style: [Your bespoke style]. CRITICAL: FULLY TRANSPARENT background (PNG alpha)...",
     "favicon": "Crop and optimize the provided logo into a tiny square favicon (64x64). TRANSPARENT background...",
     "hero": "Create an atmospheric, wide hero background image... Cinematic quality, 16:9..."
   }
-}`);
+}`, PLAN_SCHEMA, 16384);
   let planObj = extractJson(rawPlan);
-  let plan = planObj.thought_process || 'No plan provided.';
+  let plan = planObj.plan || planObj.thought_process || 'No plan provided.';
 
-  // Pass 1b: Plan Review Gate — analyze and improve the plan before any code
-  console.log('  → Pass 1b: Plan Review Gate');
-  let rawPlanReview = await callAgent(`${baseContext}
-
-You are reviewing a design plan BEFORE any code is written. Here is the current plan:
-
-${plan}
-
-Your job: Score this plan 1-10 on distinctiveness, visual ambition, and whether it avoids generic AI design tropes (neon gradients, generic dark modes, lazy cyberpunk aesthetics).
-
-If the score is below 8, RADICALLY IMPROVE the plan. Push for a more specific, memorable visual identity. Reference real design movements, specific typographic choices, concrete color palettes, and interactive mechanics that feel intentional rather than templated.
-
-OUTPUT: Return exactly one JSON object:
-{
-  "score": 7,
-  "critique": "What's wrong with the current plan...",
-  "improved_plan": "The full improved plan with all details...",
-  "improved_image_prompts": {
-    "logo": "...",
-    "favicon": "...",
-    "hero": "..."
-  }
-}`);
-  let reviewObj = extractJson(rawPlanReview);
-  if (reviewObj.improved_plan) {
-    plan = reviewObj.improved_plan;
-    console.log(`  → Plan scored ${reviewObj.score}/10 — ${reviewObj.score >= 8 ? 'kept' : 'improved'}`);
-  }
-  if (reviewObj.improved_image_prompts) {
-    planObj.image_prompts = reviewObj.improved_image_prompts;
-  }
-  
   // The portrait uses a strict A/B tested prompt to perfectly preserve identity while styling to match the theme.
   const portraitPrompt = `Art-direct this portrait for a portfolio site whose design brief is "${prompt}". Preserve the subject's identity exactly — same face, same friendly expression, natural human eyes, same pose. Completely replace the setting: re-render the wardrobe, backdrop, lighting, and color grade so the portrait belongs to that visual world (do not keep the original office background). Editorial photography quality, tasteful, portfolio-grade. No text, no watermarks.`;
   
@@ -334,91 +397,99 @@ OUTPUT: Return exactly one JSON object:
       ])
     : (console.warn('  ⚠ GOOGLE_API_KEY not set — skipping images'), Promise.resolve([]));
 
-  // Pass 2a: Base CSS & Core Pages (must come first — CSS establishes the design system)
-  console.log('  → Pass 2a: DESIGN.md, CSS, shell, home, projects_index');
-  let raw1 = await callAgent(`${baseContext}
+  // ── Director → StyleSpec ── One small, fast call defines the SHARED design
+  // contract: palette, tokens, and the ENUMERATED class vocabulary. It holds NO
+  // css/html, so it stays small (never truncates) and EVERYTHING downstream fans
+  // out against it in parallel. This is the whole point — there is no serial CSS
+  // monolith. Wall-clock from here = slowest single specialist, not a sum.
+  console.log('  → Director: StyleSpec (shared design contract)');
+  let rawSpec = await callAgent(`${baseContext}
 
 Here is your approved architectural plan:
 ${plan}
 
-OUTPUT: One JSON object. Generate the DESIGN.md, the complete CSS, and the first 3 layouts (shell, home, projects_index). The shell layout MUST wrap the entire page structure inside the body, using the provided placeholders.
+You are the DESIGN DIRECTOR. Do NOT write CSS or HTML. Define the SHARED design contract that every CSS-section specialist and every layout specialist will build against IN PARALLEL — so it must be complete and unambiguous: anything you do not name here will not exist.
+
+OUTPUT: exactly one JSON object:
 {
   "name": "Short Theme Name",
   "accent": "#rrggbb",
-  "designSpec": "A strict Google Standard DESIGN.md file format...",
-  "css": "…complete stylesheet…",
-  "layouts": { "shell": "…", "home": "…", "projects_index": "…" }
-}`);
-  let payload = extractJson(raw1);
+  "designSpec": "A strict DESIGN.md: the visual identity, mood, and rules.",
+  "styleSpec": "The build contract. MUST enumerate: (1) TOKENS — every CSS custom property (--name: value) for palette, font stacks, type scale, spacing scale, radius, and shadow, with concrete values. (2) CLASS VOCABULARY — the exact, complete list of CSS class names the site uses, each with a one-line purpose, GROUPED under the sections tokens/base/layout/components/pages so each CSS specialist knows which classes it owns. Layout specialists compose using ONLY these class names. (3) HERO IMAGE — you MUST name exactly one class (e.g. '.hero') that the 'pages' CSS specialist gives a background-image: url(assets/hero.jpg) (with background-size/position) — the 'home' layout specialist MUST apply that class to its top-level hero element. This is mandatory: a theme with no visible hero.jpg is a failed build."
+}`, STYLESPEC_SCHEMA, 24576);
+  let payload = extractJson(rawSpec);
+  const styleSpec = payload.styleSpec || '';
+  payload.layouts = {};
 
-  // Passes 2b, 3, 4: Remaining layouts — run in PARALLEL for maximum velocity
-  console.log('  → Passes 2b/3/4: Remaining layouts (parallel)');
-  const baseThemeContext = JSON.stringify(payload);
-  const [raw2, raw3, raw4] = await Promise.all([
+  // ── One parallel fan-out: every CSS section + every layout, all at once ──
+  // Both sides key off the SAME styleSpec vocabulary, so CSS and markup cohere
+  // without any of them waiting on a big serial stylesheet. A failed slot is
+  // skipped, not fatal; the async improve pass regenerates weak slots later.
+  const layoutKeys = Object.keys(LAYOUT_SPECS);
+  console.log(`  → Fan-out: ${CSS_SECTIONS.length} CSS sections + ${layoutKeys.length} layouts = ${CSS_SECTIONS.length + layoutKeys.length} specialists in parallel`);
+
+  const cssJobs = CSS_SECTIONS.map((section) =>
     callAgent(`${baseContext}
 
-Here is the base theme generated so far:
-${baseThemeContext}
+You are a CSS specialist. Write ONLY the "${section.key}" section of the stylesheet.
 
-OUTPUT: One JSON object containing ONLY the next 2 layouts (designs_index, project_detail):
-{
-  "layouts": { "designs_index": "…", "project_detail": "…" }
-}`),
-    callAgent(`${baseContext}
+SHARED DESIGN CONTRACT (build to this exactly — the same tokens/classes every other specialist uses, so it all coheres):
+${styleSpec}
 
-Here is the base theme generated so far:
-${baseThemeContext}
+THIS SECTION'S JOB: ${section.intent}
 
-OUTPUT: One JSON object containing ONLY the next 2 layouts (design_detail, page):
-{
-  "layouts": { "design_detail": "…", "page": "…" }
-}`),
-    callAgent(`${baseContext}
+RULES:
+- Implement ONLY the classes/tokens the contract assigns to "${section.key}". Do not restyle other sections' classes.
+- Reference tokens via var(--…); never hardcode a value a token already holds.
 
-Here is the base theme generated so far:
-${baseThemeContext}
+OUTPUT: exactly one JSON object: { "css": "…the ${section.key} CSS…" }`, CSS_SECTION_SCHEMA)
+      .then((r) => ({ kind: 'css', key: section.key, css: extractJson(r).css }))
+      .catch((e) => ({ kind: 'css', key: section.key, error: String(e) }))
+  );
 
-OUTPUT: One JSON object containing ONLY the remaining item layouts:
-{
-  "layouts": { "project_item": "…", "design_item": "…", "nav_item": "…" }
-}`),
-  ]);
-  Object.assign(payload.layouts, extractJson(raw2).layouts);
-  Object.assign(payload.layouts, extractJson(raw3).layouts);
-  Object.assign(payload.layouts, extractJson(raw4).layouts);
+  const layoutJobs = layoutKeys.map((key) => {
+    const spec = LAYOUT_SPECS[key];
+    const required = spec && spec.required.length ? spec.required.join(', ') : '(none)';
+    const optional = spec && spec.optional?.length ? spec.optional.join(', ') : '';
+    return callAgent(`${baseContext}
 
-  // Pass 5: Holistic Review — score, validate placeholders, fix inconsistencies
-  console.log('  → Pass 5: Holistic Review (Score + Validate + Fix)');
-  let raw5 = await callAgent(`${baseContext}
+You are a layout specialist. Generate ONLY the "${key}" layout, composed from the shared design system's class vocabulary.
 
-You have generated a full theme. Here is the complete assembled JSON:
-` + JSON.stringify(payload) + `
+SHARED DESIGN CONTRACT (use ONLY these class names — the CSS for them is being written in parallel):
+${styleSpec}
 
-HOLISTIC REVIEW CHECKLIST:
-1. Score the overall design quality 1-10. Is it distinctive, cohesive, and premium? Would it embarrass a professional designer?
-2. Check EVERY layout for required {{PLACEHOLDER}} variables. If any are missing, add them.
-3. Check for unclosed HTML tags and mismatched CSS class names.
-4. Check that NO hardcoded text, titles, or marketing copy leaked into the layouts.
-5. If the score is below 7, make targeted improvements to raise quality.
-6. Ensure the CSS and layouts are visually consistent with each other and the plan.
+This "${key}" layout MUST contain these exact placeholder(s): ${required}${optional ? `\nOptional placeholder(s): ${optional}` : ''}
 
-OUTPUT: The FINAL cleaned up, validated JSON object with all fields:
-{ "name": "...", "accent": "...", "designSpec": "...", "css": "...", "layouts": { ...all 9 layouts... } }`);
-  
-  let finalPayload = extractJson(raw5);
-  let verdict = validateThemePayload(finalPayload, { strict: true });
-  
-  if (!verdict.theme) {
-    console.log('  → Repairing final validation errors...');
-    let raw6 = await callAgent(`Fix these JSON problems:\n${verdict.errors.join('\n')}\n\nRespond ONLY with corrected JSON.\n\nPrevious:\n${JSON.stringify(finalPayload).slice(0, 50000)}`);
-    finalPayload = extractJson(raw6);
-    verdict = validateThemePayload(finalPayload, { strict: false });
+RULES:
+- Use ONLY {{PLACEHOLDER}} variables — NEVER hardcode text, titles, or copy.
+- Compose using ONLY the contract's class names; do not invent a new visual language.
+
+${LAYOUT_EXEMPLAR}
+
+OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`, ONE_LAYOUT_SCHEMA)
+      .then((r) => ({ kind: 'layout', key, html: extractJson(r).html }))
+      .catch((e) => ({ kind: 'layout', key, error: String(e) }));
+  });
+
+  const results = await Promise.all([...cssJobs, ...layoutJobs]);
+
+  // Assemble CSS in the fixed section order (tokens first so var(--…) resolves).
+  const cssBySection = {};
+  let builtLayouts = 0;
+  for (const r of results) {
+    if (r.error) { console.warn(`  ⚠ ${r.kind} ${r.key} failed (${r.error}) — skipped`); continue; }
+    if (r.kind === 'css') { if (typeof r.css === 'string' && r.css.trim()) cssBySection[r.key] = r.css; }
+    else if (typeof r.html === 'string' && r.html.trim()) { payload.layouts[r.key] = r.html; builtLayouts++; }
   }
+  payload.css = CSS_SECTIONS.map((s) => cssBySection[s.key]).filter(Boolean).join('\n\n');
+  console.log(`  → Built ${Object.keys(cssBySection).length}/${CSS_SECTIONS.length} CSS sections + ${builtLayouts}/${layoutKeys.length} layouts in parallel`);
 
+  // Validate locally — no extra LLM round-trip. Lenient: non-compliant layouts
+  // are dropped with a warning; the async improve pass regenerates weak slots.
+  let verdict = validateThemePayload(payload, { strict: false });
   if (!verdict.theme) throw new Error(`Theme failed: ${verdict.errors.join('; ')}`);
   for (const w of verdict.warnings) console.warn(`  ⚠ ${w}`);
   const theme = verdict.theme;
-  payload = finalPayload;
   // Wait for images
   const imageResults = await imagePromise;
   if (Array.isArray(imageResults)) {

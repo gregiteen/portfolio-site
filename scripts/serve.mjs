@@ -11,6 +11,13 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { createTransport } from 'nodemailer';
 import https from 'node:https';
+// Robust model-output JSON parser: strips ```json fences + repairs trailing
+// commas, then throws on total failure (callers wrap in try/catch → fallback).
+// Bare JSON.parse fails on fenced output, which the models emit constantly.
+import { extractJson } from './lib/theme.mjs';
+import { buildLetterheadPdf } from './lib/letterhead.mjs';
+import { createSigningRequest } from './lib/documenso.mjs';
+import { handleWebmail } from './lib/webmail-ui.mjs';
 import {
   initRuntimeStore,
   listVisitors,
@@ -20,6 +27,11 @@ import {
   deleteProposal,
   appendRun,
   pendingNotifications,
+  getRateCard,
+  ensureRateCardSeeded,
+  getBannerOffers,
+  ensureBannerOffersSeeded,
+  appendBannerEvent,
 } from './runtime-store.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -40,6 +52,64 @@ const buildScript = join(__dirname, 'build-site.mjs');
 const compileScript = join(__dirname, 'compile-theme.mjs');
 const improveScript = join(__dirname, 'improve-theme.mjs');
 const port = Number(process.env.PORT ?? 4173);
+
+// Rate card + banner offers live in runtime-store.mjs (vault/runtime/config/),
+// written through the Operation Contract. readRateCard() re-reads per proposal
+// (not cached) so edits to the vault doc take effect without a redeploy.
+async function readRateCard() {
+  return getRateCard();
+}
+
+const DEFAULT_RATE_CARD_BODY = `This is the ONLY source of pricing for automated proposals. The CNA proposal
+generator (\`scripts/serve.mjs\`, \`/api/cna-proposal\`) reads this file and MUST
+quote within these bands — it never invents numbers. Edit the figures below
+any time; changes take effect on the next proposal generated, no redeploy
+needed.
+
+Positioning: aggressive, not cheap. These rates should read as a specialist,
+not a commodity freelancer — priced to filter for serious engagements while
+still winning good-fit smaller work.
+
+## Baseline
+
+- **Hourly rate:** $150/hr (ad-hoc, scoping, small revisions)
+- **Retainer:** $6,000–$10,000/mo (ongoing maintenance + feature work, priority response)
+
+## Price bands by service category
+
+| Category | Range | Notes |
+|---|---|---|
+| Marketing / brochure site | $2,500 – $6,000 | Portfolio-style site, templated AI-generated design, few pages |
+| Multi-page site / web app | $6,000 – $18,000 | CMS-backed, custom interactivity, more than ~6 pages |
+| E-commerce | $10,000 – $30,000 | Storefront, payments, inventory, order management |
+| Automation / integration tooling | $6,000 – $15,000 | Scheduling, browser automation, deploy tooling, API glue |
+| AI integration | $12,000 – $40,000 | LLM features added to an existing product — chat, RAG, agents |
+| AI calling & SMS | $15,000 – $45,000 | Voice/SMS AI agents, telephony integration, compliance, latency-sensitive |
+| Authentication | $5,000 – $15,000 | SSO/OAuth, MFA, session infrastructure, standalone hardening |
+| AI model hosting & fine-tuning | $20,000 – $60,000 | Custom model deployment, fine-tuning pipelines, inference infra |
+| Mobile apps | $20,000 – $60,000 | Native or cross-platform |
+| Cloud platform / infra build | $15,000 – $50,000 | Multi-service architecture, IaC, scaling |
+| Full product build | $40,000 – $120,000+ | Multi-month, full-stack + AI + infra (UltraChat-scale) |
+
+## Rules for the proposal generator
+
+1. Match the CNA assessment's \`project_type\` (and conversation context) to the
+   closest category above. If a project spans multiple categories, sum the
+   relevant bands and note the composite in the proposal.
+2. Position within the band using \`complexity\` from the assessment: Low → low
+   end, Medium → middle, High → high end (or above, called out explicitly, if
+   scope clearly exceeds the band).
+3. Never quote below the low end of the matched band. Never quote a bare
+   number — always a range, with the rationale for where in the range it
+   lands.
+4. If nothing matches well, fall back to the hourly rate and estimate hours,
+   rather than fabricating a project-type band.`;
+
+const DEFAULT_BANNER_OFFERS = [
+  { id: 'default', text: 'Have a project in mind?', cta: 'Start a conversation →' },
+  { id: 'free-consult', text: 'First consult is free.', cta: 'Book a free 20-min call →' },
+  { id: 'fast-turnaround', text: 'Live in weeks, not quarters.', cta: 'See if it fits your timeline →' },
+];
 const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon' };
 
 let buildVersion = Date.now();
@@ -107,6 +177,7 @@ function startGeneration(prompt) {
   // Argument array — the prompt never touches a shell.
   const child = spawn(process.execPath, [compileScript, prompt], { stdio: ['ignore', 'pipe', 'pipe'] });
   let stderrTail = '';
+  let genSlug = null; // captured from compile-theme's "→ designs/<slug>" line
 
   child.stdout.on('data', (chunk) => {
     for (const line of String(chunk).split('\n')) {
@@ -114,6 +185,8 @@ function startGeneration(prompt) {
       if (!l) continue;
       console.log(`[Generator] ${l}`);
       if (l.startsWith('[')) genJob.phase = l;
+      const m = l.match(/→\s+designs\/(\S+)/);
+      if (m) genSlug = m[1];
     }
   });
   child.stderr.on('data', (chunk) => {
@@ -138,6 +211,19 @@ function startGeneration(prompt) {
         console.error('[Runtime] Failed to persist generation completion:', e.message);
       });
       rebuild('generated theme'); // watcher usually catches it, but be certain
+      // Serve first, refine live: kick off the improve pass on the just-built
+      // skin asynchronously. improve-theme scores it, regenerates weak slots via
+      // the parallel specialist fan-out, swaps if better, and rebuilds — so the
+      // viewer sees the first generation immediately and the upgraded version
+      // hot-swaps in underneath them. Fire-and-forget; failures never block.
+      if (genSlug) {
+        console.log(`[Improve] Auto-improving "${genSlug}" post-generation…`);
+        const imp = spawn(process.execPath, [improveScript, genSlug], { stdio: ['ignore', 'pipe', 'pipe'] });
+        imp.stdout.on('data', (c) => { for (const ln of String(c).split('\n')) { const t = ln.trim(); if (t) console.log(`[Improve] ${t}`); } });
+        imp.stderr.on('data', (c) => { const t = String(c).trim(); if (t) console.error(`[Improve] ${t}`); });
+        imp.on('error', (e) => console.error('[Improve] Failed to spawn:', e.message));
+        imp.on('close', (ic) => console.log(`[Improve] Post-generation pass exited (${ic}) for "${genSlug}".`));
+      }
     } else {
       genJob.status = 'error';
       genJob.error = (stderrTail.trim().split('\n').pop() || `generator exited with code ${code}`).slice(0, 300);
@@ -206,6 +292,8 @@ function saveSessions() {
   }, 250);
 }
 const runtimeCounts = await initRuntimeStore();
+if (await ensureRateCardSeeded(DEFAULT_RATE_CARD_BODY)) console.log('[Runtime] Seeded default rate card at vault/runtime/config/rate-card.md — edit real figures there.');
+if (await ensureBannerOffersSeeded(DEFAULT_BANNER_OFFERS)) console.log('[Runtime] Seeded default banner offers at vault/runtime/config/banner-offers.md');
 for (const visitor of listVisitors()) visitorProfiles.set(visitor.email, visitor);
 for (const proposal of listProposals()) proposalThreads.set(proposal.id, proposal);
 await loadSessions();
@@ -490,27 +578,120 @@ function geminiCall(apiKey, prompt) {
 }
 
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// gregiteen.xyz-branded handoff page in front of the Documenso signing link.
+// Documenso's self-hosted CSP sends `frame-ancestors 'self'` (verified via
+// curl), which blocks true iframe embedding — so this is a branded landing
+// page with a top-level-navigation CTA into the actual sign.gregiteen.xyz
+// flow, not an embed. The Documenso side is itself already branded (logo,
+// colors, site link) via its own branding settings.
+function renderSignPage({ found, clientName, subject, signingUrl }) {
+  const heading = found ? 'Your proposal is ready to sign' : 'Signing link not found';
+  const body = found
+    ? `<p>${clientName ? escapeHtml(clientName) + ',' : 'Hi,'} your proposal${subject ? ` — <em>${escapeHtml(subject)}</em>` : ''} — is ready for review and signature.</p>
+       <a class="cta" href="${signingUrl}" target="_top" rel="noopener">Review &amp; Sign Document →</a>
+       <p class="fine">You'll be taken to a secure signing page. No account required.</p>`
+    : `<p>This signing link has expired or is no longer valid.</p>
+       <p class="fine">If you're expecting a proposal, reply to the original email from Greg and a fresh link will be sent.</p>`;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${found ? 'Sign your proposal' : 'Link not found'} — Greg Iteen</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--black:#0a0a0a;--white:#f5f5f3;--gray:rgba(245,245,243,.55);--line:rgba(245,245,243,.28);--accent:#e22b22}
+html,body{min-height:100%}
+body{font-family:'Archivo',sans-serif;background:var(--black);color:var(--white);display:flex;flex-direction:column;min-height:100dvh;padding:clamp(20px,4vw,56px)}
+.top{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.22em;text-transform:uppercase;color:var(--gray);margin-bottom:clamp(32px,6vw,72px)}
+main{flex:1;display:flex;flex-direction:column;justify-content:center;max-width:640px}
+img.logo{height:32px;width:auto;margin-bottom:clamp(24px,5vw,48px);filter:brightness(0) invert(1)}
+h1{font-family:'Archivo Black',sans-serif;font-size:clamp(1.6rem,4vw,2.6rem);line-height:1.15;margin-bottom:24px}
+main p{color:var(--gray);font-size:1rem;line-height:1.6;margin-bottom:20px}
+main p em{color:var(--white);font-style:normal}
+.cta{display:inline-block;background:var(--accent);color:var(--white);font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:.85rem;letter-spacing:.05em;text-decoration:none;padding:16px 28px;margin:8px 0 20px;transition:opacity .2s}
+.cta:hover{opacity:.85}
+.fine{font-size:.8rem;color:var(--gray)}
+footer{font-family:'IBM Plex Mono',monospace;font-size:.65rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gray);border-top:1px solid var(--line);padding-top:20px;margin-top:clamp(32px,6vw,72px)}
+footer a{color:var(--gray);text-decoration:none}
+footer a:hover{color:var(--white)}
+</style>
+</head>
+<body>
+<div class="top">Greg Iteen — Proposal</div>
+<main>
+<img class="logo" src="/gi-logo-transparent.png" alt="Greg Iteen">
+<h1>${heading}</h1>
+${body}
+</main>
+<footer><a href="https://gregiteen.xyz">gregiteen.xyz</a></footer>
+</body>
+</html>`;
+}
+
 async function sendProposalToClient(proposalId, thread) {
   if (thread.status === 'sent') return { noop: true };
   const clientSubject = thread.proposal.subject_line || `Project Proposal from Greg Iteen`;
+
+  // Render the FINAL (possibly revised) proposal as a letterhead PDF, then
+  // hand it to Documenso for e-signature. Documenso is optional (gated on env
+  // vars) — if it's not configured, the client still gets the branded PDF,
+  // just without a signing link.
+  const pdfBuffer = await buildLetterheadPdf({
+    subject: clientSubject,
+    bodyText: thread.proposal.proposal_text,
+    clientName: thread.enrichment?.company_name,
+    clientEmail: thread.clientEmail,
+    proposalId,
+  });
+  let signingUrl = null;
+  try {
+    const signing = await createSigningRequest({
+      pdfBuffer,
+      filename: `proposal-${proposalId}.pdf`,
+      clientEmail: thread.clientEmail,
+      clientName: thread.enrichment?.company_name,
+      subject: clientSubject,
+      proposalId,
+    });
+    signingUrl = signing?.signingUrl || null;
+  } catch (/** @type {any} */ e) {
+    console.error(`[Proposal ${proposalId}] Documenso submission failed, sending PDF without a signing link:`, e.message);
+  }
+
+  const wrapperSigningUrl = signingUrl ? `${SITE_URL}/sign/${proposalId}` : null;
+  const signingBlock = wrapperSigningUrl
+    ? `\n\nReview & sign: ${wrapperSigningUrl}\n`
+    : `\n\n(A signable copy will follow separately — for now, please review the attached PDF.)\n`;
+
   await smtpTransport.sendMail({
     from: mailFrom,
     to: thread.clientEmail,
     cc: mailOwner,
     subject: clientSubject,
-    text: `${thread.proposal.client_email_draft}\n\n${'─'.repeat(40)}\n\n${thread.proposal.proposal_text}\n\n— Greg Iteen\ngregiteen.xyz`,
+    text: `${thread.proposal.client_email_draft}${signingBlock}\n${'─'.repeat(40)}\n\n${thread.proposal.proposal_text}\n\n— Greg Iteen\ngregiteen.xyz`,
+    attachments: [{ filename: `proposal-${proposalId}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }],
   });
   await smtpTransport.sendMail({
     from: mailFrom,
     to: mailOwner,
     subject: `✓ Proposal sent to ${thread.clientEmail}`,
-    text: `Proposal ${proposalId} has been sent to ${thread.clientEmail}.\nYou were CC'd on the email.`,
+    text: `Proposal ${proposalId} has been sent to ${thread.clientEmail}.\nYou were CC'd on the email.\n${signingUrl ? `Documenso signing link: ${signingUrl}` : 'Documenso not configured (DOCUMENSO_BASE_URL/DOCUMENSO_API_KEY unset) — sent as a plain PDF, no signature link.'}`,
   });
   thread.status = 'sent';
   thread.decidedAt = new Date().toISOString();
+  thread.signingUrl = signingUrl;
   proposalThreads.set(proposalId, thread);
   await upsertProposal(proposalId, thread);
-  return { status: 'sent' };
+  return { status: 'sent', signingUrl };
 }
 
 async function reviseProposal(proposalId, thread, replyText) {
@@ -520,7 +701,7 @@ async function reviseProposal(proposalId, thread, replyText) {
   thread.status = 'revising';
   const revisionPrompt = `You are revising a project proposal based on feedback from the author (Greg Iteen).\n\nCURRENT PROPOSAL:\n${thread.proposal.proposal_text}\n\nCURRENT CLIENT EMAIL DRAFT:\n${thread.proposal.client_email_draft}\n\nGREG'S FEEDBACK:\n${replyText}\n\nApply Greg's feedback precisely. Do not add anything he didn't ask for. Do not remove anything he didn't mention. If he gives specific wording, use it verbatim.\n\nOUTPUT: Return exactly one JSON object:\n{\n  "subject_line": "Updated subject line if needed",\n  "proposal_text": "The full revised proposal",\n  "client_email_draft": "The revised email to accompany the proposal",\n  "changes_made": "Brief summary of what changed"\n}`;
   const revisionRaw = await geminiCall(GOOGLE_API_KEY, revisionPrompt);
-  const revision = JSON.parse(revisionRaw);
+  const revision = extractJson(revisionRaw);
   thread.revision_history = [
     ...(Array.isArray(thread.revision_history) ? thread.revision_history : []),
     { at: new Date().toISOString(), feedback: replyText, revision },
@@ -568,6 +749,7 @@ function isPublicPath(urlPath) {
   if (urlPath === '/splash.html' || urlPath === '/verify.html' || urlPath === '/consult.html') return true;
   if (urlPath.startsWith('/api/')) return true;
   if (urlPath.startsWith('/assets/')) return true;
+  if (urlPath.startsWith('/sign/')) return true;
   if (urlPath.startsWith('/designs/')) return true;
   // Dev/generation endpoints are API-like
   if (urlPath === '/dev-status' || urlPath === '/generate-status' || urlPath === '/generate-theme') return true;
@@ -629,6 +811,13 @@ createServer(async (req, res) => {
   const urlObj = new URL(req.url, 'http://x');
   const urlPath = decodeURIComponent(urlObj.pathname);
 
+  // ── Standalone webmail app (mail.gregiteen.xyz) — own auth, own router.
+  // Kept separate from Mailcow's own UI, which is hard-wired to a single
+  // hostname for CORS/session purposes and can't be aliased. ──
+  if ((req.headers.host || '').split(':')[0] === 'mail.gregiteen.xyz') {
+    return handleWebmail(req, res, urlPath);
+  }
+
   // ── Auth check for protected routes ──
   if (!isPublicPath(urlPath) && !isAuthenticated(req)) {
     res.writeHead(302, { 'Location': '/splash.html' });
@@ -654,6 +843,22 @@ createServer(async (req, res) => {
       res.end();
       return;
     }
+  }
+
+  // ── Branded proposal-signing handoff page ──
+  if (urlPath.startsWith('/sign/') && req.method === 'GET') {
+    const proposalId = urlPath.slice('/sign/'.length).replace(/\/+$/, '');
+    const thread = proposalThreads.get(proposalId);
+    const found = !!thread?.signingUrl;
+    const html = renderSignPage({
+      found,
+      clientName: thread?.enrichment?.company_name,
+      subject: thread?.proposal?.subject_line,
+      signingUrl: thread?.signingUrl,
+    });
+    res.writeHead(found ? 200 : 404, { 'content-type': 'text/html; charset=utf-8' });
+    res.end(html);
+    return;
   }
 
   // ── API: Logout ──
@@ -926,6 +1131,30 @@ createServer(async (req, res) => {
     return;
   }
 
+  // ── API: Banner offers (A/B variant list for the CNA banner) ──
+  if (urlPath === '/api/banner-offers' && req.method === 'GET') {
+    const offers = await getBannerOffers();
+    return sendJson(res, 200, { offers });
+  }
+
+  // ── API: Banner events (impression/click tracking for the A/B test) ──
+  if (urlPath === '/api/banner-event' && req.method === 'POST') {
+    try {
+      const { event, variant, trigger } = await readBody(req);
+      const cookies = parseCookies(req.headers.cookie);
+      const token = cookies.gi_auth;
+      const session = token ? authTokens.get(token) : null;
+      appendBannerEvent({ event, variant, trigger, email: session?.email || null }).catch((err) => {
+        console.error('[Banner] Failed to log event:', err.message);
+      });
+      res.writeHead(204).end();
+    } catch (/** @type {any} */ err) {
+      console.error('[Banner] Bad event request:', err.message);
+      res.writeHead(204).end();
+    }
+    return;
+  }
+
   // ── API: CNA Chat ──
   if (urlPath === '/api/cna' && req.method === 'POST') {
     try {
@@ -998,7 +1227,10 @@ If NOT complete, respond with just:
       const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
       let cnaResponse;
       try {
-        cnaResponse = JSON.parse(text);
+        // extractJson strips ```json fences the model often wraps around the
+        // object; bare JSON.parse failed on those and leaked the raw JSON
+        // blob to the user as the chat message.
+        cnaResponse = extractJson(text);
       } catch {
         cnaResponse = { message: text || 'I\'d love to hear about your project. What are you looking to build?', complete: false };
       }
@@ -1023,6 +1255,10 @@ If NOT complete, respond with just:
       const token = cookies.gi_auth;
       const session = token ? authTokens.get(token) : null;
       const clientEmail = session?.email || 'unknown';
+      // Which A/B banner offer (if any) this visitor was shown — read from the
+      // cookie the banner script sets, so proposals can reference what drove
+      // them here without any change needed in consult.html.
+      const bannerVariant = cookies.cna_variant || null;
 
       // Attach CNA to deferred visitor notification
       if (token && pendingVisitEmails.has(token)) {
@@ -1088,7 +1324,7 @@ OUTPUT: Return exactly one JSON object:
       let enrichment = {};
       try {
         const enrichRaw = await geminiCall(GOOGLE_API_KEY, enrichPrompt);
-        enrichment = JSON.parse(enrichRaw);
+        enrichment = extractJson(enrichRaw);
       } catch (/** @type {any} */ e) {
         console.warn(`[Proposal ${proposalId}] Enrichment failed: ${e.message}`);
         enrichment = { company_name: emailDomain || 'Unknown', industry: 'Unknown' };
@@ -1096,6 +1332,9 @@ OUTPUT: Return exactly one JSON object:
 
       // Step 2: Generate proposal draft
       console.log(`[Proposal ${proposalId}] Generating proposal draft…`);
+      const rateCard = await readRateCard();
+      const bannerOffers = await getBannerOffers();
+      const matchedOffer = bannerVariant ? bannerOffers.find((o) => o.id === bannerVariant) : null;
       const proposalPrompt = `You are writing a professional project proposal on behalf of Greg Iteen, a software engineer and designer.
 
 CLIENT PROFILE:
@@ -1107,13 +1346,17 @@ ${assessmentText}
 CONVERSATION CONTEXT:
 ${conversationText}
 
+RATE CARD (the ONLY source of pricing — never invent numbers outside this):
+${rateCard || '(rate card unavailable — fall back to a generic "let\'s discuss scope" placeholder, do NOT invent a dollar figure)'}
+${matchedOffer ? `\nOFFER SHOWN TO THIS PROSPECT: "${matchedOffer.text} ${matchedOffer.cta}" — if this implies a commitment (e.g. a free consult), honor it explicitly in the proposal and next steps. Do not silently drop it.` : ''}
+
 Write a professional, compelling project proposal. Include:
 1. Executive summary
 2. Understanding of the client's needs (show you listened)
 3. Proposed solution and approach
 4. Scope of work (itemized deliverables)
 5. Timeline with milestones
-6. Investment (pricing — use ranges based on the budget tier and project complexity)
+6. Investment (pricing — MUST come from the rate card above: match the project to its category band, position within the band by complexity, and briefly justify why)
 7. Why Greg is the right fit
 8. Next steps
 
@@ -1129,7 +1372,7 @@ OUTPUT: Return exactly one JSON object:
       let proposalDraft = {};
       try {
         const proposalRaw = await geminiCall(GOOGLE_API_KEY, proposalPrompt);
-        proposalDraft = JSON.parse(proposalRaw);
+        proposalDraft = extractJson(proposalRaw);
       } catch (/** @type {any} */ e) {
         console.warn(`[Proposal ${proposalId}] Draft generation failed: ${e.message}`);
         proposalDraft = {
@@ -1144,6 +1387,7 @@ OUTPUT: Return exactly one JSON object:
         clientEmail,
         assessment,
         enrichment,
+        bannerVariant: bannerVariant || null,
         proposal: proposalDraft,
         history: conversationText,
         revisions: 0,
@@ -1195,6 +1439,22 @@ ${'═'.repeat(60)}`;
 
       const replyTo = `proposal-${proposalId}@${process.env.MAIL_DOMAIN || 'gregiteen.xyz'}`;
 
+      // Attach a letterhead PDF preview so Greg reviews exactly what the
+      // client will receive (final signable copy is regenerated at send time
+      // in case he revises first).
+      let previewPdf = null;
+      try {
+        previewPdf = await buildLetterheadPdf({
+          subject: proposalDraft.subject_line,
+          bodyText: proposalDraft.proposal_text,
+          clientName: enrichment.company_name,
+          clientEmail,
+          proposalId,
+        });
+      } catch (/** @type {any} */ pdfErr) {
+        console.error(`[Proposal ${proposalId}] Letterhead PDF preview failed:`, pdfErr.message);
+      }
+
       try {
         await smtpTransport.sendMail({
           from: mailFrom,
@@ -1203,6 +1463,7 @@ ${'═'.repeat(60)}`;
           subject: `[PROPOSAL] ${proposalDraft.subject_line || 'New Proposal'} — Reply to edit`,
           text: emailToGreg,
           headers: { 'X-Proposal-ID': proposalId },
+          attachments: previewPdf ? [{ filename: `proposal-${proposalId}-preview.pdf`, content: previewPdf, contentType: 'application/pdf' }] : [],
         });
         console.log(`[Proposal ${proposalId}] Email sent to Greg. Reply-To: ${replyTo}`);
       } catch (/** @type {any} */ emailErr) {

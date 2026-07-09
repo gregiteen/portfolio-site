@@ -38,11 +38,14 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
-// Model rotation: cycle through available models for fresh perspectives
+// Model rotation: cycle through current-generation models for fresh
+// perspectives. IDs verified live against generativelanguage v1beta
+// generateContent (2026-07-08). Gemini 2.5-pro is deliberately EXCLUDED —
+// it is an older generation and must never be used here.
 const MODELS = [
   'gemini-3.5-flash',
-  'gemini-3.1-pro',
-  'gemini-3.5-pro',
+  'gemini-3.1-pro-preview',
+  'gemini-3-flash-preview',
 ];
 
 function pickModel(slug) {
@@ -83,16 +86,63 @@ function geminiApiCall(model, bodyObj) {
       });
     });
     req.on('error', reject);
-    req.setTimeout(180_000, () => { req.destroy(); reject(new Error('Gemini API timeout')); });
+    // 300s: the improve call regenerates a full stylesheet + every layout as
+    // one schema-constrained JSON payload, which can run well past 180s. This
+    // runs async (cron / post-generation hot-swap), so the viewer never waits.
+    req.setTimeout(300_000, () => { req.destroy(); reject(new Error('Gemini API timeout')); });
     req.write(body);
     req.end();
   });
 }
 
-async function callLLM(prompt, model) {
+// Strict response schemas force Gemini's constrained decoder to emit valid,
+// properly-escaped JSON — the durable fix for current-gen models (flash,
+// 3.1-pro-preview) intermittently emitting bad escapes inside CSS/layout
+// strings. This is why we do NOT need (or want) an older model as a fallback.
+const SCORE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    score: { type: 'INTEGER' },
+    distinctiveness: { type: 'INTEGER' },
+    cohesion: { type: 'INTEGER' },
+    technical: { type: 'INTEGER' },
+    placeholders: { type: 'INTEGER' },
+    critique: { type: 'STRING' },
+    should_improve: { type: 'BOOLEAN' },
+  },
+  required: ['score', 'critique', 'should_improve'],
+};
+
+const COMPARE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    score: { type: 'INTEGER' },
+    is_better: { type: 'BOOLEAN' },
+    reason: { type: 'STRING' },
+  },
+  required: ['score', 'is_better'],
+};
+
+// Specialist fan-out schemas: each component is improved by its own focused
+// call so they run in parallel and a single slow/failed slot can't nuke the
+// whole improve (that slot just keeps its original).
+const CSS_ONLY_SCHEMA = {
+  type: 'OBJECT',
+  properties: { css: { type: 'STRING' } },
+  required: ['css'],
+};
+const LAYOUT_ONLY_SCHEMA = {
+  type: 'OBJECT',
+  properties: { html: { type: 'STRING' } },
+  required: ['html'],
+};
+
+async function callLLM(prompt, model, schema = null) {
+  const generationConfig = { responseMimeType: 'application/json' };
+  if (schema) generationConfig.responseSchema = schema;
   return geminiApiCall(model, {
     contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { responseMimeType: 'application/json' },
+    generationConfig,
   });
 }
 
@@ -157,7 +207,7 @@ OUTPUT: Return exactly one JSON object:
   "placeholders": 9,
   "critique": "What's wrong and how to improve it...",
   "should_improve": true
-}`, model);
+}`, model, SCORE_SCHEMA);
 
   let scoreObj;
   try {
@@ -174,46 +224,67 @@ OUTPUT: Return exactly one JSON object:
     return { slug, score: scoreObj.score, improved: false };
   }
 
-  // Step 2: Generate improved version
-  const improveRaw = await callLLM(`You are improving an AI-generated portfolio theme. Here is the critique:
-
+  // Step 2: Improve each component in parallel (specialist per slot).
+  // One call for CSS + one per layout, all concurrent. A slot that fails or
+  // times out simply keeps its original — the improve never dies wholesale,
+  // and wall-clock is the slowest single slot, not the serial sum.
+  const sharedBrief = `Theme name: ${name}
+Style brief: ${style}
+Accent: ${accent}
+Critique to address (focus on the weakest areas):
 ${scoreObj.critique}
 
-Current theme:
-Name: ${name}
-Style: ${style}
-Accent: ${accent}
+RULES:
+- Preserve the aesthetic intent; make targeted improvements, don't restart from scratch.
+- NEVER write hardcoded text, titles, or copy. Use ONLY {{PLACEHOLDER}} variables.
+- NEVER remove a required placeholder.
+- The theme's generated images at assets/logo.png, assets/favicon.png, assets/hero.jpg, and assets/portrait.jpg (referenced via url(...) or <img>) are NOT hardcoded copy — using them is required, not a violation of the no-hardcoding rule. In particular, the "home" layout's top-level hero element MUST carry a class the CSS gives background-image: url(assets/hero.jpg) — a theme with no visible hero image is a failed improve.
+- NEVER write <script>…</script> or any inline JS. Layouts are inert markup only; interactivity must come from CSS alone (:hover, :focus, transitions, animations). Any script tag found will be stripped, so it's wasted effort.`;
+
+  const cssTask = callLLM(`You are a CSS specialist improving one portfolio theme's stylesheet.
+${sharedBrief}
 
 Current CSS:
 ${css}
 
-Current layouts:
-${JSON.stringify(layouts)}
+OUTPUT: exactly one JSON object: { "css": "…improved complete stylesheet…" }`, model, CSS_ONLY_SCHEMA)
+    .then((r) => ({ kind: 'css', value: extractJson(r).css }))
+    .catch((e) => ({ kind: 'css', error: String(e) }));
 
-PLACEHOLDER CONTRACT (you MUST use these exact variables):
-${placeholderContract}
+  const layoutTasks = Object.entries(layouts).map(([key, tpl]) => {
+    const spec = LAYOUT_SPECS[key];
+    const required = spec ? spec.required.join(', ') : '(none)';
+    return callLLM(`You are a layout specialist improving the "${key}" layout of one portfolio theme.
+${sharedBrief}
 
-RULES:
-- You MUST NOT write any hardcoded text, titles, or copy into the layouts. Use ONLY {{PLACEHOLDER}} variables.
-- You MUST NOT remove any required placeholders.
-- You MUST preserve the general aesthetic intent but make targeted improvements based on the critique.
-- Focus on the weakest scoring areas.
+This layout MUST contain these exact placeholder(s): ${required}
 
-OUTPUT: Return exactly one JSON object with the improved theme:
-{
-  "name": "${name}",
-  "accent": "${accent}",
-  "css": "…improved complete stylesheet…",
-  "layouts": { ...all layouts... }
-}`, model);
+Current "${key}" layout HTML:
+${tpl}
 
-  let improvedPayload;
-  try {
-    improvedPayload = extractJson(improveRaw);
-  } catch {
-    console.warn(`  [${slug}] Failed to parse improved theme, skipping`);
+OUTPUT: exactly one JSON object: { "html": "…improved layout HTML with the required placeholders…" }`, model, LAYOUT_ONLY_SCHEMA)
+      .then((r) => ({ kind: 'layout', key, value: extractJson(r).html }))
+      .catch((e) => ({ kind: 'layout', key, error: String(e) }));
+  });
+
+  const results = await Promise.all([cssTask, ...layoutTasks]);
+
+  // Assemble: start from the current theme, overlay only the slots that
+  // improved cleanly; failed/empty slots keep their original content.
+  let improvedCss = css;
+  const improvedLayouts = { ...layouts };
+  let improvedSlots = 0;
+  for (const r of results) {
+    if (r.error) { console.warn(`  [${slug}] ${r.kind}${r.key ? ':' + r.key : ''} slot failed (${r.error}) — keeping original`); continue; }
+    if (r.kind === 'css' && typeof r.value === 'string' && r.value.trim()) { improvedCss = r.value; improvedSlots++; }
+    if (r.kind === 'layout' && typeof r.value === 'string' && r.value.trim()) { improvedLayouts[r.key] = r.value; improvedSlots++; }
+  }
+  if (improvedSlots === 0) {
+    console.warn(`  [${slug}] No slot improved, skipping`);
     return { slug, score: scoreObj.score, improved: false };
   }
+  console.log(`  [${slug}] Improved ${improvedSlots}/${results.length} slot(s) in parallel`);
+  const improvedPayload = { name, accent, css: improvedCss, layouts: improvedLayouts };
 
   // Step 3: Validate the improved version
   const verdict = validateThemePayload(improvedPayload, { strict: false });
@@ -235,7 +306,7 @@ ${verdict.theme.css.slice(0, 3000)}
 
 Improved layouts: ${Object.keys(verdict.theme.layouts).join(', ')}
 
-OUTPUT: { "score": 8, "is_better": true, "reason": "..." }`, model);
+OUTPUT: { "score": 8, "is_better": true, "reason": "..." }`, model, COMPARE_SCHEMA);
 
   let newScoreObj;
   try {

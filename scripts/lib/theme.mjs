@@ -215,8 +215,14 @@ export function validateThemePayload(payload, { strict = true } = {}) {
       const msg = `layout "${key}" is missing required placeholder(s): ${missing.join(', ')}`;
       if (strict) { errors.push(msg); } else { warnings.push(msg + ' — layout dropped'); continue; }
     }
-    // Generated layouts are inert markup: no scripts allowed.
-    layouts[key] = tpl.replace(/<\s*\/?\s*script/gi, '&lt;script');
+    // Generated layouts are inert markup: no scripts allowed. Strip the whole
+    // block (not just neuter the opening tag) — escaping `<script` alone left
+    // the JS body as literal visible text on the page. Models sometimes close
+    // with a second `<script>` instead of `</script>`, so fall back to
+    // stripping to the next `<script` or end-of-string when unclosed.
+    let clean = tpl.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '');
+    clean = clean.replace(/<script\b[^>]*>[\s\S]*?(?=<script\b|$)/gi, '');
+    layouts[key] = clean;
   }
   for (const key of Object.keys(rawLayouts)) {
     if (!LAYOUT_SPECS[key]) warnings.push(`unknown layout "${key}" ignored`);
@@ -244,7 +250,10 @@ export function extractJson(raw) {
     try {
       return JSON.parse(s.replace(/,\s*([}\]])/g, '$1'));
     } catch {
-      console.error('Failed to parse theme tokens file:', String(err));
+      // Consistent contract: return a parsed object or throw. Silently
+      // returning undefined here made callers crash later on `undefined.x`
+      // (e.g. improve-theme reading `.score`) instead of skipping gracefully.
+      throw new Error(`could not parse JSON from model output: ${String(err)}`);
     }
   }
 }
