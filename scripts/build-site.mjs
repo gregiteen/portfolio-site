@@ -610,7 +610,7 @@ const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400..700;1,400..700&family=Archivo:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">`;
 
-const FAVICON = `<link rel="icon" type="image/png" href="/gi-logo.png">`;
+const FAVICON = `<link rel="icon" type="image/png" href="/assets/favicon.png">`;
 
 // Cross-page fades + 3D design-morph (View Transition API; no-op where unsupported).
 const TRANSITIONS = `<style>

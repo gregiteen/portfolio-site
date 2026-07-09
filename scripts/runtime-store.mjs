@@ -12,11 +12,13 @@ const repoRoot = join(__dirname, '..');
 const vaultRoot = join(repoRoot, 'vault');
 const registryDir = join(repoRoot, 'vault-registry');
 const runtimeRoot = join(vaultRoot, 'runtime');
-const dirs = {
+const campaignsDir = join(vaultRoot, 'campaigns');
+export const dirs = {
   visitors: join(runtimeRoot, 'visitors'),
   proposals: join(runtimeRoot, 'proposals'),
   runs: join(runtimeRoot, 'runs'),
   config: join(runtimeRoot, 'config'),
+  calendar: join(runtimeRoot, 'calendar'),
 };
 
 const engine = createEngine({ registryDir });
@@ -90,8 +92,11 @@ function visitorBody(visitor) {
     '',
     '## Runtime JSON',
     jsonBlock({
+      status: visitor.status || 'Lead',
+      timeline: visitor.timeline || [],
       enrichment: visitor.enrichment || {},
       pending_notification: visitor.pending_notification || null,
+      drip: visitor.drip || null,
     }),
     '',
     '## Notes',
@@ -113,6 +118,9 @@ function proposalBody(proposal) {
       enrichment: proposal.enrichment || {},
       bannerVariant: proposal.bannerVariant || null,
       signingUrl: proposal.signingUrl || null,
+      signingDocumentId: proposal.signingDocumentId || null,
+      signingStatus: proposal.signingStatus || null,
+      signingUpdatedAt: proposal.signingUpdatedAt || null,
       proposal: proposal.proposal || {},
       history: proposal.history || '',
       revision_history: revisions,
@@ -192,8 +200,11 @@ function normalizeVisitorData(data, raw) {
       lastSeen: data.last_seen ? Date.parse(data.last_seen) : Date.now(),
       visits: Number(data.visits || 0),
       generations: Number(data.generation_count || data.generations || 0),
+      status: runtime.status || data.status || 'Lead',
+      timeline: runtime.timeline || [],
       enrichment: runtime.enrichment || {},
       pending_notification: runtime.pending_notification || null,
+      drip: runtime.drip || null,
     },
   };
 }
@@ -210,6 +221,9 @@ function normalizeProposalData(data, raw) {
       enrichment: thread.enrichment || { company_name: data.company || '' },
       bannerVariant: thread.bannerVariant || null,
       signingUrl: thread.signingUrl || null,
+      signingDocumentId: thread.signingDocumentId || null,
+      signingStatus: thread.signingStatus || null,
+      signingUpdatedAt: thread.signingUpdatedAt || null,
       proposal: thread.proposal || {},
       history: thread.history || '',
       revision_history: Array.isArray(thread.revision_history) ? thread.revision_history : [],
@@ -271,8 +285,11 @@ async function persistVisitor(email, visitor) {
     style_prompt: visitor.style || '',
     opt_in: !!visitor.optIn,
     generation_count: Number(visitor.generations || 0),
+    status: visitor.status || 'Lead',
+    timeline: serializable(visitor.timeline || []),
     enrichment: serializable(visitor.enrichment || {}),
     pending_notification: serializable(visitor.pending_notification || null),
+    drip: serializable(visitor.drip || null),
   };
   await scheduleWrite(rel, serializeRuntimeDocument(fm, visitorBody(visitor)));
 }
@@ -368,6 +385,32 @@ export async function ensureBannerOffersSeeded(defaultOffers) {
   return true;
 }
 
+// ── Drip campaigns (structural definitions; visitor state stays private) ────
+export async function getDripCampaign(slug) {
+  const safeSlug = String(slug || '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+  if (!safeSlug) return null;
+  try {
+    const raw = await readFile(join(campaignsDir, `${safeSlug}.md`), 'utf8');
+    const { data, body } = parseDocument(raw);
+    if (data.type !== 'drip_campaign') return null;
+    const sequence = extractJsonBlock(body, 'Sequence JSON') || {};
+    const steps = Array.isArray(sequence.steps) ? sequence.steps : [];
+    if (!steps.length) return null;
+    return { slug: data.slug || safeSlug, name: data.name || data.title || safeSlug, steps };
+  } catch {
+    return null;
+  }
+}
+
+export function pendingDripVisitors(now = Date.now()) {
+  return [...visitorCache.values()].filter((visitor) => {
+    const drip = visitor.drip;
+    if (!drip || drip.status !== 'active') return false;
+    const dueAt = Date.parse(drip.next_send_at || '');
+    return Number.isFinite(dueAt) && dueAt <= now;
+  });
+}
+
 // ── Banner events (append-only analytics log for the A/B test) ─────────────
 const bannerEventsRel = 'runtime/events/banner-events.md';
 
@@ -459,6 +502,32 @@ export async function appendRun(run) {
 
 export function pendingNotifications() {
   return [...visitorCache.values()].filter((v) => v.pending_notification);
+}
+
+export async function getWebmailSettings() {
+  const filePath = join(dirs.config, 'webmail-settings.md');
+  try {
+    const raw = await readFile(filePath, 'utf8');
+    const doc = parseDocument(raw);
+    return doc.frontmatter;
+  } catch (e) {
+    return null;
+  }
+}
+
+export async function updateWebmailSettings(updates) {
+  const filePath = join(dirs.config, 'webmail-settings.md');
+  let doc = { frontmatter: {}, body: '' };
+  try {
+    const raw = await readFile(filePath, 'utf8');
+    doc = parseDocument(raw);
+  } catch (e) {
+    doc.frontmatter = { type: 'webmail_settings' };
+  }
+  Object.assign(doc.frontmatter, updates);
+  const content = serializeRuntimeDocument(doc.frontmatter, doc.body);
+  await mkdir(dirs.config, { recursive: true });
+  await writeAtomic(filePath, content);
 }
 
 export async function deleteProposal(id) {

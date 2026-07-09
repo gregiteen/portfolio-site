@@ -54,18 +54,20 @@ function shell({ title, body, flash }) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)} — Greg Iteen Mail</title>
 <meta name="robots" content="noindex">
+<link rel="icon" type="image/png" href="https://gregiteen.xyz/assets/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--black:#0a0a0a;--white:#f5f5f3;--gray:rgba(245,245,243,.55);--faint:rgba(245,245,243,.22);--line:rgba(245,245,243,.28);--accent:#e22b22}
+:root{--black:#0a0a0a;--white:#f5f5f3;--gray:rgba(245,245,243,.55);--faint:rgba(245,245,243,.22);--line:rgba(245,245,243,.28);--accent:#ff6a00}
 html,body{min-height:100%}
 body{font-family:'Archivo',sans-serif;background:var(--black);color:var(--white)}
 .frame{max-width:820px;margin:0 auto;padding:clamp(20px,4vw,48px)}
-.top{display:flex;justify-content:space-between;align-items:baseline;font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gray);margin-bottom:clamp(24px,4vw,48px);border-bottom:1px solid var(--line);padding-bottom:16px}
+.top{display:flex;justify-content:space-between;align-items:center;font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gray);margin-bottom:clamp(24px,4vw,48px);border-bottom:1px solid var(--line);padding-bottom:16px}
 .top a{color:var(--gray);text-decoration:none}
 .top a:hover{color:var(--white)}
+.top .logo{height:18px;width:auto;display:block}
 h1{font-family:'Archivo Black',sans-serif;font-size:1.6rem;margin-bottom:20px}
 .flash{font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--accent);border:1px solid var(--accent);padding:10px 14px;margin-bottom:20px}
 label{display:block;font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);margin:16px 0 6px}
@@ -92,7 +94,7 @@ button:hover,.btn:hover{opacity:.85}
 </head>
 <body>
 <div class="frame">
-<div class="top"><span>Greg Iteen — Mail</span>${title !== 'Sign in' ? '<a href="/logout">Sign out</a>' : ''}</div>
+<div class="top"><img class="logo" src="https://gregiteen.xyz/gi-logo-transparent-dark.png" alt="greg.iteen">${title !== 'Sign in' ? '<a href="/logout">Sign out</a>' : ''}</div>
 ${flash ? `<div class="flash">${escapeHtml(flash)}</div>` : ''}
 ${body}
 </div>

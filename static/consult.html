@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Greg Iteen — Let's Work Together</title>
 <meta name="description" content="Tell me about your project. AI-powered needs assessment for Greg Iteen's engineering services.">
+<link rel="icon" type="image/png" href="/assets/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -13,7 +14,7 @@
 :root{
   --black:#0a0a0a;--white:#f5f5f3;--gray:rgba(245,245,243,.55);
   --faint:rgba(245,245,243,.22);--line:rgba(245,245,243,.28);
-  --accent:#e22b22;
+  --accent:#ff6a00;
 }
 html,body{min-height:100%}
 body{
@@ -28,13 +29,14 @@ body{
   min-height:100dvh;
 }
 .top{
-  display:flex;justify-content:space-between;align-items:baseline;
+  display:flex;justify-content:space-between;align-items:center;
   font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.22em;
   text-transform:uppercase;color:var(--gray);
   margin-bottom:clamp(32px,6vw,80px);
 }
 .top a{color:var(--gray);text-decoration:none;transition:color .2s}
 .top a:hover{color:var(--white)}
+.top .logo{height:20px;width:auto;display:block}
 
 h1{
   font-family:'Archivo Black',sans-serif;
@@ -99,6 +101,27 @@ h1{
 .input-row button:hover{background:transparent;color:var(--white)}
 .input-row button:disabled{opacity:.4;cursor:not-allowed}
 
+/* Intake Form */
+.intake-form {
+  display: flex; flex-direction: column; gap: 16px;
+  max-width: 500px; width: 100%; margin-bottom: 24px;
+}
+.intake-form input, .intake-form select {
+  padding: 14px 16px; border: 1px solid var(--line);
+  background: transparent; color: var(--white);
+  font-family: 'Archivo', sans-serif; font-size: .95rem;
+  outline: none; border-radius: 0; transition: border-color .25s;
+}
+.intake-form input:focus, .intake-form select:focus { border-color: var(--white); }
+.intake-form button {
+  padding: 14px 28px; border: 1px solid var(--accent);
+  background: var(--accent); color: var(--white);
+  font-family: 'Archivo Black', sans-serif; font-size: .8rem;
+  letter-spacing: .14em; text-transform: uppercase; cursor: pointer;
+  transition: background .2s, border-color .2s;
+}
+.intake-form button:hover { background: transparent; border-color: var(--white); }
+
 /* Summary panel */
 .summary{
   display:none;margin-top:32px;padding:24px;
@@ -147,20 +170,37 @@ h1{
 <body>
 <div class="frame">
   <header class="top">
-    <a href="/">← Back to Portfolio</a>
+    <a href="/" style="display:flex;align-items:center;gap:16px">
+      <img class="logo" src="/gi-logo-transparent-dark.png" alt="greg.iteen">
+      <span>← Back to Portfolio</span>
+    </a>
     <span>Nº 002 / Consult</span>
   </header>
 
   <h1>Let's build<br>something.</h1>
   <p class="lede">Tell me about your project. This AI-powered assessment will analyze your needs, map them to services, and generate a proposal for Greg to review.</p>
 
-  <div class="chat">
+  <div class="chat" id="chatContainer" style="display:none">
     <div class="messages" id="messages"></div>
     <div class="input-row">
-      <textarea id="userInput" placeholder="Describe your project…" rows="1"></textarea>
+      <textarea id="userInput" aria-label="Describe your project" placeholder="Describe your project…" rows="1"></textarea>
       <button id="sendBtn" type="button">Send</button>
     </div>
   </div>
+
+  <form class="intake-form" id="intakeForm">
+    <input type="text" id="intakeName" aria-label="Your Name" placeholder="Your Name" required>
+    <input type="email" id="intakeEmail" aria-label="Work Email" placeholder="Work Email" required>
+    <input type="text" id="intakeCompany" aria-label="Company Name" placeholder="Company Name">
+    <select id="intakeBudget" aria-label="Estimated Budget" required>
+      <option value="" disabled selected>Estimated Budget</option>
+      <option value="Under $5k">Under $5k</option>
+      <option value="$5k - $15k">$5k - $15k</option>
+      <option value="$15k - $50k">$15k - $50k</option>
+      <option value="$50k+">$50k+</option>
+    </select>
+    <button type="submit">Start Consultation</button>
+  </form>
 
   <div class="summary" id="summary">
     <h2>Assessment Summary</h2>
@@ -181,10 +221,13 @@ const sendBtn = document.getElementById('sendBtn');
 const summary = document.getElementById('summary');
 const summaryGrid = document.getElementById('summaryGrid');
 const submitProposal = document.getElementById('submitProposal');
+const intakeForm = document.getElementById('intakeForm');
+const chatContainer = document.getElementById('chatContainer');
 
 let conversationHistory = [];
 let assessmentComplete = false;
 let assessmentData = null;
+let intakeData = null;
 
 // Auto-resize textarea
 input.addEventListener('input', () => {
@@ -318,14 +361,29 @@ submitProposal.addEventListener('click', async () => {
   }
 });
 
-// Start the conversation
-(async () => {
+// Start the conversation after intake form
+intakeForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  intakeData = {
+    name: document.getElementById('intakeName').value.trim(),
+    email: document.getElementById('intakeEmail').value.trim(),
+    company: document.getElementById('intakeCompany').value.trim(),
+    budget: document.getElementById('intakeBudget').value
+  };
+
+  intakeForm.style.display = 'none';
+  chatContainer.style.display = 'flex';
+
+  // Seed the context with intake data
+  const seedMessage = `[SYSTEM MESSAGE] Prospect info captured: Name: ${intakeData.name}, Email: ${intakeData.email}, Company: ${intakeData.company}, Budget: ${intakeData.budget}. Start the consultation by acknowledging this and probing for their main challenges.`;
+  conversationHistory.push({ role: 'user', content: seedMessage });
+
   addTypingIndicator();
   try {
     const res = await fetch('/api/cna', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ history: [] }),
+      body: JSON.stringify({ history: conversationHistory, email: intakeData.email }),
     });
     const data = await res.json();
     removeTypingIndicator();
@@ -335,10 +393,10 @@ submitProposal.addEventListener('click', async () => {
     }
   } catch {
     removeTypingIndicator();
-    addMessage('Welcome! Tell me about the project you have in mind.', 'ai');
-    conversationHistory.push({ role: 'assistant', content: 'Welcome! Tell me about the project you have in mind.' });
+    addMessage(`Welcome ${intakeData.name}! Tell me about the project you have in mind.`, 'ai');
+    conversationHistory.push({ role: 'assistant', content: `Welcome ${intakeData.name}! Tell me about the project you have in mind.` });
   }
-})();
+});
 </script>
 </body>
 </html>

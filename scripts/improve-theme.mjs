@@ -179,8 +179,10 @@ async function improveTheme(slug) {
   const model = pickModel(slug);
   console.log(`  [${slug}] Using model: ${model}`);
 
-  // Step 1: Score the current design
-  const scoreRaw = await callLLM(`You are a senior design critic. Score this AI-generated portfolio theme 1-10 on:
+  // Step 1: Score the current design. The old prompt only included the first
+  // CSS slice and layout names, so it could never catch broken markup hidden
+  // in one of the actual templates. This receives the whole source package.
+  const scoreRaw = await callLLM(`You are a senior design critic. Inspect the COMPLETE stylesheet and EVERY full HTML layout below, then score this AI-generated portfolio theme 1-10 on:
 - Visual distinctiveness (does it look like a template or something bespoke?)
 - Cohesion (do the CSS and layouts feel like they belong together?)
 - Technical quality (clean HTML, valid CSS, no broken layouts?)
@@ -190,10 +192,8 @@ Theme name: ${name}
 Style brief: ${style}
 Accent: ${accent}
 
-CSS (first 3000 chars):
-${css.slice(0, 3000)}
-
-Layouts: ${Object.keys(layouts).join(', ')}
+FULL SOURCE PACKAGE:
+${JSON.stringify({ css, layouts })}
 
 PLACEHOLDER CONTRACT:
 ${placeholderContract}
@@ -287,7 +287,11 @@ OUTPUT: exactly one JSON object: { "html": "…improved layout HTML with the req
   const improvedPayload = { name, accent, css: improvedCss, layouts: improvedLayouts };
 
   // Step 3: Validate the improved version
-  const verdict = validateThemePayload(improvedPayload, { strict: false });
+  const verdict = validateThemePayload(improvedPayload, {
+    strict: true,
+    requireAllLayouts: true,
+    requireHero: true,
+  });
   if (!verdict.theme) {
     console.warn(`  [${slug}] Improved version failed validation: ${verdict.errors.join('; ')}`);
     return { slug, score: scoreObj.score, improved: false };
@@ -301,10 +305,8 @@ OUTPUT: exactly one JSON object: { "html": "…improved layout HTML with the req
 Original score: ${scoreObj.score}/10
 Original critique: ${scoreObj.critique}
 
-Improved CSS (first 3000 chars):
-${verdict.theme.css.slice(0, 3000)}
-
-Improved layouts: ${Object.keys(verdict.theme.layouts).join(', ')}
+FULL IMPROVED SOURCE PACKAGE (inspect all CSS and every HTML layout):
+${JSON.stringify({ css: verdict.theme.css, layouts: verdict.theme.layouts })}
 
 OUTPUT: { "score": 8, "is_better": true, "reason": "..." }`, model, COMPARE_SCHEMA);
 
@@ -346,11 +348,17 @@ ${blocks}
   await writeFile(designMdPath, designMd, 'utf8');
   console.log(`  [${slug}] ✓ Improved! ${scoreObj.score} → ${newScoreObj.score}`);
 
-  // Rebuild this design layer
-  try {
-    spawnSync(process.execPath, [join(__dirname, 'build-site.mjs'), '--design', slug], { stdio: 'inherit' });
-  } catch (/** @type {any} */ e) {
-    console.warn(`  [${slug}] Rebuild failed: ${e.message}`);
+  // serve.mjs coordinates one rebuild after this child exits. Keeping builds
+  // out of this process prevents a watcher/improver race over dist/site.
+  if (process.env.THEME_DEFER_BUILD !== '1') {
+    try {
+      const result = spawnSync(process.execPath, [join(__dirname, 'build-site.mjs'), '--design', slug], { stdio: 'inherit' });
+      if (result.status !== 0) throw new Error(`exit ${result.status}`);
+    } catch (/** @type {any} */ e) {
+      console.warn(`  [${slug}] Rebuild failed: ${e.message}`);
+    }
+  } else {
+    console.log(`  [${slug}] Build deferred to the serialized server rebuild`);
   }
 
   return { slug, score: newScoreObj.score, improved: true, previousScore: scoreObj.score };
@@ -405,7 +413,7 @@ async function run() {
   }
 
   // Rebuild main site if anything changed
-  if (improved.length > 0) {
+  if (improved.length > 0 && process.env.THEME_DEFER_BUILD !== '1') {
     console.log('\n[Improve] Rebuilding main site…');
     spawnSync(process.execPath, [join(__dirname, 'build-site.mjs')], { stdio: 'inherit' });
   }

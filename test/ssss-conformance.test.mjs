@@ -39,12 +39,15 @@ test('this vault exports, validates, and round-trips as a sale bundle (spec §16
   assert.ok(valid, 'bundle invalid: ' + errors.join('; '));
   assert.ok(!bundle.files.some((f) => f.path.startsWith('tasks/')), 'tenant_private leaked into sale export');
 
-  const plan = provisionBundle(bundle, { workspaceId: 'ws-test' });
+  // This vault intentionally includes the portfolio extension (for the
+  // structural banner_offer primitive), so provisioning/import must use the
+  // same registry that export and bundle validation used.
+  const plan = provisionBundle(bundle, { workspaceId: 'ws-test', registryDir: REGISTRY });
   assert.ok(plan.ok, 'provision failed: ' + JSON.stringify(plan.unresolved) + ' ' + JSON.stringify(plan.danglingLinks));
 
   const target = fs.mkdtempSync(path.join(os.tmpdir(), 'ssss-import-'));
   try {
-    const engine = createEngine();
+    const engine = createEngine({ registryDir: REGISTRY });
     const r1 = importBundle(plan.plan, target, engine);
     assert.ok(r1.ok && r1.committed === bundle.files.length, 'import did not commit every file');
     const r2 = importBundle(plan.plan, target, engine);

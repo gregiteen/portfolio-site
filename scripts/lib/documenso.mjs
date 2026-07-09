@@ -22,7 +22,28 @@
 // droplet's private VPC IP rather than 127.0.0.1 or the Docker-internal
 // hostname, and NOT exposed publicly (default-deny ufw, no rule for 9000).
 
+import { timingSafeEqual } from 'node:crypto';
+
 const FIELD_TYPE = 'SIGNATURE';
+
+// Documenso sends the exact secret configured on the webhook endpoint in the
+// X-Documenso-Secret header. Require both values and compare them in constant
+// time so an unsigned lifecycle event can never update a proposal.
+export function verifyWebhookSecret(receivedSecret, expectedSecret) {
+  const received = typeof receivedSecret === 'string' ? receivedSecret : '';
+  const expected = typeof expectedSecret === 'string' ? expectedSecret : '';
+  if (!received || !expected) return false;
+  const left = Buffer.from(received, 'utf8');
+  const right = Buffer.from(expected, 'utf8');
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+export function signingStatusForEvent(event) {
+  if (event === 'DOCUMENT_COMPLETED') return 'signed';
+  if (event === 'DOCUMENT_REJECTED') return 'client_rejected';
+  if (event === 'DOCUMENT_SIGNED' || event === 'DOCUMENT_RECIPIENT_COMPLETED') return 'partially_signed';
+  return null;
+}
 
 export async function createSigningRequest({ pdfBuffer, filename, clientEmail, clientName, subject, proposalId }) {
   const baseUrl = process.env.DOCUMENSO_BASE_URL || '';
@@ -88,4 +109,53 @@ export async function createSigningRequest({ pdfBuffer, filename, clientEmail, c
   }
 
   return { signingUrl, submissionId: documentId };
+}
+
+export async function fetchDocumentStatus(documentId) {
+  const baseUrl = process.env.DOCUMENSO_BASE_URL || '';
+  const apiKey = process.env.DOCUMENSO_API_KEY || '';
+  if (!baseUrl || !apiKey || !documentId) return null;
+
+  const res = await fetch(new URL(`/api/v1/documents/${documentId}`, baseUrl), {
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) {
+    throw new Error(`Documenso GET error ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  }
+  return await res.json();
+}
+
+export function startDocumensoPoller(threadsMap, upsertFn, notifyFn, intervalMs = 5 * 60 * 1000) {
+  console.log('[Documenso] Status poller started, checking pending documents every 5 minutes.');
+  setInterval(async () => {
+    for (const [id, thread] of threadsMap.entries()) {
+      if (thread.signingDocumentId && thread.status !== 'signed' && thread.status !== 'client_rejected') {
+        try {
+          const doc = await fetchDocumentStatus(thread.signingDocumentId);
+          if (doc && doc.status) {
+            let nextStatus = null;
+            if (doc.status === 'COMPLETED') nextStatus = 'signed';
+            else if (doc.status === 'REJECTED') nextStatus = 'client_rejected';
+            
+            if (nextStatus && thread.status !== nextStatus) {
+              const previous = thread.status;
+              thread.status = nextStatus;
+              thread.signingStatus = nextStatus;
+              thread.signingUpdatedAt = new Date().toISOString();
+              threadsMap.set(id, thread);
+              await upsertFn(id, thread);
+              
+              if (notifyFn) {
+                const label = nextStatus === 'signed' ? 'signed' : 'rejected by the client';
+                await notifyFn(id, label);
+              }
+              console.log(`[Documenso] Poller updated ${id} -> ${nextStatus}`);
+            }
+          }
+        } catch (e) {
+          console.error(`[Documenso] Poller failed to check document ${thread.signingDocumentId}: ${e.message}`);
+        }
+      }
+    }
+  }, intervalMs);
 }

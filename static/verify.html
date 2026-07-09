@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Verify — Greg Iteen</title>
+<link rel="icon" type="image/png" href="/assets/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -11,7 +12,7 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --black:#0a0a0a;--white:#f5f5f3;--gray:rgba(245,245,243,.55);
-  --faint:rgba(245,245,243,.22);--line:rgba(245,245,243,.28);
+  --faint:rgba(245,245,243,.22);--line:rgba(245,245,243,.28);--accent:#ff6a00;
 }
 html,body{height:100%}
 body{
@@ -45,11 +46,12 @@ body{
   padding:clamp(20px,4vw,56px);
 }
 .top{
-  display:flex;justify-content:space-between;align-items:baseline;
+  display:flex;justify-content:space-between;align-items:center;
   font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.22em;
   text-transform:uppercase;color:var(--gray);animation:fadeIn 1s .2s both;
 }
 .top .no{color:var(--faint)}
+.logo{height:22px;width:auto;display:block}
 
 .card{max-width:640px;animation:riseIn .9s .1s cubic-bezier(.16,1,.3,1) both}
 h1{
@@ -78,7 +80,7 @@ h1{
   outline:none;transition:border-color .2s,background .2s;
   caret-color:var(--white);
 }
-.code-input:focus{border-color:var(--white)}
+.code-input:focus{border-color:var(--accent)}
 .code-input.filled{border-color:var(--white);background:rgba(245,245,243,.06)}
 
 .btn{
@@ -110,7 +112,7 @@ h1{
   text-transform:uppercase;color:var(--gray);margin-bottom:12px;
 }
 .progress-bar-wrap{width:100%;height:2px;background:var(--faint);overflow:hidden}
-.progress-bar{height:100%;background:var(--white);transition:width .5s;width:0%}
+.progress-bar{height:100%;background:var(--accent);transition:width .5s;width:0%}
 .progress-status{
   font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.04em;
   color:var(--gray);margin-top:10px;
@@ -154,7 +156,7 @@ h1{
 
 <div class="frame">
   <header class="top">
-    <span>Greg Iteen — Portfolio</span>
+    <img class="logo" src="/gi-logo-transparent-dark.png" alt="greg.iteen">
     <span class="no">Nº 002 / Verify</span>
   </header>
 

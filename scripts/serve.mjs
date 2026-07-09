@@ -16,7 +16,9 @@ import https from 'node:https';
 // Bare JSON.parse fails on fenced output, which the models emit constantly.
 import { extractJson } from './lib/theme.mjs';
 import { buildLetterheadPdf } from './lib/letterhead.mjs';
-import { createSigningRequest } from './lib/documenso.mjs';
+import { createSigningRequest, signingStatusForEvent, verifyWebhookSecret, startDocumensoPoller } from './lib/documenso.mjs';
+import { advanceDripState, createUnsubscribeToken, enrollInCampaign, renderDripTemplate, verifyUnsubscribeToken } from './lib/drip.mjs';
+import { parseProposalOutput } from './lib/proposal-output.mjs';
 import { handleWebmail } from './lib/webmail-ui.mjs';
 import {
   initRuntimeStore,
@@ -32,7 +34,19 @@ import {
   getBannerOffers,
   ensureBannerOffersSeeded,
   appendBannerEvent,
+  getDripCampaign,
+  pendingDripVisitors,
+  getWebmailSettings,
+  updateWebmailSettings,
+  dirs,
 } from './runtime-store.mjs';
+
+import {
+  fetchInbox,
+  startImapPoller,
+} from './lib/imap.mjs';
+
+import { startCalendarPoller } from './lib/calendar.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -51,6 +65,9 @@ const visitorsLog = join(__dirname, '..', 'vault', 'visitors.md');
 const buildScript = join(__dirname, 'build-site.mjs');
 const compileScript = join(__dirname, 'compile-theme.mjs');
 const improveScript = join(__dirname, 'improve-theme.mjs');
+// Theme children write source only. This server is the single owner of static
+// builds so vault watcher events cannot race generator/improver rm() calls.
+const serializedThemeEnv = { ...process.env, THEME_DEFER_BUILD: '1' };
 const port = Number(process.env.PORT ?? 4173);
 
 // Rate card + banner offers live in runtime-store.mjs (vault/runtime/config/),
@@ -175,7 +192,10 @@ function startGeneration(prompt) {
   });
 
   // Argument array — the prompt never touches a shell.
-  const child = spawn(process.execPath, [compileScript, prompt], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [compileScript, prompt], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: serializedThemeEnv,
+  });
   let stderrTail = '';
   let genSlug = null; // captured from compile-theme's "→ designs/<slug>" line
 
@@ -191,6 +211,8 @@ function startGeneration(prompt) {
   });
   child.stderr.on('data', (chunk) => {
     stderrTail = (stderrTail + String(chunk)).slice(-2000);
+    const detail = String(chunk).trim();
+    if (detail) console.error(`[Generator] ${detail}`);
   });
   child.on('error', (err) => {
     genJob.status = 'error';
@@ -211,6 +233,7 @@ function startGeneration(prompt) {
         console.error('[Runtime] Failed to persist generation completion:', e.message);
       });
       rebuild('generated theme'); // watcher usually catches it, but be certain
+
       // Serve first, refine live: kick off the improve pass on the just-built
       // skin asynchronously. improve-theme scores it, regenerates weak slots via
       // the parallel specialist fan-out, swaps if better, and rebuilds — so the
@@ -218,11 +241,17 @@ function startGeneration(prompt) {
       // hot-swaps in underneath them. Fire-and-forget; failures never block.
       if (genSlug) {
         console.log(`[Improve] Auto-improving "${genSlug}" post-generation…`);
-        const imp = spawn(process.execPath, [improveScript, genSlug], { stdio: ['ignore', 'pipe', 'pipe'] });
+        const imp = spawn(process.execPath, [improveScript, genSlug], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: serializedThemeEnv,
+        });
         imp.stdout.on('data', (c) => { for (const ln of String(c).split('\n')) { const t = ln.trim(); if (t) console.log(`[Improve] ${t}`); } });
         imp.stderr.on('data', (c) => { const t = String(c).trim(); if (t) console.error(`[Improve] ${t}`); });
         imp.on('error', (e) => console.error('[Improve] Failed to spawn:', e.message));
-        imp.on('close', (ic) => console.log(`[Improve] Post-generation pass exited (${ic}) for "${genSlug}".`));
+        imp.on('close', (ic) => {
+          console.log(`[Improve] Post-generation pass exited (${ic}) for "${genSlug}".`);
+          if (ic === 0) rebuild('post-generation improvement');
+        });
       }
     } else {
       genJob.status = 'error';
@@ -321,8 +350,42 @@ const smtpTransport = createTransport({
   },
 });
 
+// Trigger startup sync
+startImapPoller(smtpTransport).catch(e => console.error('[IMAP] Poller failed to start:', e.message));
+startCalendarPoller(dirs.calendar);
+startDocumensoPoller(proposalThreads, upsertProposal, async (proposalId, label) => {
+  await smtpTransport.sendMail({
+    from: mailFrom,
+    to: mailOwner,
+    subject: `Proposal ${label}: ${proposalId}`,
+    text: `Documenso reported that proposal ${proposalId} was ${label}.`,
+  });
+});
+
 const mailFrom = process.env.MAIL_FROM;   // e.g. "Greg Iteen" <sales@gregiteen.xyz>
 const mailOwner = process.env.MAIL_OWNER; // where visitor notifications go
+
+const originalSendMail = smtpTransport.sendMail.bind(smtpTransport);
+smtpTransport.sendMail = async function(options) {
+  if (options.html && typeof options.to === 'string' && options.to !== mailOwner) {
+    const trackingUrl = process.env.BASE_URL || 'https://gregiteen.xyz';
+    const emailParam = encodeURIComponent(options.to);
+    
+    options.html = options.html.replace(/href="([^"]+)"/g, (match, url) => {
+      if (url.startsWith('mailto:') || url.startsWith('tel:') || url.includes('/api/track/')) return match;
+      const targetParam = encodeURIComponent(url);
+      return `href="${trackingUrl}/api/track/link?e=${emailParam}&url=${targetParam}"`;
+    });
+    
+    const pixelHtml = `<img src="${trackingUrl}/api/track/pixel?e=${emailParam}" width="1" height="1" alt="" style="display:none;" />`;
+    if (options.html.includes('</body>')) {
+      options.html = options.html.replace('</body>', pixelHtml + '</body>');
+    } else {
+      options.html += pixelHtml;
+    }
+  }
+  return originalSendMail(options);
+};
 
 function generateCode() {
   // 6-digit numeric code
@@ -458,7 +521,7 @@ async function logVisitor(info) {
   try {
     await readFile(visitorsLog, 'utf8');
   } catch {
-    await appendFile(visitorsLog, `---\ntype: run\ntitle: Portfolio Visitors\ndescription: Append-only log of verified portfolio visitors (tenant_private, never exported).\ntimestamp: ${ts}\n---\n\n# Portfolio Visitors\n\n| Timestamp | Email | Style | IP | User Agent |\n|-----------|-------|-------|----|-----------|\n`, 'utf8');
+    await appendFile(visitorsLog, `---\ntype: run\ntitle: Portfolio Visitors\ndescription: Append-only log of verified portfolio visitors (tenant_private, excluded from sale/template exports).\ntimestamp: ${ts}\nrun_id: portfolio-visitors\nworkflow_id: visitor-logging\n---\n\n# Portfolio Visitors\n\n| Timestamp | Email | Style | IP | User Agent |\n|-----------|-------|-------|----|-----------|\n`, 'utf8');
   }
   await appendFile(visitorsLog, line, 'utf8');
   console.log(`[Visitors] Logged ${info.email} (${info.style})`);
@@ -541,14 +604,105 @@ function sendDeferredNotification(token) {
   notifyOwner(info).catch(err => console.error('[Visitors] Notify error:', (err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err))));
 }
 
+// ─── Drip campaigns ─────────────────────────────────────────────────────────
+
+const DRIP_UNSUBSCRIBE_SECRET = process.env.DRIP_UNSUBSCRIBE_SECRET || process.env.ADMIN_API_TOKEN || '';
+const DRIP_TICK_MS = Math.max(5_000, Number(process.env.DRIP_TICK_MS || 60_000));
+let dripTickInFlight = false;
+
+async function updateVisitorDrip(email, drip) {
+  const existing = visitorProfiles.get(email);
+  if (!existing) return null;
+  const next = { ...existing, drip };
+  visitorProfiles.set(email, next);
+  return upsertVisitor(email, next);
+}
+
+async function updateVisitorEnrichment(email, enrichment) {
+  const existing = visitorProfiles.get(email);
+  if (!existing) return null;
+  const timeline = existing.timeline || [];
+  timeline.push(`Enrichment data updated at ${new Date().toISOString()}`);
+  const next = { ...existing, enrichment, timeline };
+  visitorProfiles.set(email, next);
+  return upsertVisitor(email, next);
+}
+
+async function enrollVisitorInCampaign(email, campaignSlug) {
+  const visitor = visitorProfiles.get(email);
+  if (!visitor?.optIn) return null;
+  const campaign = await getDripCampaign(campaignSlug);
+  if (!campaign) throw new Error(`Drip campaign "${campaignSlug}" is unavailable`);
+  return updateVisitorDrip(email, enrollInCampaign(campaign));
+}
+
+async function pauseVisitorDripForProposal(email) {
+  const visitor = visitorProfiles.get(email);
+  if (!visitor?.drip || visitor.drip.status !== 'active') return null;
+  return updateVisitorDrip(email, { ...visitor.drip, status: 'paused', pause_reason: 'proposal_active' });
+}
+
+async function sendDueDripEmails() {
+  if (dripTickInFlight) return;
+  dripTickInFlight = true;
+  try {
+    if (!DRIP_UNSUBSCRIBE_SECRET) {
+      console.error('[Drip] DRIP_UNSUBSCRIBE_SECRET or ADMIN_API_TOKEN is required; scheduler is paused.');
+      return;
+    }
+    for (const visitor of pendingDripVisitors()) {
+      const drip = visitor.drip;
+      const campaign = await getDripCampaign(drip.campaign);
+      const step = campaign?.steps?.[drip.step];
+      if (!campaign || !step) {
+        await updateVisitorDrip(visitor.email, { ...drip, status: 'paused', pause_reason: 'campaign_or_step_missing' });
+        console.error(`[Drip] Paused ${visitor.email}: campaign or step is missing.`);
+        continue;
+      }
+
+      const unsubscribeToken = createUnsubscribeToken(visitor.email, DRIP_UNSUBSCRIBE_SECRET);
+      const unsubscribeUrl = `${SITE_URL}/api/unsubscribe?token=${encodeURIComponent(unsubscribeToken)}`;
+      const firstName = visitor.enrichment?.first_name || visitor.enrichment?.name || visitor.email.split('@')[0];
+      const variables = {
+        FIRST_NAME: firstName,
+        EMAIL: visitor.email,
+        SITE_URL,
+        UNSUBSCRIBE_URL: unsubscribeUrl,
+      };
+      const subject = renderDripTemplate(step.subject, variables);
+      const text = renderDripTemplate(step.body_template, variables);
+      const html = emailShell({
+        eyebrow: 'Greg Iteen — Portfolio',
+        headline: escapeHtml(subject),
+        bodyHtml: `<p style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.8;color:#c9c9c7;margin:0;white-space:normal;">${escapeHtml(text).replace(/\n/g, '<br>')}</p>
+        <div style="margin-top:32px;text-align:center;border-top:1px solid rgba(245,245,243,0.1);padding-top:16px;">
+          <a href="${unsubscribeUrl}" style="font-size:11px;color:#888;text-decoration:underline;">Unsubscribe</a>
+        </div>`,
+      });
+
+      // The state advances only after SMTP accepts the message. A failure keeps
+      // the due timestamp intact, so the next tick retries without losing mail.
+      await smtpTransport.sendMail({ from: mailFrom, to: visitor.email, subject, text, html });
+      await updateVisitorDrip(visitor.email, advanceDripState(campaign, drip));
+      console.log(`[Drip] Sent ${campaign.slug} step ${drip.step + 1} to ${visitor.email}`);
+    }
+  } catch (err) {
+    console.error('[Drip] Scheduler tick failed:', err instanceof Error ? err.message : String(err));
+  } finally {
+    dripTickInFlight = false;
+  }
+}
+
 // ─── Gemini API Helper ───────────────────────────────────────────────────────
 
-function geminiCall(apiKey, prompt) {
+function geminiCall(apiKey, prompt, { json = true, tools = [] } = {}) {
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({
+    const payload = {
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json' },
-    });
+      generationConfig: json ? { responseMimeType: 'application/json' } : {},
+    };
+    if (tools && tools.length > 0) payload.tools = tools;
+    const body = JSON.stringify(payload);
     const url = new URL(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`);
     const options = {
       hostname: url.hostname,
@@ -577,6 +731,16 @@ function geminiCall(apiKey, prompt) {
   });
 }
 
+async function generateDelimitedProposal(apiKey, prompt, { requireChanges = false } = {}) {
+  const first = await geminiCall(apiKey, prompt, { json: false });
+  try {
+    return parseProposalOutput(first, { requireChanges });
+  } catch {
+    const repaired = await geminiCall(apiKey, `Reformat the following proposal response without changing its meaning. Output only this exact delimiter contract, with plain Markdown outside JSON:\n\nSUBJECT: one-line subject\n---PROPOSAL---\nfull proposal\n---CLIENT_EMAIL---\nclient email${requireChanges ? '\n---CHANGES---\nbrief change summary' : ''}\n---END---\n\nSOURCE:\n${first}`, { json: false });
+    return parseProposalOutput(repaired, { requireChanges });
+  }
+}
+
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -593,6 +757,7 @@ function renderSignPage({ found, clientName, subject, signingUrl }) {
   const body = found
     ? `<p>${clientName ? escapeHtml(clientName) + ',' : 'Hi,'} your proposal${subject ? ` — <em>${escapeHtml(subject)}</em>` : ''} — is ready for review and signature.</p>
        <a class="cta" href="${signingUrl}" target="_top" rel="noopener">Review &amp; Sign Document →</a>
+       <a class="cta secondary" href="/book-meeting.html" target="_top" rel="noopener">Request Meeting 🗓️</a>
        <p class="fine">You'll be taken to a secure signing page. No account required.</p>`
     : `<p>This signing link has expired or is no longer valid.</p>
        <p class="fine">If you're expecting a proposal, reply to the original email from Greg and a fresh link will be sent.</p>`;
@@ -603,21 +768,23 @@ function renderSignPage({ found, clientName, subject, signingUrl }) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${found ? 'Sign your proposal' : 'Link not found'} — Greg Iteen</title>
 <meta name="robots" content="noindex">
+<link rel="icon" type="image/png" href="/assets/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--black:#0a0a0a;--white:#f5f5f3;--gray:rgba(245,245,243,.55);--line:rgba(245,245,243,.28);--accent:#e22b22}
+:root{--black:#0a0a0a;--white:#f5f5f3;--gray:rgba(245,245,243,.55);--line:rgba(245,245,243,.28);--accent:#ff6a00}
 html,body{min-height:100%}
 body{font-family:'Archivo',sans-serif;background:var(--black);color:var(--white);display:flex;flex-direction:column;min-height:100dvh;padding:clamp(20px,4vw,56px)}
 .top{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.22em;text-transform:uppercase;color:var(--gray);margin-bottom:clamp(32px,6vw,72px)}
 main{flex:1;display:flex;flex-direction:column;justify-content:center;max-width:640px}
-img.logo{height:32px;width:auto;margin-bottom:clamp(24px,5vw,48px);filter:brightness(0) invert(1)}
+img.logo{height:32px;width:auto;align-self:flex-start;margin-bottom:clamp(24px,5vw,48px)}
 h1{font-family:'Archivo Black',sans-serif;font-size:clamp(1.6rem,4vw,2.6rem);line-height:1.15;margin-bottom:24px}
 main p{color:var(--gray);font-size:1rem;line-height:1.6;margin-bottom:20px}
 main p em{color:var(--white);font-style:normal}
-.cta{display:inline-block;background:var(--accent);color:var(--white);font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:.85rem;letter-spacing:.05em;text-decoration:none;padding:16px 28px;margin:8px 0 20px;transition:opacity .2s}
+.cta{display:inline-block;background:var(--accent);color:var(--white);font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:.85rem;letter-spacing:.05em;text-decoration:none;padding:16px 28px;margin:8px 8px 20px 0;transition:opacity .2s}
+.cta.secondary{background:var(--white);color:var(--black)}
 .cta:hover{opacity:.85}
 .fine{font-size:.8rem;color:var(--gray)}
 footer{font-family:'IBM Plex Mono',monospace;font-size:.65rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gray);border-top:1px solid var(--line);padding-top:20px;margin-top:clamp(32px,6vw,72px)}
@@ -628,7 +795,7 @@ footer a:hover{color:var(--white)}
 <body>
 <div class="top">Greg Iteen — Proposal</div>
 <main>
-<img class="logo" src="/gi-logo-transparent.png" alt="Greg Iteen">
+<img class="logo" src="/gi-logo-transparent-dark.png" alt="Greg Iteen">
 <h1>${heading}</h1>
 ${body}
 </main>
@@ -653,6 +820,7 @@ async function sendProposalToClient(proposalId, thread) {
     proposalId,
   });
   let signingUrl = null;
+  let signingDocumentId = null;
   try {
     const signing = await createSigningRequest({
       pdfBuffer,
@@ -663,6 +831,7 @@ async function sendProposalToClient(proposalId, thread) {
       proposalId,
     });
     signingUrl = signing?.signingUrl || null;
+    signingDocumentId = signing?.submissionId ? String(signing.submissionId) : null;
   } catch (/** @type {any} */ e) {
     console.error(`[Proposal ${proposalId}] Documenso submission failed, sending PDF without a signing link:`, e.message);
   }
@@ -689,8 +858,18 @@ async function sendProposalToClient(proposalId, thread) {
   thread.status = 'sent';
   thread.decidedAt = new Date().toISOString();
   thread.signingUrl = signingUrl;
+  thread.signingDocumentId = signingDocumentId;
+  thread.signingStatus = signingDocumentId ? 'pending_signature' : null;
+  thread.signingUpdatedAt = signingDocumentId ? new Date().toISOString() : null;
   proposalThreads.set(proposalId, thread);
   await upsertProposal(proposalId, thread);
+  // Once the proposal is delivered, opted-in prospects move out of the
+  // paused general-nurture state and into the slower proposal follow-up.
+  try {
+    await enrollVisitorInCampaign(thread.clientEmail, 'post-proposal-nurture');
+  } catch (err) {
+    console.error(`[Drip] Could not enroll ${thread.clientEmail} in post-proposal follow-up:`, err instanceof Error ? err.message : String(err));
+  }
   return { status: 'sent', signingUrl };
 }
 
@@ -699,9 +878,8 @@ async function reviseProposal(proposalId, thread, replyText) {
   if (!GOOGLE_API_KEY) throw new Error('No API key for revision');
   thread.revisions++;
   thread.status = 'revising';
-  const revisionPrompt = `You are revising a project proposal based on feedback from the author (Greg Iteen).\n\nCURRENT PROPOSAL:\n${thread.proposal.proposal_text}\n\nCURRENT CLIENT EMAIL DRAFT:\n${thread.proposal.client_email_draft}\n\nGREG'S FEEDBACK:\n${replyText}\n\nApply Greg's feedback precisely. Do not add anything he didn't ask for. Do not remove anything he didn't mention. If he gives specific wording, use it verbatim.\n\nOUTPUT: Return exactly one JSON object:\n{\n  "subject_line": "Updated subject line if needed",\n  "proposal_text": "The full revised proposal",\n  "client_email_draft": "The revised email to accompany the proposal",\n  "changes_made": "Brief summary of what changed"\n}`;
-  const revisionRaw = await geminiCall(GOOGLE_API_KEY, revisionPrompt);
-  const revision = extractJson(revisionRaw);
+  const revisionPrompt = `You are revising a project proposal based on feedback from the author (Greg Iteen).\n\nCURRENT PROPOSAL:\n${thread.proposal.proposal_text}\n\nCURRENT CLIENT EMAIL DRAFT:\n${thread.proposal.client_email_draft}\n\nGREG'S FEEDBACK:\n${replyText}\n\nApply Greg's feedback precisely. Do not add anything he didn't ask for. Do not remove anything he didn't mention. If he gives specific wording, use it verbatim.\n\nReturn plain Markdown using exactly this delimiter contract. Do NOT return JSON and do not wrap the response in a code fence:\nSUBJECT: updated one-line subject\n---PROPOSAL---\nfull revised proposal\n---CLIENT_EMAIL---\nrevised client email\n---CHANGES---\nbrief factual summary of changes\n---END---`;
+  const revision = await generateDelimitedProposal(GOOGLE_API_KEY, revisionPrompt, { requireChanges: true });
   thread.revision_history = [
     ...(Array.isArray(thread.revision_history) ? thread.revision_history : []),
     { at: new Date().toISOString(), feedback: replyText, revision },
@@ -749,6 +927,7 @@ function isPublicPath(urlPath) {
   if (urlPath === '/splash.html' || urlPath === '/verify.html' || urlPath === '/consult.html') return true;
   if (urlPath.startsWith('/api/')) return true;
   if (urlPath.startsWith('/assets/')) return true;
+  if (urlPath.startsWith('/gi-logo')) return true; // brand marks — used on pre-auth pages
   if (urlPath.startsWith('/sign/')) return true;
   if (urlPath.startsWith('/designs/')) return true;
   // Dev/generation endpoints are API-like
@@ -879,6 +1058,80 @@ createServer(async (req, res) => {
     return;
   }
 
+  // ── API: One-click drip unsubscribe ──
+  if (urlPath === '/api/unsubscribe' && req.method === 'GET') {
+    const verified = verifyUnsubscribeToken(urlObj.searchParams.get('token'), DRIP_UNSUBSCRIBE_SECRET);
+    if (!verified) {
+      res.writeHead(302, { 'Location': '/unsubscribe.html?error=1' });
+      res.end();
+      return;
+    }
+    const visitor = visitorProfiles.get(verified.email);
+    if (visitor) {
+      let drip = visitor.drip;
+      if (drip) {
+        drip = {
+          ...drip,
+          status: 'unsubscribed',
+          next_send_at: null,
+          pause_reason: 'visitor_unsubscribed',
+        };
+      }
+      const updatedVisitor = { ...visitor, drip, status: 'Unsubscribed' };
+      visitorProfiles.set(verified.email, updatedVisitor);
+      await upsertVisitor(verified.email, updatedVisitor);
+      console.log(`[Drip] ${verified.email} unsubscribed.`);
+    }
+    res.writeHead(302, { 'Location': '/unsubscribe.html?success=1' });
+    res.end();
+    return;
+  }
+
+  // ── API: Documenso document lifecycle webhook ──
+  // The endpoint is public by design but closed unless its dedicated webhook
+  // secret is configured and sent with a constant-time verified header.
+  if (urlPath === '/api/documenso-webhook' && req.method === 'POST') {
+    const expectedSecret = process.env.DOCUMENSO_WEBHOOK_SECRET || '';
+    const receivedSecret = String(req.headers['x-documenso-secret'] || '');
+    if (!verifyWebhookSecret(receivedSecret, expectedSecret)) {
+      console.error('[Documenso] Rejected an unsigned or invalid webhook.');
+      return sendJson(res, 401, { error: 'Unauthorized' });
+    }
+    try {
+      const event = await readBody(req);
+      const documentId = event?.payload?.id === undefined || event?.payload?.id === null ? '' : String(event.payload.id);
+      const signingStatus = signingStatusForEvent(event?.event);
+      if (!documentId || !signingStatus) return sendJson(res, 200, { received: true, ignored: true });
+      const entry = [...proposalThreads.entries()].find(([, thread]) => String(thread.signingDocumentId || '') === documentId);
+      if (!entry) {
+        console.warn(`[Documenso] Ignored lifecycle event for unknown document ${documentId}.`);
+        return sendJson(res, 200, { received: true, ignored: true });
+      }
+      const [proposalId, thread] = entry;
+      const previous = thread.signingStatus;
+      thread.signingStatus = signingStatus;
+      thread.signingUpdatedAt = event?.payload?.completedAt || event?.createdAt || new Date().toISOString();
+      if (signingStatus === 'signed') thread.status = 'signed';
+      if (signingStatus === 'client_rejected') thread.status = 'client_rejected';
+      proposalThreads.set(proposalId, thread);
+      await upsertProposal(proposalId, thread);
+      if (previous !== signingStatus && (signingStatus === 'signed' || signingStatus === 'client_rejected')) {
+        const label = signingStatus === 'signed' ? 'signed' : 'rejected by the client';
+        await smtpTransport.sendMail({
+          from: mailFrom,
+          to: mailOwner,
+          subject: `Proposal ${label}: ${proposalId}`,
+          text: `Documenso reported that proposal ${proposalId} was ${label}.`,
+        });
+      }
+      console.log(`[Documenso] ${proposalId} -> ${signingStatus}`);
+      return sendJson(res, 200, { received: true });
+    } catch (err) {
+      console.error('[Documenso] Webhook processing failed:', err instanceof Error ? err.message : String(err));
+      return sendJson(res, 400, { error: 'Invalid webhook payload' });
+    }
+  }
+
   // ── API: Send verification code ──
   if (urlPath === '/api/send-code' && req.method === 'POST') {
     try {
@@ -900,13 +1153,7 @@ createServer(async (req, res) => {
         return sendJson(res, 400, { success: false, error: 'Design style required.' });
       }
 
-      // Check generation rate limit per email (3 max)
       const emailKey = email.toLowerCase();
-      const existingProfile = visitorProfiles.get(emailKey);
-      const genCount = existingProfile?.generations ?? 0;
-      if (genCount >= 3) {
-        return sendJson(res, 429, { success: false, error: 'Generation limit reached (3 max). Your existing designs are still available — just enter your email to sign in.' });
-      }
 
       const code = generateCode();
       pendingCodes.set(emailKey, {
@@ -981,15 +1228,25 @@ createServer(async (req, res) => {
       // Visitor memory: profile upsert (drives welcome-back + one-time confirmation email)
       const emailKey = email.toLowerCase();
       const prior = visitorProfiles.get(emailKey);
+      const effectiveOptIn = Boolean(prior?.optIn || optIn);
+      let drip = prior?.drip || null;
+      // A new opt-in is enrolled once. An explicit unsubscribe is never
+      // silently overridden by a later verification attempt.
+      if (effectiveOptIn && (!drip || drip.status === 'completed' || drip.status === 'unenrolled')) {
+        const campaign = await getDripCampaign('default-nurture');
+        if (campaign) drip = enrollInCampaign(campaign);
+        else console.error('[Drip] default-nurture campaign is missing; opted-in visitor was not enrolled.');
+      }
       const nextProfile = {
         style,
-        optIn: prior?.optIn ?? optIn,
+        optIn: effectiveOptIn,
         firstSeen: prior?.firstSeen ?? Date.now(),
         lastSeen: Date.now(),
         visits: (prior?.visits ?? 0) + 1,
         generations: (prior?.generations ?? 0) + 1,
         enrichment: prior?.enrichment || {},
         pending_notification: prior?.pending_notification || null,
+        drip,
       };
       visitorProfiles.set(emailKey, nextProfile);
       await upsertVisitor(emailKey, nextProfile);
@@ -1155,6 +1412,122 @@ createServer(async (req, res) => {
     return;
   }
 
+  // ── API: Email Tracking ──
+  if (urlPath.startsWith('/api/track/pixel') && req.method === 'GET') {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const email = url.searchParams.get('e');
+    if (email) {
+      const key = String(email).trim().toLowerCase();
+      const visitor = visitorProfiles.get(key);
+      if (visitor) {
+        const timeline = visitor.timeline || [];
+        timeline.push(`Email opened at ${new Date().toISOString()}`);
+        const next = { ...visitor, timeline };
+        visitorProfiles.set(key, next);
+        upsertVisitor(key, next).catch(e => console.error('[Tracking] Pixel update failed:', e));
+      }
+    }
+    // 1x1 transparent GIF
+    const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+    res.writeHead(200, {
+      'Content-Type': 'image/gif',
+      'Content-Length': pixel.length,
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
+    res.end(pixel);
+    return;
+  }
+
+  if (urlPath.startsWith('/api/track/link') && req.method === 'GET') {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const email = url.searchParams.get('e');
+    const targetUrl = url.searchParams.get('url');
+    if (email && targetUrl) {
+      const key = String(email).trim().toLowerCase();
+      const visitor = visitorProfiles.get(key);
+      if (visitor) {
+        const timeline = visitor.timeline || [];
+        timeline.push(`Clicked link to ${targetUrl} at ${new Date().toISOString()}`);
+        const next = { ...visitor, timeline };
+        visitorProfiles.set(key, next);
+        upsertVisitor(key, next).catch(e => console.error('[Tracking] Link update failed:', e));
+      }
+    }
+    res.writeHead(302, { 'Location': targetUrl || '/' });
+    res.end();
+    return;
+  }
+
+  // ── API: Calendar Booking ──
+  if (urlPath === '/api/calendar/availability' && req.method === 'GET') {
+    try {
+      const events = [];
+      try {
+        const files = await fs.readdir(dirs.calendar);
+        for (const file of files) {
+          if (file.endsWith('.md')) {
+            const raw = await fs.readFile(path.join(dirs.calendar, file), 'utf8');
+            const match = raw.match(/^---\n([\s\S]+?)\n---/);
+            if (match) {
+              const lines = match[1].split('\n');
+              const event = {};
+              for (const line of lines) {
+                const m = line.match(/^([a-z_]+):\s*(.*)$/);
+                if (m) {
+                  let val = m[2];
+                  if (val.startsWith('"') && val.endsWith('"')) val = JSON.parse(val);
+                  event[m[1]] = val;
+                }
+              }
+              events.push(event);
+            }
+          }
+        }
+      } catch(e) { }
+
+      // Find available slots for the next 14 days (9am - 5pm MST)
+      const slots = [];
+      const now = new Date();
+      for (let i = 1; i <= 14; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i, 10, 0, 0);
+        if (d.getDay() !== 0 && d.getDay() !== 6) { // skip weekends
+          slots.push(d.toISOString());
+        }
+      }
+      return sendJson(res, 200, { slots, busy: events.map(e => e.dtstart) });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
+  if (urlPath === '/api/calendar/book' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const email = String(body.email).trim().toLowerCase();
+      const visitor = visitorProfiles.get(email);
+      if (visitor) {
+        const timeline = visitor.timeline || [];
+        timeline.push(`Booked meeting for ${body.slot} at ${new Date().toISOString()}`);
+        const next = { ...visitor, timeline };
+        visitorProfiles.set(email, next);
+        upsertVisitor(email, next).catch(e => console.error(e));
+      }
+      
+      await smtpTransport.sendMail({
+        from: mailFrom,
+        to: mailOwner,
+        subject: `Meeting Request: ${body.name || email}`,
+        text: `A meeting has been requested by ${body.name} (${email}) for ${body.slot}.`,
+      });
+
+      return sendJson(res, 200, { success: true });
+    } catch (e) {
+      return sendJson(res, 500, { error: e.message });
+    }
+  }
+
   // ── API: CNA Chat ──
   if (urlPath === '/api/cna' && req.method === 'POST') {
     try {
@@ -1164,19 +1537,58 @@ createServer(async (req, res) => {
         return sendJson(res, 500, { message: 'AI service unavailable.' });
       }
 
-      const systemPrompt = `You are an AI assistant conducting a Client Needs Assessment for Greg Iteen, a software engineer and designer. Your job is to understand the prospect's project needs through a natural conversation.
+      let upcomingSchedule = '';
+      try {
+        const events = [];
+        const files = await fs.readdir(dirs.calendar);
+        for (const file of files) {
+          if (file.endsWith('.md')) {
+            const raw = await fs.readFile(path.join(dirs.calendar, file), 'utf8');
+            const match = raw.match(/^---\n([\s\S]+?)\n---/);
+            if (match) {
+              const lines = match[1].split('\n');
+              const event = {};
+              for (const line of lines) {
+                const m = line.match(/^([a-z_]+):\s*(.*)$/);
+                if (m) {
+                  let val = m[2];
+                  if (val.startsWith('"') && val.endsWith('"')) val = JSON.parse(val);
+                  event[m[1]] = val;
+                }
+              }
+              events.push(event);
+            }
+          }
+        }
+        
+        const now = new Date();
+        const upcoming = events
+          .filter(e => new Date(e.dtstart) >= now || new Date(e.dtend || e.dtstart) >= now)
+          .sort((a, b) => new Date(a.dtstart) - new Date(b.dtstart))
+          .slice(0, 15);
+          
+        if (upcoming.length > 0) {
+          upcomingSchedule = `\nGreg's upcoming busy schedule:\n` + upcoming.map(e => `- ${e.summary} on ${e.dtstart}`).join('\n') + `\nIf the client wants to meet, do not suggest times that overlap with these busy slots. Instead, steer them towards open slots, usually between 9AM-5PM MST.`;
+        }
+      } catch (e) {
+        // Ignore calendar fetch errors
+      }
 
-Gather the following information through the conversation:
-1. Project type (website, web app, mobile app, branding, design, infrastructure, etc.)
-2. Project description and goals
-3. Timeline expectations
-4. Budget range (if they're comfortable sharing)
-5. Technical requirements / preferred technologies
-6. Current pain points or problems to solve
-7. Target audience
-8. Any existing assets or systems to integrate with
+      const systemPrompt = `You are a consultative AI sales director for Greg Iteen (a software engineer and designer). Your job is to conduct a Client Needs Assessment through natural conversation and qualify the prospect using proven sales tactics (BANT/SPIN).${upcomingSchedule}
 
-Be professional, warm, and concise. Ask one or two questions at a time, not all at once. When you have enough information to generate a meaningful proposal (usually after 4-8 exchanges), respond with a JSON assessment.
+You already have their initial info (Name, Email, Company, Budget). Acknowledge this info, and then deeply probe into:
+1. The core business problem they are trying to solve (Pain).
+2. The implications of NOT solving this problem.
+3. Their desired timeline and why that timeline matters.
+4. BUDGET AND SCOPE: You MUST explicitly discuss their budget vs scope. If their budget is low, tell them what trade-offs might be required. Set realistic expectations.
+5. Technical requirements and existing systems.
+
+BEHAVIORAL RULES:
+- Be professional, warm, but authoritative. You are an expert consultant, not an order-taker.
+- Ask one or two focused questions at a time. Do not overwhelm them.
+- When they give vague answers, gently push for specifics.
+- Set process expectations: "After we align on the high-level needs, I will generate a formal proposal for you to review and sign."
+- When you have enough information to generate a meaningful proposal (usually after 4-8 exchanges) AND have aligned on budget/scope feasibility, respond with a JSON assessment.
 
 When the assessment is complete, your response MUST be valid JSON with this exact structure:
 {"message": "Your closing message to the prospect...", "complete": true, "assessment": {"project_type": "...", "description": "...", "timeline": "...", "budget_range": "...", "technologies": "...", "complexity": "Low/Medium/High", "priority": "...", "pain_points": "...", "target_audience": "..."}}
@@ -1323,7 +1735,7 @@ OUTPUT: Return exactly one JSON object:
 
       let enrichment = {};
       try {
-        const enrichRaw = await geminiCall(GOOGLE_API_KEY, enrichPrompt);
+        const enrichRaw = await geminiCall(GOOGLE_API_KEY, enrichPrompt, { json: true, tools: [{ googleSearch: {} }] });
         enrichment = extractJson(enrichRaw);
       } catch (/** @type {any} */ e) {
         console.warn(`[Proposal ${proposalId}] Enrichment failed: ${e.message}`);
@@ -1362,17 +1774,17 @@ Write a professional, compelling project proposal. Include:
 
 Keep it direct, confident, and professional. No fluff. This is from a technical expert, not a sales department.
 
-OUTPUT: Return exactly one JSON object:
-{
-  "subject_line": "Proposal: [project type] for [company]",
-  "proposal_text": "The full proposal in clean markdown format",
-  "client_email_draft": "A brief, warm email to the client that would accompany the proposal"
-}`;
+Return plain Markdown using exactly this delimiter contract. Do NOT put Markdown inside a JSON string and do not wrap the response in a code fence:
+SUBJECT: Proposal: [project type] for [company]
+---PROPOSAL---
+the full proposal in clean Markdown
+---CLIENT_EMAIL---
+a brief, warm email to the client that accompanies the proposal
+---END---`;
 
       let proposalDraft = {};
       try {
-        const proposalRaw = await geminiCall(GOOGLE_API_KEY, proposalPrompt);
-        proposalDraft = extractJson(proposalRaw);
+        proposalDraft = await generateDelimitedProposal(GOOGLE_API_KEY, proposalPrompt);
       } catch (/** @type {any} */ e) {
         console.warn(`[Proposal ${proposalId}] Draft generation failed: ${e.message}`);
         proposalDraft = {
@@ -1396,6 +1808,9 @@ OUTPUT: Return exactly one JSON object:
       };
       proposalThreads.set(proposalId, proposalThread);
       await upsertProposal(proposalId, proposalThread);
+      // A prospect with an active proposal should not receive general nurture
+      // mail while Greg is already handling a real conversation.
+      await pauseVisitorDripForProposal(clientEmail);
 
       // Step 3: Email Greg with the full package
       console.log(`[Proposal ${proposalId}] Emailing to Greg…`);
@@ -1591,6 +2006,57 @@ ${'═'.repeat(60)}`;
       return sendJson(res, 200, visitors);
     }
 
+    // POST /api/admin/visitors/drip { email, action: pause|resume|unenroll }
+    if (adminPath === '/visitors/drip' && req.method === 'POST') {
+      try {
+        const { email, action } = await readBody(req);
+        const key = String(email || '').trim().toLowerCase();
+        const visitor = visitorProfiles.get(key);
+        if (!visitor?.drip) return sendJson(res, 404, { error: 'Visitor has no drip enrollment' });
+        let drip = { ...visitor.drip };
+        if (action === 'pause') {
+          drip = { ...drip, status: 'paused', pause_reason: 'admin_paused' };
+        } else if (action === 'resume') {
+          const campaign = await getDripCampaign(drip.campaign);
+          if (!campaign) return sendJson(res, 409, { error: 'Campaign is unavailable' });
+          drip = { ...drip, status: 'active', pause_reason: null, next_send_at: drip.next_send_at || new Date().toISOString() };
+        } else if (action === 'unenroll') {
+          drip = { ...drip, status: 'unenrolled', next_send_at: null, pause_reason: 'admin_unenrolled' };
+        } else {
+          return sendJson(res, 400, { error: 'Invalid drip action' });
+        }
+        const updated = await updateVisitorDrip(key, drip);
+        return sendJson(res, 200, { success: true, visitor: updated });
+      } catch (err) {
+        return sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+
+    // POST /api/admin/visitors/research { email }
+    if (adminPath === '/visitors/research' && req.method === 'POST') {
+      try {
+        const { email } = await readBody(req);
+        const key = String(email || '').trim().toLowerCase();
+        const visitor = visitorProfiles.get(key);
+        if (!visitor) return sendJson(res, 404, { error: 'Visitor not found' });
+        
+        const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
+        if (!GOOGLE_API_KEY) return sendJson(res, 500, { error: 'Missing GOOGLE_API_KEY' });
+        
+        const emailDomain = key.includes('@') ? key.split('@')[1] : '';
+        const enrichPrompt = `You are a business intelligence analyst. Research this prospect: ${key} (Domain: ${emailDomain}). 
+Search the web for their company and industry. 
+OUTPUT JSON: { "company_name": "...", "industry": "...", "estimated_size": "..." }`;
+        const enrichRaw = await geminiCall(GOOGLE_API_KEY, enrichPrompt, { json: true, tools: [{ googleSearch: {} }] });
+        const enrichment = { ...(visitor.enrichment || {}), ...extractJson(enrichRaw) };
+        const updated = await updateVisitorEnrichment(key, enrichment);
+        
+        return sendJson(res, 200, { success: true, visitor: updated });
+      } catch (err) {
+        return sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+
     // GET /api/admin/themes
     if (adminPath === '/themes' && req.method === 'GET') {
       const themes = [];
@@ -1739,6 +2205,7 @@ ${'═'.repeat(60)}`;
 
     // GET /api/admin/settings
     if (adminPath === '/settings' && req.method === 'GET') {
+      const webmail = await getWebmailSettings();
       return sendJson(res, 200, {
         apiKeySet: !!process.env.GOOGLE_API_KEY,
         defaultModel: process.env.DEFAULT_MODEL || 'gemini-3.5-flash',
@@ -1746,6 +2213,7 @@ ${'═'.repeat(60)}`;
         mailFrom: mailFrom,
         mailDomain: process.env.MAIL_DOMAIN || '',
         cronHour: 3,
+        webmail,
       });
     }
 
@@ -1756,15 +2224,80 @@ ${'═'.repeat(60)}`;
         if (body.apiKey) process.env.GOOGLE_API_KEY = body.apiKey;
         if (body.defaultModel) process.env.DEFAULT_MODEL = body.defaultModel;
         if (body.cronHour !== undefined) process.env.CRON_HOUR = String(body.cronHour);
+        if (body.webmail) await updateWebmailSettings(body.webmail);
         return sendJson(res, 200, { success: true });
       } catch (/** @type {any} */ e) {
         return sendJson(res, 400, { error: e.message });
       }
     }
 
+    // GET /api/admin/webmail/inbox
+    if (adminPath === '/webmail/inbox' && req.method === 'GET') {
+      try {
+        const messages = await fetchInbox();
+        return sendJson(res, 200, { messages });
+      } catch (e) {
+        return sendJson(res, 500, { error: e.message });
+      }
+    }
+
+    // POST /api/admin/webmail/send
+    if (adminPath === '/webmail/send' && req.method === 'POST') {
+      try {
+        const body = await readBody(req);
+        await smtpTransport.sendMail({
+          from: mailFrom,
+          to: body.to,
+          subject: body.subject,
+          text: body.text,
+          html: `<p>${body.text.replace(/\\n/g, '<br>')}</p>`,
+        });
+        return sendJson(res, 200, { success: true });
+      } catch (e) {
+        return sendJson(res, 500, { error: e.message });
+      }
+    }
+
+    // GET /api/admin/calendar
+    if (adminPath === '/calendar' && req.method === 'GET') {
+      try {
+        const events = [];
+        try {
+          const files = await fs.readdir(dirs.calendar);
+          for (const file of files) {
+            if (file.endsWith('.md')) {
+              const raw = await fs.readFile(path.join(dirs.calendar, file), 'utf8');
+              const match = raw.match(/^---\n([\s\S]+?)\n---/);
+              if (match) {
+                const lines = match[1].split('\n');
+                const event = {};
+                for (const line of lines) {
+                  const m = line.match(/^([a-z_]+):\s*(.*)$/);
+                  if (m) {
+                    let val = m[2];
+                    if (val.startsWith('"') && val.endsWith('"')) val = JSON.parse(val);
+                    event[m[1]] = val;
+                  }
+                }
+                events.push(event);
+              }
+            }
+          }
+        } catch(e) {
+          // calendar dir might not exist yet
+        }
+        return sendJson(res, 200, { events });
+      } catch (e) {
+        return sendJson(res, 500, { error: e.message });
+      }
+    }
+
     // POST /api/admin/improve — trigger improvement cycle manually
     if (adminPath === '/improve' && req.method === 'POST') {
-      const child = spawn(process.execPath, [improveScript], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = spawn(process.execPath, [improveScript], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: serializedThemeEnv,
+      });
       child.on('close', (code) => {
         console.log(`[Admin] Manual improvement run finished (exit ${code})`);
         if (code === 0) rebuild('admin: improvement run');
@@ -1790,9 +2323,13 @@ ${'═'.repeat(60)}`;
   if (file !== root && !file.startsWith(root + sep)) { res.writeHead(403).end(); return; }
   try {
     const body = await readFile(file);
-    res.writeHead(200, { 'content-type': types[extname(file)] ?? 'application/octet-stream' }).end(body);
+    res.writeHead(200, { 'content-type': types[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache' }).end(body);
   } catch {
-    res.writeHead(404, { 'content-type': 'text/plain' }).end('not found');
+    // Explicit no-store: without this, browsers may heuristically cache a 404
+    // (RFC 7231 §6.1 makes 404 cacheable by default) and keep replaying it on
+    // every later navigation even after the file exists — hit live via a
+    // deploy race where an asset briefly 404'd before rsync finished.
+    res.writeHead(404, { 'content-type': 'text/plain', 'cache-control': 'no-store' }).end('not found');
   }
 }).listen(port, () => console.log(`portfolio-site → http://localhost:${port}`));
 
@@ -1809,7 +2346,10 @@ function checkImproveCron() {
   if (hour === 3 && today !== lastImproveDay) {
     lastImproveDay = today;
     console.log('[Cron] Starting daily theme improvement run…');
-    const child = spawn(process.execPath, [improveScript], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [improveScript], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: serializedThemeEnv,
+    });
     child.stdout.on('data', (chunk) => {
       for (const line of String(chunk).split('\n').filter(l => l.trim())) {
         console.log(`[Cron] ${line}`);
@@ -1828,3 +2368,10 @@ function checkImproveCron() {
 // Check every 5 minutes
 setInterval(checkImproveCron, 5 * 60 * 1000);
 console.log('[Cron] Daily improvement cron scheduled (3:00 AM)');
+
+// Drip state is persisted as an absolute next_send_at timestamp, so this can
+// run on boot and at a short cadence without losing or duplicating a sequence
+// across a pm2 restart. DRIP_TICK_MS is configurable for compressed live tests.
+setInterval(() => { void sendDueDripEmails(); }, DRIP_TICK_MS);
+queueMicrotask(() => { void sendDueDripEmails(); });
+console.log(`[Drip] Scheduler started (${DRIP_TICK_MS}ms interval)`);

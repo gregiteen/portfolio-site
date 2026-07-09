@@ -104,6 +104,26 @@ test('validateThemePayload neutralizes script tags in layouts', () => {
   assert.ok(!/<\s*script/i.test(theme.layouts.page));
 });
 
+test('validateThemePayload rejects malformed HTML and unknown placeholders', () => {
+  const { errors } = validateThemePayload({
+    name: 'X',
+    css: 'body { background: #101010; color: #eee; margin: 0; padding: 0; } a { color: #fff; }',
+    layouts: { home: '<main>{{HEADLINE}}{{FEATURED_PROJECTS}}</section>{{INVENTED_SLOT}}' },
+  });
+  assert.ok(errors.some((error) => error.includes('unknown placeholder')));
+  assert.ok(errors.some((error) => error.includes('unmatched or misnested')));
+});
+
+test('validateThemePayload release mode requires complete layout coverage and a hero asset', () => {
+  const { errors } = validateThemePayload({
+    name: 'X',
+    css: 'body { background: #101010; color: #eee; margin: 0; padding: 0; } a { color: #fff; }',
+    layouts: { home: '<main>{{HEADLINE}}{{FEATURED_PROJECTS}}</main>' },
+  }, { requireAllLayouts: true, requireHero: true });
+  assert.ok(errors.some((error) => error.includes('missing required layout "shell"')));
+  assert.ok(errors.some((error) => error.includes('assets/hero.jpg')));
+});
+
 test('extractJson handles fences, prose, and trailing commas', () => {
   assert.deepEqual(extractJson('Sure! Here you go:\n```json\n{"a": 1}\n```\nEnjoy.'), { a: 1 });
   assert.deepEqual(extractJson('prefix {"a": [1, 2,], "b": {"c": 3,},} suffix'), { a: [1, 2], b: { c: 3 } });

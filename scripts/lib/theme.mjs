@@ -176,6 +176,86 @@ export function fillTemplate(template, vars) {
 }
 
 const HEX_RE = /#[0-9a-fA-F]{3,8}\b/;
+const VOID_HTML_ELEMENTS = new Set([
+  'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta',
+  'param', 'source', 'track', 'wbr',
+]);
+const KNOWN_PLACEHOLDERS = new Set(
+  Object.values(LAYOUT_SPECS).flatMap((spec) => [...spec.required, ...spec.optional])
+    .map((placeholder) => placeholder.slice(2, -2))
+);
+
+function validateCssStructure(css) {
+  const errors = [];
+  let depth = 0;
+  let quote = null;
+  let escaped = false;
+  let comment = false;
+  for (let i = 0; i < css.length; i++) {
+    const char = css[i];
+    const next = css[i + 1];
+    if (comment) {
+      if (char === '*' && next === '/') { comment = false; i++; }
+      continue;
+    }
+    if (quote) {
+      if (escaped) { escaped = false; continue; }
+      if (char === '\\') { escaped = true; continue; }
+      if (char === quote) quote = null;
+      continue;
+    }
+    if (char === '/' && next === '*') { comment = true; i++; continue; }
+    if (char === '"' || char === "'") { quote = char; continue; }
+    if (char === '{') depth++;
+    if (char === '}') {
+      depth--;
+      if (depth < 0) {
+        errors.push('stylesheet has an unmatched closing brace');
+        break;
+      }
+    }
+  }
+  if (comment) errors.push('stylesheet has an unclosed comment');
+  if (quote) errors.push('stylesheet has an unclosed string');
+  if (depth > 0) errors.push('stylesheet has unclosed brace(s)');
+  return errors;
+}
+
+function validateHtmlFragment(template) {
+  const errors = [];
+  const withoutComments = template.replace(/<!--[\s\S]*?-->/g, '');
+  const stack = [];
+  const tags = /<\/?([A-Za-z][A-Za-z0-9:-]*)(?:\s[^<>]*)?>/g;
+  let match;
+  while ((match = tags.exec(withoutComments)) !== null) {
+    const raw = match[0];
+    const tag = match[1].toLowerCase();
+    const closing = raw.startsWith('</');
+    const selfClosing = raw.endsWith('/>') || VOID_HTML_ELEMENTS.has(tag);
+    if (closing) {
+      if (stack.at(-1) !== tag) {
+        errors.push(`HTML has an unmatched or misnested </${tag}> tag`);
+        break;
+      }
+      stack.pop();
+    } else if (!selfClosing) {
+      stack.push(tag);
+    }
+  }
+  if (!errors.length && stack.length) {
+    errors.push(`HTML has unclosed tag(s): ${stack.map((tag) => `<${tag}>`).join(', ')}`);
+  }
+
+  const visibleText = withoutComments
+    .replace(/\{\{[A-Z0-9_]+\}\}/g, '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&(?:#\d+|#x[0-9a-f]+|[a-z]+);/gi, '')
+    .trim();
+  if (/[A-Za-z0-9]/.test(visibleText)) {
+    errors.push('HTML contains hardcoded visible text instead of placeholders');
+  }
+  return errors;
+}
 
 /**
  * Validate + normalize a generated theme payload.
@@ -183,7 +263,7 @@ const HEX_RE = /#[0-9a-fA-F]{3,8}\b/;
  * problems; with `strict: false`, layouts that fail their placeholder
  * contract are dropped instead (the build falls back to the default layout).
  */
-export function validateThemePayload(payload, { strict = true } = {}) {
+export function validateThemePayload(payload, { strict = true, requireAllLayouts = false, requireHero = false } = {}) {
   const errors = [];
   const warnings = [];
   if (!payload || typeof payload !== 'object') {
@@ -195,8 +275,9 @@ export function validateThemePayload(payload, { strict = true } = {}) {
 
   let css = typeof payload.css === 'string' ? payload.css.trim() : '';
   css = css.replace(/^```[a-z]*\n/i, '').replace(/\n?```$/, '');
-  css = css.replace(/<\/style/gi, '');
+  css = css.replace(/<\/?style\b[^>]*>/gi, '');
   if (css.length < 80) errors.push('"css" must be a complete stylesheet (got ' + css.length + ' chars)');
+  errors.push(...validateCssStructure(css));
 
   let accent = typeof payload.accent === 'string' && HEX_RE.test(payload.accent) ? payload.accent.match(HEX_RE)[0] : null;
   if (!accent) {
@@ -209,7 +290,10 @@ export function validateThemePayload(payload, { strict = true } = {}) {
   const rawLayouts = payload.layouts && typeof payload.layouts === 'object' ? payload.layouts : {};
   for (const [key, spec] of Object.entries(LAYOUT_SPECS)) {
     const tpl = rawLayouts[key];
-    if (typeof tpl !== 'string' || !tpl.trim()) continue; // layouts are optional
+    if (typeof tpl !== 'string' || !tpl.trim()) {
+      if (requireAllLayouts) errors.push(`missing required layout "${key}"`);
+      continue;
+    }
     const missing = spec.required.filter((ph) => !tpl.includes(ph));
     if (missing.length) {
       const msg = `layout "${key}" is missing required placeholder(s): ${missing.join(', ')}`;
@@ -222,10 +306,44 @@ export function validateThemePayload(payload, { strict = true } = {}) {
     // stripping to the next `<script` or end-of-string when unclosed.
     let clean = tpl.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '');
     clean = clean.replace(/<script\b[^>]*>[\s\S]*?(?=<script\b|$)/gi, '');
+    // Layouts are fragments — build-site.mjs assembles the one real
+    // <!doctype>/<html>/<head>/<body> around them. A model that ignores
+    // instructions and emits its own document shell here (seen live: a
+    // full `<!doctype html><html><head>...</head>...</html>` "shell"
+    // layout with no <body> at all) makes build-site.mjs's wrap-in-<body>
+    // fallback nest a whole document inside an extra <body> — invalid,
+    // visibly broken markup that shipped to real visitors twice before
+    // this was caught. Strip any wrapper tags unconditionally so a
+    // non-compliant model output can never produce malformed nesting,
+    // regardless of what it emits.
+    if (/<!doctype|<html[\s>]|<head[\s>]|<body[\s>]/i.test(clean)) {
+      warnings.push(`layout "${key}" contained its own document shell (<!doctype>/<html>/<head>/<body>) — stripped to a fragment`);
+      clean = clean.replace(/<!doctype[^>]*>/gi, '');
+      clean = clean.replace(/<\/?html[^>]*>/gi, '');
+      clean = clean.replace(/<head[^>]*>[\s\S]*?<\/head\s*>/gi, '');
+      clean = clean.replace(/<\/?body[^>]*>/gi, '');
+      clean = clean.trim();
+    }
+    const unknownPlaceholders = [...clean.matchAll(/\{\{([^}]+)\}\}/g)]
+      .map((match) => match[1])
+      .filter((placeholder) => !KNOWN_PLACEHOLDERS.has(placeholder));
+    if (unknownPlaceholders.length) {
+      const msg = `layout "${key}" uses unknown placeholder(s): ${[...new Set(unknownPlaceholders)].join(', ')}`;
+      if (strict) { errors.push(msg); } else { warnings.push(msg + ' — layout dropped'); continue; }
+    }
+    const markupErrors = validateHtmlFragment(clean);
+    if (markupErrors.length) {
+      const msg = `layout "${key}" ${markupErrors.join('; ')}`;
+      if (strict) { errors.push(msg); } else { warnings.push(msg + ' — layout dropped'); continue; }
+    }
     layouts[key] = clean;
   }
   for (const key of Object.keys(rawLayouts)) {
     if (!LAYOUT_SPECS[key]) warnings.push(`unknown layout "${key}" ignored`);
+  }
+
+  if (requireHero && !/assets\/hero\.jpg/i.test(css)) {
+    errors.push('stylesheet must visibly reference assets/hero.jpg for the home hero');
   }
 
   return { errors, warnings, theme: errors.length ? null : { name, accent, css, layouts } };

@@ -40,10 +40,31 @@
       "portability": "structural",
       "required_fields": ["type"]
     },
+    "drip_campaign": {
+      "family": "marketing",
+      "canonical_path": "campaigns/<slug>.md",
+      "append_only": false,
+      "portability": "structural",
+      "required_fields": ["type", "slug", "title"]
+    },
     "banner_event_log": {
       "family": "ops",
       "canonical_path": "runtime/events/banner-events.md",
       "append_only": true,
+      "portability": "tenant_private",
+      "required_fields": ["type"]
+    },
+    "calendar_event": {
+      "family": "crm",
+      "canonical_path": "runtime/calendar/<id>.md",
+      "append_only": false,
+      "portability": "tenant_private",
+      "required_fields": ["type", "event_id", "summary", "dtstart"]
+    },
+    "webmail_settings": {
+      "family": "config",
+      "canonical_path": "runtime/config/webmail-settings.md",
+      "append_only": false,
       "portability": "tenant_private",
       "required_fields": ["type"]
     }
