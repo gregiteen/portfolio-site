@@ -185,6 +185,59 @@ const KNOWN_PLACEHOLDERS = new Set(
     .map((placeholder) => placeholder.slice(2, -2))
 );
 
+// Generated logo images are a frequent source of embedded checkerboards,
+// illegible marks, and unbounded intrinsic dimensions. The static brand asset
+// is verified, copied into every design build, and has a predictable footprint.
+const VERIFIED_BRAND_ASSET = 'gi-logo-transparent-dark.png';
+const BRAND_ASSET_CSS = `
+/* Release invariant: a generated skin may not let an untrusted logo asset take over the viewport. */
+.nav-bar img[src*="${VERIFIED_BRAND_ASSET}"], header img[src*="${VERIFIED_BRAND_ASSET}"] {
+  display: block;
+  inline-size: min(11.25rem, 48vw) !important;
+  block-size: 3.5rem !important;
+  max-inline-size: 100% !important;
+  max-block-size: 3.5rem !important;
+  object-fit: contain !important;
+  object-position: left center !important;
+}
+.verified-brand-mark {
+  inline-size: min(11.25rem, 48vw) !important;
+  block-size: 3.5rem !important;
+  max-inline-size: 100% !important;
+  max-block-size: 3.5rem !important;
+  object-fit: contain !important;
+}
+/* build-site emits both navigation layers; generated skins own the custom one. */
+.tl-default { display: none !important; }
+.tl-custom { display: flex; flex-wrap: wrap; align-items: center; }
+}
+`;
+
+/**
+ * Normalize layout references to the known brand asset and make its rendered
+ * size explicit. This is deterministic release hardening, not model judgment.
+ */
+export function enforceBrandAssetContract(payload) {
+  if (!payload || typeof payload !== 'object') return payload;
+  const layouts = Object.fromEntries(
+    Object.entries(payload.layouts || {}).map(([key, html]) => [
+      key,
+      typeof html !== 'string' ? html : html
+        .replace(/(['"])assets\/logo\.png\1/gi, `$1${VERIFIED_BRAND_ASSET}$1`)
+        .replace(/<img\b([^>]*\bsrc=(['"])gi-logo-transparent-dark\.png\2[^>]*)>/gi, (tag, attributes) => {
+          if (/\bclass\s*=/.test(attributes)) {
+            return `<img${attributes.replace(/class=(['"])([^'"]*)\1/i, (_, quote, classes) => `class=${quote}${classes} verified-brand-mark${quote}`)}>`;
+          }
+          return `<img class="verified-brand-mark"${attributes}>`;
+        }),
+    ])
+  );
+  const css = typeof payload.css === 'string' && !payload.css.includes(VERIFIED_BRAND_ASSET)
+    ? `${payload.css}\n${BRAND_ASSET_CSS}`
+    : payload.css;
+  return { ...payload, css, layouts };
+}
+
 function validateCssStructure(css) {
   const errors = [];
   let depth = 0;

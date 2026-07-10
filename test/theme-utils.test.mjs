@@ -12,6 +12,7 @@ import {
   fillTemplate,
   validateThemePayload,
   extractJson,
+  enforceBrandAssetContract,
 } from '../scripts/lib/theme.mjs';
 
 test('parseNestedMap recovers theme tokens the canonical parser drops', () => {
@@ -122,6 +123,18 @@ test('validateThemePayload release mode requires complete layout coverage and a 
   }, { requireAllLayouts: true, requireHero: true });
   assert.ok(errors.some((error) => error.includes('missing required layout "shell"')));
   assert.ok(errors.some((error) => error.includes('assets/hero.jpg')));
+});
+
+test('enforceBrandAssetContract replaces generated logos and bounds the verified brand mark', () => {
+  const normalized = enforceBrandAssetContract({
+    css: '.nav-bar { display: flex; }',
+    layouts: { shell: '<header><img src="assets/logo.png" /></header>{{CONTENT}}' },
+  });
+  assert.match(normalized.layouts.shell, /src="gi-logo-transparent-dark\.png"/);
+  assert.match(normalized.layouts.shell, /class="verified-brand-mark"/);
+  assert.doesNotMatch(normalized.layouts.shell, /assets\/logo\.png/);
+  assert.match(normalized.css, /inline-size: min\(11\.25rem, 48vw\) !important/);
+  assert.match(normalized.css, /\.tl-default \{ display: none !important; \}/);
 });
 
 test('extractJson handles fences, prose, and trailing commas', () => {

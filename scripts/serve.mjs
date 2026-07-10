@@ -234,24 +234,12 @@ function startGeneration(prompt) {
       });
       rebuild('generated theme'); // watcher usually catches it, but be certain
 
-      // Serve first, refine live: kick off the improve pass on the just-built
-      // skin asynchronously. improve-theme scores it, regenerates weak slots via
-      // the parallel specialist fan-out, swaps if better, and rebuilds — so the
-      // viewer sees the first generation immediately and the upgraded version
-      // hot-swaps in underneath them. Fire-and-forget; failures never block.
+      // The generator now performs a full Pro source review and visual asset
+      // review before it writes a public skin. Do not let the legacy async
+      // improver overwrite that released result with a lower-assurance model
+      // pass after visitors can see it.
       if (genSlug) {
-        console.log(`[Improve] Auto-improving "${genSlug}" post-generation…`);
-        const imp = spawn(process.execPath, [improveScript, genSlug], {
-          stdio: ['ignore', 'pipe', 'pipe'],
-          env: serializedThemeEnv,
-        });
-        imp.stdout.on('data', (c) => { for (const ln of String(c).split('\n')) { const t = ln.trim(); if (t) console.log(`[Improve] ${t}`); } });
-        imp.stderr.on('data', (c) => { const t = String(c).trim(); if (t) console.error(`[Improve] ${t}`); });
-        imp.on('error', (e) => console.error('[Improve] Failed to spawn:', e.message));
-        imp.on('close', (ic) => {
-          console.log(`[Improve] Post-generation pass exited (${ic}) for "${genSlug}".`);
-          if (ic === 0) rebuild('post-generation improvement');
-        });
+        console.log(`[Improve] "${genSlug}" was fully reviewed before publication; post-public auto-improve is disabled.`);
       }
     } else {
       genJob.status = 'error';

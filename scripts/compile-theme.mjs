@@ -10,7 +10,7 @@
 //    asks the model to fix its own JSON before we give up.
 //  - The theme is stored as fenced sections in a normal SSSS page doc — no
 //    YAML block scalars, no bespoke frontmatter parser.
-import { writeFile, mkdir, copyFile } from 'node:fs/promises';
+import { writeFile, mkdir, copyFile, readFile } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join, dirname, delimiter } from 'node:path';
@@ -22,6 +22,7 @@ import {
   extractJson,
   validateThemePayload,
   serializeThemeDoc,
+  enforceBrandAssetContract,
 } from './lib/theme.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -47,10 +48,9 @@ const PLAN_SCHEMA = {
     image_prompts: {
       type: 'OBJECT',
       properties: {
-        logo: { type: 'STRING', maxLength: 600 },
-        favicon: { type: 'STRING', maxLength: 500 },
         hero: { type: 'STRING', maxLength: 700 },
       },
+      required: ['hero'],
     },
   },
   required: ['plan', 'image_prompts'],
@@ -100,6 +100,14 @@ const RELEASE_REVIEW_SCHEMA = {
     },
   },
   required: ['approved', 'score', 'blocking_issues'],
+};
+const VISUAL_ASSET_AUDIT_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    approved: { type: 'BOOLEAN' },
+    issues: { type: 'ARRAY', items: { type: 'STRING' } },
+  },
+  required: ['approved', 'issues'],
 };
 // The stylesheet is partitioned into independent sections, each a parallel
 // specialist. Concatenated in THIS order (tokens first so var(--…) resolves).
@@ -241,19 +249,15 @@ function geminiApiCall(model, bodyObj) {
   });
 }
 
-async function geminiText(userPrompt, schema = null, maxOutputTokens = 65536, thinkingBudget = null, model = 'gemini-3.5-flash') {
-  // maxOutputTokens bounds THINKING + output combined on flash. It is
-  // per-call: specialist slots use a bounded ceiling so a flaky response
-  // truncates quickly instead of holding the whole parallel build open.
+async function geminiText(userPrompt, schema = null, maxOutputTokens = 65536, thinkingBudget = null, model = 'gemini-3.5-flash', allowNoThinkingRetry = true) {
+  // maxOutputTokens bounds thinking + output. It is per-call: specialist slots
+  // use a bounded ceiling so a flaky response cannot hold the parallel build.
   const generationConfig = { responseMimeType: 'application/json', maxOutputTokens };
-  // Bound thinking. flash is a thinking model and its thinking tokens count
-  // against maxOutputTokens. Capping thinking keeps room for real output and
-  // stops open-ended prompts from spiralling. A normal plan needs <2K thinking
-  // tokens, so 8192 is generous headroom.
+  // Thinking tokens count against maxOutputTokens, so reserve room for the
+  // response while allowing the caller to choose the right reasoning depth.
   // Gemini rejects a thinking budget larger than the call's total token cap.
-  // Planning/director calls deliberately use small caps for speed, so scale the
-  // budget down and reserve room for the structured response instead of
-  // falling through to unavailable CLI agents after a 400 response.
+  // The planning director explicitly receives the larger Pro budget below;
+  // all other callers get a safe default that leaves room for structured output.
   generationConfig.thinkingConfig = {
     thinkingBudget: thinkingBudget ?? Math.min(8192, Math.max(0, maxOutputTokens - 1024)),
   };
@@ -267,10 +271,10 @@ async function geminiText(userPrompt, schema = null, maxOutputTokens = 65536, th
   try {
     parts = await geminiApiCall(model, request);
   } catch (err) {
-    // A constrained response can still exhaust its shared thinking/output cap
-    // despite an explicitly concise prompt. Retry once without thinking: this
-    // preserves the schema gate and avoids an unrelated CLI-agent fallback.
-    if (!String(err).includes('MAX_TOKENS') || generationConfig.thinkingConfig.thinkingBudget === 0) throw err;
+    // Specialists may retry without thinking if a constrained response reaches
+    // its shared cap. The planning director is deliberately excluded: it must
+    // never silently trade reasoning quality for speed.
+    if (!allowNoThinkingRetry || !String(err).includes('MAX_TOKENS') || generationConfig.thinkingConfig.thinkingBudget === 0) throw err;
     console.warn('  ⚠ Gemini reached its thinking/output cap; retrying this structured call without thinking.');
     parts = await geminiApiCall(model, {
       ...request,
@@ -329,11 +333,9 @@ async function run() {
   const genDir = join(designDir, 'assets');
   await mkdir(genDir, { recursive: true });
 
-  const logoPath = join(genDir, 'logo.png');
-  const faviconPath = join(genDir, 'favicon.png');
   const heroPath = join(genDir, 'hero.jpg');
   const portraitPath = join(genDir, 'portrait.jpg');
-  const basePortrait = join(assetsDir, 'greg-portrait-source.png');
+  const portraitSource = join(assetsDir, 'greg-portrait.jpg');
 
   // ── Phase 1: Planning and Architecture (including Image Prompts) ──
   console.log(`[1/3] Theme Architecture and Image Planning…`);
@@ -367,11 +369,12 @@ PLACEHOLDER CONTRACT (YOU MUST USE THESE EXACT VARIABLES INSTEAD OF HARDCODING T
 ${placeholderContract}
 
 IMAGES (already generated, use them):
-- assets/logo.png — GI monogram, transparent PNG. Use as logo.
-- assets/favicon.png — GI favicon. Use in <link rel="icon">.
+- gi-logo-transparent-dark.png — the verified Greg Iteen brand mark. If a
+  layout displays a brand mark, use exactly src="gi-logo-transparent-dark.png".
+  Do not use assets/logo.png; generated logos are not a release-safe brand asset.
 - assets/hero.jpg — hero background. Use prominently.
-- assets/portrait.jpg — portrait of Greg restyled to match this theme. It is placed automatically inside page content (class .md-img) on the contact page — style .md-img to sit well in your layout.
-These four fixed paths are NOT hardcoded copy — referencing them via url(assets/hero.jpg) or <img src="assets/logo.png"> etc. is REQUIRED, not a violation of the "no hardcoded text" rule. That rule is about words, never about these image paths.
+- assets/portrait.jpg — verified editorial portrait of Greg. It is placed automatically inside page content (class .md-img) on the contact page — style .md-img to sit well in your layout.
+These fixed asset paths are NOT hardcoded copy — referencing them via url(assets/hero.jpg) is REQUIRED, not a violation of the "no hardcoded text" rule. That rule is about words, never about these image paths.
 
 NO INLINE <script> TAGS. Layouts are inert markup only — never write <script>…</script> or any inline JS. Interactivity must come from CSS alone (:hover, :focus, transitions, animations). Any layout containing a script tag will have it stripped, so it is always wasted effort.
 `;
@@ -387,10 +390,10 @@ ${SITE_CONTEXT}
 
 Choose a specific, credible design movement and make concrete decisions. Avoid generic dark-tech, glass, gradient, and cyberpunk tropes.`;
 
-  async function callAgent(p, schema = null, maxOutputTokens = 16384, thinkingBudget = null, model = 'gemini-3.5-flash') {
+  async function callAgent(p, schema = null, maxOutputTokens = 16384, thinkingBudget = null, model = 'gemini-3.5-flash', allowNoThinkingRetry = true) {
     if (GOOGLE_API_KEY) {
       try {
-        const raw = await geminiText(p, schema, maxOutputTokens, thinkingBudget, model);
+        const raw = await geminiText(p, schema, maxOutputTokens, thinkingBudget, model, allowNoThinkingRetry);
         console.log(`  → API response (${Math.round(raw.length / 1024)}KB)`);
         return raw;
       } catch (err) {
@@ -414,7 +417,7 @@ Choose a specific, credible design movement and make concrete decisions. Avoid g
 You are starting a new design build. Plan the architecture and visual identity, silently critiquing and improving your first idea before you write — never settle for a generic result.
 1. Analyze the brief; decide typography, color palette, layouts, and interactive mechanics.
 2. Reject generic AI tropes (neon gradients, generic dark modes, lazy cyberpunk); reference real design movements, specific typographic choices, and concrete palettes.
-3. Write 3 bespoke image-generation prompts (logo, favicon, hero) that fit the design. For logo/favicon, do NOT default to a generic monogram if it does not fit.
+3. Write one bespoke hero-image prompt that fits the design. It must be a wide, atmospheric composition with no text, logos, watermarks, checkerboard/transparency patterns, or UI mockups.
 
 CRITICAL: Be CONCISE. The "plan" must be a tight brief of ~250-350 words — enough to direct the build, NOT an essay. Do not narrate your scoring or critique; output only the final plan. A rambling plan is a failure.
 
@@ -422,28 +425,19 @@ OUTPUT: exactly one JSON object:
 {
   "plan": "A tight ~300-word design brief: identity, palette, type, layout, interaction.",
   "image_prompts": {
-    "logo": "Create a logo for Greg Iteen. Style: [Your bespoke style]. CRITICAL: FULLY TRANSPARENT background (PNG alpha)...",
-    "favicon": "Crop and optimize the provided logo into a tiny square favicon (64x64). TRANSPARENT background...",
     "hero": "Create an atmospheric, wide hero background image... Cinematic quality, 16:9..."
   }
-}`, PLAN_SCHEMA, 4096, 0, 'gemini-2.5-flash');
+}`, PLAN_SCHEMA, 32768, 16384, 'gemini-3.1-pro-preview', false);
   let planObj = extractJson(rawPlan);
   let plan = planObj.plan || planObj.thought_process || 'No plan provided.';
 
-  // The portrait uses a strict A/B tested prompt to perfectly preserve identity while styling to match the theme.
-  const portraitPrompt = `Art-direct this portrait for a portfolio site whose design brief is "${prompt}". Preserve the subject's identity exactly — same face, same friendly expression, natural human eyes, same pose. Completely replace the setting: re-render the wardrobe, backdrop, lighting, and color grade so the portrait belongs to that visual world (do not keep the original office background). Editorial photography quality, tasteful, portfolio-grade. No text, no watermarks.`;
-  
-  // Now that we have the image prompts, kick off the image generation in the background!
+  // The portrait is an approved supplied asset. Only the background hero is
+  // generated; this avoids AI face/HUD artifacts while keeping each skin fast.
   console.log(`[2/3] Generating Images in background using bespoke prompts…`);
   const imagePromise = GOOGLE_API_KEY
     ? Promise.allSettled([
-        (async () => {
-          if (await generateImage(planObj.image_prompts?.logo || 'Logo', logoPath)) {
-            await generateImage(planObj.image_prompts?.favicon || 'Favicon', faviconPath, logoPath);
-          }
-        })(),
         generateImage(planObj.image_prompts?.hero || 'Hero', heroPath),
-        generateImage(portraitPrompt, portraitPath, basePortrait).catch(e => console.error('Portrait gen failed', e))
+        copyFile(portraitSource, portraitPath),
       ])
     : (console.warn('  ⚠ GOOGLE_API_KEY not set — skipping images'), Promise.resolve([]));
 
@@ -513,6 +507,8 @@ This "${key}" layout MUST contain these exact placeholder(s): ${required}${optio
 RULES:
 - Use ONLY {{PLACEHOLDER}} variables — NEVER hardcode text, titles, or copy.
 - Compose using ONLY the contract's class names; do not invent a new visual language.
+- Only the "shell" layout may own page-wide wrappers, header, navigation, sidebar, or footer. Every other layout is a single content fragment injected inside shell's {{CONTENT}}; never repeat global chrome.
+- Do not use inline style attributes. Put all visual behavior in the shared CSS classes so mobile behavior and repairs remain reliable.
 
 ${LAYOUT_EXEMPLAR}
 
@@ -532,6 +528,7 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`, ON
     else if (typeof r.html === 'string' && r.html.trim()) { payload.layouts[r.key] = r.html; builtLayouts++; }
   }
   payload.css = CSS_SECTIONS.map((s) => cssBySection[s.key]).filter(Boolean).join('\n\n');
+  payload = enforceBrandAssetContract(payload);
   console.log(`  → Built ${Object.keys(cssBySection).length}/${CSS_SECTIONS.length} CSS sections + ${builtLayouts}/${layoutKeys.length} layouts in parallel`);
 
   // ── Release gate: validate every template, then have a fresh model inspect
@@ -603,7 +600,7 @@ ${styleSpec}
 CURRENT COMPLETE CSS:
 ${candidate.css}
 
-OUTPUT: exactly one JSON object: { "css": "complete repaired CSS" }`, CSS_SECTION_SCHEMA);
+OUTPUT: exactly one JSON object: { "css": "complete repaired CSS" }`, CSS_SECTION_SCHEMA, 32768, 12288, 'gemini-3.1-pro-preview', false);
         return { target, value: extractJson(raw).css };
       }
       const spec = LAYOUT_SPECS[target];
@@ -620,7 +617,7 @@ ${styleSpec}
 CURRENT "${target}" HTML:
 ${candidate.layouts[target] || '(missing)'}
 
-OUTPUT: exactly one JSON object: { "html": "complete repaired ${target} fragment" }`, ONE_LAYOUT_SCHEMA);
+OUTPUT: exactly one JSON object: { "html": "complete repaired ${target} fragment" }`, ONE_LAYOUT_SCHEMA, 16384, 8192, 'gemini-3.1-pro-preview', false);
       return { target, value: extractJson(raw).html };
       }));
 
@@ -655,17 +652,28 @@ ${styleSpec}
 FULL SOURCE PACKAGE:
 ${source}
 
-OUTPUT: exactly one JSON object: { "approved": true, "score": 8, "blocking_issues": [] }`, RELEASE_REVIEW_SCHEMA, 16384);
+OUTPUT: exactly one JSON object: { "approved": true, "score": 8, "blocking_issues": [] }`, RELEASE_REVIEW_SCHEMA, 32768, 12288, 'gemini-3.1-pro-preview', false);
     const audit = extractJson(raw);
     if (!Array.isArray(audit.blocking_issues)) audit.blocking_issues = [];
     console.log(`  → Release review (${label}): ${audit.score}/10 — ${audit.approved ? 'approved' : 'repair required'}`);
+    for (const issue of audit.blocking_issues) {
+      if (typeof issue?.target === 'string' && typeof issue?.issue === 'string') {
+        console.log(`    • ${issue.target}: ${issue.issue}`);
+      }
+    }
     return audit;
   };
 
   await repairStructuralViolations(payload);
   let theme = validateForRelease(payload);
-  let audit = await auditForRelease(theme, 'initial');
-  if (!audit.approved || audit.score < 8) {
+  let audit = null;
+  for (let reviewPass = 1; reviewPass <= 3; reviewPass++) {
+    audit = await auditForRelease(theme, reviewPass === 1 ? 'initial' : `repair ${reviewPass - 1}`);
+    if (audit.approved && audit.score >= 8) break;
+    if (reviewPass === 3) {
+      throw new Error(`Release review still rejected the theme (${audit.score}/10) after ${reviewPass - 1} targeted repair passes; nothing was published`);
+    }
+
     const allowedTargets = new Set(['css', ...Object.keys(LAYOUT_SPECS)]);
     const issuesByTarget = new Map();
     for (const issue of audit.blocking_issues) {
@@ -679,7 +687,7 @@ OUTPUT: exactly one JSON object: { "approved": true, "score": 8, "blocking_issue
       throw new Error('Release review rejected the theme without actionable, valid repair targets');
     }
 
-    console.log(`  → Repairing ${issuesByTarget.size} release-review target(s) in parallel…`);
+    console.log(`  → Repairing ${issuesByTarget.size} release-review target(s) in parallel (pass ${reviewPass}/2)…`);
     const repairs = await Promise.all([...issuesByTarget.entries()].map(async ([target, issues]) => {
       const critique = issues.map((issue) => `- ${issue}`).join('\n');
       if (target === 'css') {
@@ -696,7 +704,7 @@ ${styleSpec}
 CURRENT COMPLETE CSS:
 ${theme.css}
 
-OUTPUT: exactly one JSON object: { "css": "…complete repaired stylesheet…" }`, CSS_SECTION_SCHEMA);
+OUTPUT: exactly one JSON object: { "css": "…complete repaired stylesheet…" }`, CSS_SECTION_SCHEMA, 16384, 8192, 'gemini-3.1-pro-preview', false);
         return { target, value: extractJson(raw).css };
       }
 
@@ -714,7 +722,7 @@ ${styleSpec}
 CURRENT COMPLETE "${target}" HTML:
 ${theme.layouts[target]}
 
-OUTPUT: exactly one JSON object: { "html": "…complete repaired ${target} layout…" }`, ONE_LAYOUT_SCHEMA);
+OUTPUT: exactly one JSON object: { "html": "…complete repaired ${target} layout…" }`, ONE_LAYOUT_SCHEMA, 16384, 8192, 'gemini-3.1-pro-preview', false);
       return { target, value: extractJson(raw).html };
     }));
 
@@ -730,18 +738,45 @@ OUTPUT: exactly one JSON object: { "html": "…complete repaired ${target} layou
     // reintroduce malformed HTML or hardcoded copy.
     await repairStructuralViolations(payload);
     theme = validateForRelease(payload);
-    audit = await auditForRelease(theme, 'post-repair');
-    if (!audit.approved || audit.score < 8) {
-      throw new Error(`Release review still rejected the theme (${audit.score}/10); nothing was published`);
-    }
   }
   // Wait for images
   const imageResults = await imagePromise;
   if (Array.isArray(imageResults)) {
     for (const [i, r] of imageResults.entries()) {
-      if (r.status === 'rejected') console.warn(`  ⚠ ${i === 0 ? 'logo' : 'hero'} failed: ${r.reason?.message}`);
+      if (r.status === 'rejected') console.warn(`  ⚠ ${i === 0 ? 'hero' : 'portrait'} failed: ${r.reason?.message}`);
     }
   }
+
+  const auditVisualAssets = async () => {
+    const visualAuditParts = [{
+      text: `You are the final visual asset release inspector. Review the supplied hero image and portrait for a premium creative-technologist portfolio. Reject any visible checkerboard/transparency pattern, watermark, garbled text, accidental logo, UI mockup, low-resolution artifact, broken anatomy, or image that would make the page look unprofessional. The hero must be a text-free wide visual; the portrait must look like a credible editorial photograph. Be strict: when uncertain, reject.\n\nOUTPUT: exactly one JSON object: { "approved": true, "issues": [] }`,
+    }];
+    for (const [label, imagePath, mimeType] of [['hero', heroPath, 'image/jpeg'], ['portrait', portraitPath, 'image/jpeg']]) {
+      const data = await readFile(imagePath).catch(() => null);
+      if (!data) throw new Error(`Release gate rejected theme: required ${label} image was not generated`);
+      visualAuditParts.push({ text: `Image: ${label}` }, { inlineData: { mimeType, data: data.toString('base64') } });
+    }
+    const visualParts = await geminiApiCall('gemini-3.1-pro-preview', {
+      contents: [{ parts: visualAuditParts }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: VISUAL_ASSET_AUDIT_SCHEMA,
+        maxOutputTokens: 16384,
+        thinkingConfig: { thinkingBudget: 8192 },
+      },
+    });
+    return extractJson(visualParts.map((part) => part.text || '').join(''));
+  };
+  let visualAudit = await auditVisualAssets();
+  if (!visualAudit.approved) {
+    console.warn(`  ⚠ Visual asset review rejected the first hero: ${(visualAudit.issues || []).join('; ')}`);
+    const repairedHero = await generateImage(`${planObj.image_prompts?.hero || prompt}\n\nCORRECTIVE REQUIREMENTS: Create a clean, believable, text-free editorial hero only. Never show drafting tools, diagrams, interface overlays, floating HUD marks, logos, watermarks, checkerboards, malformed objects, or distorted architecture.`, heroPath);
+    if (repairedHero) visualAudit = await auditVisualAssets();
+  }
+  if (!visualAudit.approved) {
+    throw new Error(`Release gate rejected theme assets: ${(visualAudit.issues || []).join('; ') || 'visual audit did not approve them'}`);
+  }
+  console.log('  → Visual asset release review: approved');
 
   // ── Phase 3: Save nodes ──
   console.log(`[3/3] Saving DESIGN.md into designs/${styleName}/…`);
@@ -779,7 +814,7 @@ ${blocks}
     x_kind: 'theme-skin',
     x_year: new Date().getFullYear(),
     x_preview: `/designs/${styleName}/assets/hero.jpg`,
-    x_logo: `/designs/${styleName}/assets/logo.png`,
+    x_logo: `/designs/${styleName}/gi-logo-transparent-dark.png`,
     x_link: `/designs/${styleName}/index.html`
   };
   const specFm = Object.entries(skinMeta)
