@@ -951,8 +951,8 @@ ${TRANSITIONS}
   // theme-agnostic fixed bar rather than relying on the custom shell's markup.
   const CNA_BANNER_FIXED = `<aside class="cna-banner" id="cnaBanner">
   <a href="/consult.html" class="cna-link">
-    <span class="cna-text" id="cnaText">Get a scoped proposal with real pricing — in minutes, not meetings.</span>
-    <span class="cna-cta" id="cnaCta">Request a proposal →</span>
+    <span class="cna-text" id="cnaText">10% off your first project — locked in when you sign within 7 days of your proposal.</span>
+    <span class="cna-cta" id="cnaCta">Claim your proposal →</span>
   </a>
 </aside>
 <style>
@@ -1069,8 +1069,8 @@ ${content}
 <aside class="cna-banner" id="cnaBanner">
   <div class="frame">
     <a href="/consult.html" class="cna-link">
-      <span class="cna-text" id="cnaText">Get a scoped proposal with real pricing — in minutes, not meetings.</span>
-      <span class="cna-cta" id="cnaCta">Request a proposal →</span>
+      <span class="cna-text" id="cnaText">10% off your first project — locked in when you sign within 7 days of your proposal.</span>
+      <span class="cna-cta" id="cnaCta">Claim your proposal →</span>
     </a>
   </div>
 </aside>

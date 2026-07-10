@@ -122,13 +122,15 @@ still winning good-fit smaller work.
 4. If nothing matches well, fall back to the hourly rate and estimate hours,
    rather than fabricating a project-type band.`;
 
-// Every variant is a real OFFER routed to the automated proposal system —
-// never a call. A call only happens if the client asks for one AFTER
-// reviewing their proposal.
+// Every variant is a real OFFER — a concrete incentive with value (discount,
+// freebie, or guarantee), routed to the automated proposal system. Never a
+// call: a call only happens if the client asks for one AFTER reviewing their
+// proposal. The proposal generator receives the variant the visitor saw and
+// must honor it as explicit terms.
 const DEFAULT_BANNER_OFFERS = [
-  { id: 'instant-proposal', text: 'Get a scoped proposal with real pricing — in minutes, not meetings.', cta: 'Request a proposal →' },
-  { id: 'free-scope', text: 'Free scoping: an itemized proposal and rate card, yours to keep.', cta: 'Get your free proposal →' },
-  { id: 'fast-turnaround', text: 'Live in weeks, not quarters — see exactly what it takes.', cta: 'Get a scoped proposal →' },
+  { id: 'sign7-discount', text: '10% off your first project — locked in when you sign within 7 days of your proposal.', cta: 'Claim your proposal →' },
+  { id: 'free-support-30', text: '30 days of post-launch support and fixes included free with every project.', cta: 'Get your proposal →' },
+  { id: 'price-lock', text: 'The price on your proposal is the price you pay — fixed, guaranteed, no overruns.', cta: 'Request your proposal →' },
 ];
 const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon' };
 
@@ -1762,7 +1764,12 @@ ${conversationText}
 
 RATE CARD (the ONLY source of pricing — never invent numbers outside this):
 ${rateCard || '(rate card unavailable — fall back to a generic "let\'s discuss scope" placeholder, do NOT invent a dollar figure)'}
-${matchedOffer ? `\nOFFER SHOWN TO THIS PROSPECT: "${matchedOffer.text} ${matchedOffer.cta}" — if this implies a commitment (e.g. a free consult), honor it explicitly in the proposal and next steps. Do not silently drop it.` : ''}
+${matchedOffer ? `\nOFFER THIS PROSPECT WAS SHOWN (id: ${matchedOffer.id}): "${matchedOffer.text}"
+This offer is a COMMITMENT, not marketing fluff. You MUST:
+- State it explicitly in the proposal under its own "Your offer" heading.
+- Apply it to the numbers: a discount changes the quoted price (show both the base and discounted figures); an inclusion appears as a $0 line item with its normal value noted; a guarantee appears in the terms.
+- Repeat it in the next-steps section so the client knows how to claim it (e.g. the signing deadline for a time-limited discount).
+Never silently drop, weaken, or reinterpret the offer.` : ''}
 
 Write a professional, compelling project proposal. Include:
 1. Executive summary
