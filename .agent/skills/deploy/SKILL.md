@@ -27,32 +27,12 @@ act the user requests explicitly** — never a side effect of deploying.
 3. **Deploy to Droplet:**
    - The Droplet IP is `138.197.199.217` (stored in `.env` as `DROPLET_IP`).
 
-   **Step 1 — Static bundle → Nginx** (already idempotent):
+   **Step 1 — Execute strict deployment script**:
+   Instead of running fragmented commands, run the dedicated deployment script which handles the rsync, strict SSH timeouts, and live health check verification.
    ```
-   rsync -avz --delete dist/site/ root@138.197.199.217:/var/www/gregiteen.xyz/
+   bash scripts/deploy.sh
    ```
-
-   **Step 2 — Backend code → PM2 directory** (idempotent; `--delete` propagates
-   repo deletions so fossil theme/design builds can never resurrect):
-   ```
-   rsync -avz --delete \
-     --exclude 'node_modules' --exclude '.git' --exclude '.env' --exclude '.agent' \
-     --exclude '.data/' \
-     --exclude '/designs/' \
-     --exclude 'vault/pages/skins/' \
-     --exclude 'vault/runtime/' \
-     --exclude 'vault/visitors.md' \
-     --exclude '/dist/' \
-     ./ root@138.197.199.217:/opt/portfolio-site/
-   ```
-
-   **Step 3 — Restart backend** (flushes stale file caches):
-   ```
-   ssh -o StrictHostKeyChecking=no root@138.197.199.217 "pm2 restart portfolio"
-   ```
-   - If SSH access requires key provisioning or doctl setup, use the
-     `DIGITALOCEAN_API_TOKEN` in `.env` to authenticate via `doctl` and fetch
-     SSH keys.
+   *Note: If `scripts/deploy.sh` does not exist, recreate it from the standards to enforce atomic health checks.*
 
 ## ⚠️ Step 2 exclude list — do not edit without reading this
 

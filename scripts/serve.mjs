@@ -1120,6 +1120,17 @@ createServer(async (req, res) => {
     }
   }
 
+  // ── API: Deep Health Check (Node + SMTP) ──
+  if (urlPath === '/api/health' && req.method === 'GET') {
+    try {
+      await smtpTransport.verify();
+      return sendJson(res, 200, { status: 'healthy', smtp: 'connected' });
+    } catch (err) {
+      console.error('[Health] SMTP Verify failed:', err.message);
+      return sendJson(res, 500, { status: 'unhealthy', error: err.message });
+    }
+  }
+
   // ── API: Send verification code ──
   if (urlPath === '/api/send-code' && req.method === 'POST') {
     try {
