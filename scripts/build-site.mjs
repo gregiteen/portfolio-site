@@ -951,8 +951,8 @@ ${TRANSITIONS}
   // theme-agnostic fixed bar rather than relying on the custom shell's markup.
   const CNA_BANNER_FIXED = `<aside class="cna-banner" id="cnaBanner">
   <a href="/consult.html" class="cna-link">
-    <span class="cna-text" id="cnaText">Have a project in mind?</span>
-    <span class="cna-cta" id="cnaCta">Start a conversation →</span>
+    <span class="cna-text" id="cnaText">Get a scoped proposal with real pricing — in minutes, not meetings.</span>
+    <span class="cna-cta" id="cnaCta">Request a proposal →</span>
   </a>
 </aside>
 <style>
@@ -1069,8 +1069,8 @@ ${content}
 <aside class="cna-banner" id="cnaBanner">
   <div class="frame">
     <a href="/consult.html" class="cna-link">
-      <span class="cna-text" id="cnaText">Have a project in mind?</span>
-      <span class="cna-cta" id="cnaCta">Start a conversation →</span>
+      <span class="cna-text" id="cnaText">Get a scoped proposal with real pricing — in minutes, not meetings.</span>
+      <span class="cna-cta" id="cnaCta">Request a proposal →</span>
     </a>
   </div>
 </aside>

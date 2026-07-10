@@ -122,10 +122,13 @@ still winning good-fit smaller work.
 4. If nothing matches well, fall back to the hourly rate and estimate hours,
    rather than fabricating a project-type band.`;
 
+// Every variant is a real OFFER routed to the automated proposal system —
+// never a call. A call only happens if the client asks for one AFTER
+// reviewing their proposal.
 const DEFAULT_BANNER_OFFERS = [
-  { id: 'default', text: 'Have a project in mind?', cta: 'Start a conversation →' },
-  { id: 'free-consult', text: 'First consult is free.', cta: 'Book a free 20-min call →' },
-  { id: 'fast-turnaround', text: 'Live in weeks, not quarters.', cta: 'See if it fits your timeline →' },
+  { id: 'instant-proposal', text: 'Get a scoped proposal with real pricing — in minutes, not meetings.', cta: 'Request a proposal →' },
+  { id: 'free-scope', text: 'Free scoping: an itemized proposal and rate card, yours to keep.', cta: 'Get your free proposal →' },
+  { id: 'fast-turnaround', text: 'Live in weeks, not quarters — see exactly what it takes.', cta: 'Get a scoped proposal →' },
 ];
 const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon' };
 
