@@ -83,8 +83,15 @@ a.out:hover{color:var(--white)}
   });
 
   function setBusy(b){btn.disabled=b;btn.textContent=b?'Generating…':'Generate my site';input.disabled=b;}
-  function fail(msg){
+  function fail(msg,fallbackUrl){
     status.textContent=msg+' — adjust your style and try again.';
+    while(status.childNodes.length>1)status.removeChild(status.lastChild);
+    if(fallbackUrl){
+      var a=document.createElement('a');
+      a.href=fallbackUrl;a.textContent='Or enter with a recent design →';
+      a.style.cssText='display:block;margin-top:10px;color:var(--accent);text-decoration:none;';
+      status.appendChild(a);
+    }
     status.classList.add('err');bar.style.width='0';
     setBusy(false);polling=false;
   }
@@ -101,7 +108,7 @@ a.out:hover{color:var(--white)}
         for(var k in phaseMap){if(d.phase&&d.phase.indexOf(k)>-1){bar.style.width=phaseMap[k]+'%';break}}
         setTimeout(poll,2000);
       }else if(d.status==='error'){
-        fail('The review board rejected that attempt');
+        fail('The review board rejected that attempt', d.latestUrl);
       }else{
         status.textContent='Waiting to start…';setTimeout(poll,2000);
       }
@@ -116,7 +123,7 @@ a.out:hover{color:var(--white)}
     fetch('/generate-theme',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:v})})
       .then(function(r){return r.json()})
       .then(function(d){if(d.started){poll();}else{fail(d.error||'Could not start generation');}})
-      .catch(function(){fail('Connection error')});
+      .catch(function(){fail('Connection error');});
   });
 
   // Resume a generation already in flight (e.g. arrived from verify).
