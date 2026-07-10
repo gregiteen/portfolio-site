@@ -227,7 +227,7 @@ function setBtn(btn,label,busy){
 }
 
 // ── Progress polling ──
-let verified=false,themeReady=false,targetUrl='/';
+let verified=false,themeReady=false,genFailed=false,targetUrl='/generate.html';
 const phaseMap={'[1/4]':15,'[2/4]':45,'[3/4]':70,'[4/4]':90};
 
 function pollProgress(){
@@ -244,8 +244,10 @@ function pollProgress(){
       for(const[k,v]of Object.entries(phaseMap)){if(d.phase?.includes(k)){bar.style.width=v+'%';break}}
       setTimeout(pollProgress,2000);
     }else if(d.status==='error'){
-      status.textContent='Generation error — using default theme';
-      bar.style.width='100%';themeReady=true;maybeRedirect();
+      status.textContent='That attempt failed review — pick a new style.';
+      bar.style.width='0';
+      if(verified){setTimeout(function(){window.location.href='/generate.html';},1600);}
+      else{genFailed=true;}
     }else{
       status.textContent='Waiting to start…';setTimeout(pollProgress,2000);
     }
@@ -256,7 +258,10 @@ pollProgress();
 function maybeRedirect(){
   if(verified){
     document.getElementById('card').classList.add('verified');
-    if(themeReady){
+    if(genFailed){
+      document.getElementById('heading').textContent='Let\'s try another style.';
+      setTimeout(()=>window.location.href='/generate.html',1600);
+    } else if(themeReady){
       document.getElementById('heading').textContent='You\'re in.';
       setTimeout(()=>window.location.href=targetUrl,1500);
     } else {

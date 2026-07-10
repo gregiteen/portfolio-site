@@ -997,24 +997,29 @@ createServer(async (req, res) => {
     return;
   }
 
-  // ── Returning user: splash → latest skin redirect ──
+  // ── Returning user: splash → latest skin, or the generate flow. The
+  // default-theme site is NEVER a visitor destination: no design yet means
+  // you make one, not that you get the fallback look. ──
   if (urlPath === '/splash.html' && isAuthenticated(req)) {
     const skinBase = getLatestSkinBase();
-    res.writeHead(302, { 'Location': skinBase ? skinBase + '/index.html' : '/' });
+    res.writeHead(302, { 'Location': skinBase ? skinBase + '/index.html' : '/generate.html' });
     res.end();
     return;
   }
 
-  // ── Root-level page → redirect to latest skin version ──
-  const ROOT_PAGES = ['/', '/index.html', '/about.html', '/contact.html', '/projects.html', '/designs.html', '/consult.html'];
+  // ── Root-level page → redirect to latest skin version, or to generation
+  // when no design exists yet. Visitors never browse the default theme. ──
+  const ROOT_PAGES = ['/', '/index.html', '/about.html', '/contact.html', '/projects.html', '/designs.html'];
   if (ROOT_PAGES.includes(urlPath) && isAuthenticated(req)) {
     const skinBase = getLatestSkinBase();
     if (skinBase) {
       const page = urlPath === '/' ? '/index.html' : urlPath;
       res.writeHead(302, { 'Location': skinBase + page });
-      res.end();
-      return;
+    } else {
+      res.writeHead(302, { 'Location': '/generate.html' });
     }
+    res.end();
+    return;
   }
 
   // ── Branded proposal-signing handoff page ──

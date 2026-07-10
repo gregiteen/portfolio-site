@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Greg Iteen — Generate your design</title>
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" href="/assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --black:#0a0a0a;--white:#f5f5f3;--gray:rgba(245,245,243,.55);
+  --faint:rgba(245,245,243,.22);--line:rgba(245,245,243,.28);--accent:#ff6a00;
+}
+html,body{min-height:100%}
+body{font-family:'Archivo',sans-serif;background:var(--black);color:var(--white);overflow-x:hidden}
+.photo{position:fixed;inset:0;z-index:0;background:url('/assets/gen-hero.jpg') center/cover no-repeat;filter:grayscale(1) contrast(1.18) brightness(.5);animation:drift 40s ease-in-out infinite alternate}
+@keyframes drift{0%{transform:scale(1)}100%{transform:scale(1.07)}}
+.scrim{position:fixed;inset:0;z-index:1;background:linear-gradient(100deg,rgba(10,10,10,.94) 0%,rgba(10,10,10,.78) 45%,rgba(10,10,10,.42) 100%)}
+.frame{position:relative;z-index:10;display:flex;flex-direction:column;justify-content:space-between;padding:clamp(20px,4vw,56px);min-height:100dvh}
+.top,.bottom{display:flex;justify-content:space-between;align-items:center;font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.22em;text-transform:uppercase;color:var(--gray)}
+.main{max-width:620px;padding:48px 0}
+h1{font-family:'Archivo Black',sans-serif;font-size:clamp(2.4rem,6vw,4.2rem);line-height:.95;letter-spacing:-.02em;text-transform:uppercase;margin-bottom:22px}
+h1 .outline{color:transparent;-webkit-text-stroke:1.5px var(--white)}
+.lede{color:var(--gray);font-size:1.02rem;line-height:1.55;max-width:46ch;margin-bottom:38px}
+label{display:block;font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gray);margin-bottom:10px}
+input[type=text]{width:100%;background:transparent;border:0;border-bottom:1px solid var(--line);color:var(--white);font-family:'Archivo',sans-serif;font-size:1.15rem;padding:10px 2px 12px;outline:none;transition:border-color .25s}
+input[type=text]:focus{border-color:var(--accent)}
+.btn{margin-top:30px;display:inline-flex;align-items:center;gap:12px;background:var(--white);color:var(--black);border:0;font-family:'IBM Plex Mono',monospace;font-size:.75rem;letter-spacing:.18em;text-transform:uppercase;padding:16px 30px;cursor:pointer;transition:background .2s}
+.btn:hover:not([disabled]){background:var(--accent);color:var(--white)}
+.btn[disabled]{opacity:.55;cursor:progress}
+.progress{margin-top:44px;display:none}
+.progress.on{display:block}
+.bar{height:2px;background:var(--faint);position:relative;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .8s ease}
+.status{margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);min-height:1.2em}
+.status.err{color:#ff5a4e}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 34px}
+.chip{font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;border:1px solid var(--line);color:var(--gray);padding:7px 12px;cursor:pointer;transition:all .2s}
+.chip:hover{border-color:var(--accent);color:var(--white)}
+a.out{color:var(--gray);text-decoration:none;font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.14em;text-transform:uppercase}
+a.out:hover{color:var(--white)}
+</style>
+</head>
+<body>
+<div class="photo"></div><div class="scrim"></div>
+<div class="frame">
+  <header class="top"><span>greg<span style="color:var(--accent)">.</span>iteen</span><a class="out" href="/api/logout">Sign out</a></header>
+  <main class="main">
+    <h1>Name your<br><span class="outline">aesthetic.</span></h1>
+    <p class="lede">This portfolio doesn't have a look until you give it one. Describe a design style — the site, its imagery, logo, and even the bio photo are generated to match, then quality-reviewed before you see them.</p>
+    <form id="genForm">
+      <label for="style">Design style</label>
+      <input type="text" id="style" placeholder="brutalist print shop, vaporwave arcade, noir detective office…" required maxlength="500">
+      <div class="chips" id="chips">
+        <span class="chip">Swiss editorial print studio</span>
+        <span class="chip">Analog synth laboratory</span>
+        <span class="chip">Desert modernist gallery</span>
+        <span class="chip">Neon tokyo stationery shop</span>
+      </div>
+      <button type="submit" class="btn" id="goBtn">Generate my site</button>
+    </form>
+    <div class="progress" id="progress">
+      <div class="bar"><i id="barFill"></i></div>
+      <div class="status" id="status">Waiting to start…</div>
+    </div>
+  </main>
+  <footer class="bottom"><span>gregiteen.xyz</span><span>Generated · Reviewed · Yours</span></footer>
+</div>
+<script>
+(function(){
+  var form=document.getElementById('genForm'),input=document.getElementById('style'),
+      btn=document.getElementById('goBtn'),prog=document.getElementById('progress'),
+      bar=document.getElementById('barFill'),status=document.getElementById('status');
+  var phaseMap={'[1/':18,'[2/':42,'[3/':62,'[4/':78,'[5/':90};
+  var polling=false;
+
+  document.getElementById('chips').addEventListener('click',function(e){
+    if(e.target.classList.contains('chip')){input.value=e.target.textContent;input.focus();}
+  });
+
+  function setBusy(b){btn.disabled=b;btn.textContent=b?'Generating…':'Generate my site';input.disabled=b;}
+  function fail(msg){
+    status.textContent=msg+' — adjust your style and try again.';
+    status.classList.add('err');bar.style.width='0';
+    setBusy(false);polling=false;
+  }
+  function poll(){
+    polling=true;
+    fetch('/generate-status').then(function(r){return r.json()}).then(function(d){
+      if(d.status==='done'){
+        bar.style.width='100%';status.classList.remove('err');
+        status.textContent='Design approved. Entering…';
+        setTimeout(function(){location.href=d.latestUrl||'/splash.html';},1200);
+      }else if(d.status==='running'){
+        status.classList.remove('err');
+        status.textContent=d.phase||'Working…';
+        for(var k in phaseMap){if(d.phase&&d.phase.indexOf(k)>-1){bar.style.width=phaseMap[k]+'%';break}}
+        setTimeout(poll,2000);
+      }else if(d.status==='error'){
+        fail('The review board rejected that attempt');
+      }else{
+        status.textContent='Waiting to start…';setTimeout(poll,2000);
+      }
+    }).catch(function(){setTimeout(poll,3000)});
+  }
+
+  form.addEventListener('submit',function(e){
+    e.preventDefault();
+    var v=input.value.trim();if(!v)return;
+    setBusy(true);prog.classList.add('on');status.classList.remove('err');
+    status.textContent='Dispatching the design team…';bar.style.width='6%';
+    fetch('/generate-theme',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:v})})
+      .then(function(r){return r.json()})
+      .then(function(d){if(d.started){poll();}else{fail(d.error||'Could not start generation');}})
+      .catch(function(){fail('Connection error')});
+  });
+
+  // Resume a generation already in flight (e.g. arrived from verify).
+  fetch('/generate-status').then(function(r){return r.json()}).then(function(d){
+    if(d.status==='running'){setBusy(true);prog.classList.add('on');poll();}
+  }).catch(function(){});
+})();
+</script>
+</body>
+</html>
