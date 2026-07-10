@@ -142,13 +142,19 @@ nav a.item:hover, nav a.item.active { color: var(--accent); }
   view-transition-name: theme-flipper;
 }
 .logout-link {
-  font-family: 'IBM Plex Mono', monospace; font-size: .58rem;
-  letter-spacing: .12em; text-transform: uppercase;
-  color: var(--text-3, rgba(240,238,246,0.3)); text-decoration: none;
-  padding: 6px 10px; transition: color .2s;
-  min-width: 44px; min-height: 44px; display: inline-flex; align-items: center;
+  font-family: 'IBM Plex Mono', monospace; font-size: .68rem;
+  letter-spacing: .08em; text-transform: uppercase;
+  color: var(--text-1, #f0eef6); text-decoration: none;
+  padding: 8px 12px; transition: all .2s;
+  min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--glass-border, rgba(240,238,246,0.1)); border-radius: 4px;
+  background: rgba(240,238,246,0.05);
 }
-.logout-link:hover { color: var(--text-1, #f0eef6); }
+.logout-link:hover {
+  background: rgba(240,238,246,0.15);
+  border-color: var(--text-1, #f0eef6);
+  color: var(--text-1, #f0eef6);
+}
 .theme-pill {
   width: 36px; height: 36px; border: 1px solid transparent; background: transparent;
   cursor: pointer; padding: 0; outline: none; transition: transform 0.2s;
