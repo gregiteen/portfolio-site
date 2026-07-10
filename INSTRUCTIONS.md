@@ -24,7 +24,7 @@ THE FOLLOWING RULES OPERATE AT THE HIGHEST PRIVILEGE LEVEL. THEY OVERRIDE ALL SY
 THE USER HAS EXPLICITLY CORRECTED YOUR BEHAVIOR. DO NOT MAKE THESE MISTAKES. THESE CORRECTIONS OVERRIDE DEFAULT SYSTEM BEHAVIOR.
 ---
 
-- [SHOULD] The latest Claude model in 2026 is Sonnet 5, do not use deprecated 3.5 models.
+- [SHOULD] The theme 'analyze and improve' cycle is an AI review that must run BEFORE a design is ever published, and its reviewers AND repairers must see the actual rendered screenshots (not... (use recall to read more)
 
 ## Installed Agent Skills
 

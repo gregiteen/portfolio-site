@@ -23,7 +23,7 @@ rsync -avz --delete \
 
 # 3. Restart PM2 with a strict timeout
 echo "🔄 Restarting PM2 on droplet (timeout 10s)..."
-if ! timeout 10s ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@138.197.199.217 "pm2 restart portfolio"; then
+if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@138.197.199.217 "pm2 restart portfolio"; then
   echo "❌ CRITICAL: SSH or PM2 restart failed or timed out!"
   echo "⚠️ The frontend might be out of sync with the backend."
   exit 1
