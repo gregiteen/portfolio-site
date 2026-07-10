@@ -1005,6 +1005,14 @@ ${TRANSITIONS}
 })();
 </script>`;
 
+  // Session control that survives ANY theme: generated shells don't carry the
+  // default header, so logout must be injected as fixed chrome on every page.
+  const LOGOUT_FIXED = `<a href="/api/logout" id="giLogout" title="Sign out">sign out</a>
+<style>
+#giLogout{position:fixed;top:14px;right:14px;z-index:9999;font-family:monospace;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;text-decoration:none;color:rgba(255,255,255,.85);background:rgba(10,10,10,.78);border:1px solid rgba(255,255,255,.25);border-radius:4px;padding:7px 12px;backdrop-filter:blur(6px);transition:all .2s}
+#giLogout:hover{background:rgba(255,255,255,.92);color:#0a0a0a}
+</style>`;
+
   let finalHtml;
   if (customLayouts.shell) {
     let customHtml = fillTemplate(customLayouts.shell, {
@@ -1033,8 +1041,8 @@ ${TRANSITIONS}
       finalHtml = `${headContent}\n<body>\n${customHtml}\n</body>\n</html>`;
     }
     finalHtml = finalHtml.includes('</body>')
-      ? finalHtml.replace('</body>', `${CNA_BANNER_FIXED}\n${MOTION_SCRIPT}\n</body>`)
-      : finalHtml + CNA_BANNER_FIXED + MOTION_SCRIPT;
+      ? finalHtml.replace('</body>', `${CNA_BANNER_FIXED}\n${MOTION_SCRIPT}\n${LOGOUT_FIXED}\n</body>`)
+      : finalHtml + CNA_BANNER_FIXED + MOTION_SCRIPT + LOGOUT_FIXED;
   } else {
     finalHtml = headContent + `<body>
 <div class="ambient-glows">
