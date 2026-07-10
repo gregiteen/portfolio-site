@@ -10,7 +10,7 @@
 //    asks the model to fix its own JSON before we give up.
 //  - The theme is stored as fenced sections in a normal SSSS page doc — no
 //    YAML block scalars, no bespoke frontmatter parser.
-import { writeFile, mkdir, copyFile, readFile } from 'node:fs/promises';
+import { writeFile, mkdir, copyFile, readFile, rm } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join, dirname, delimiter } from 'node:path';
@@ -271,15 +271,26 @@ async function geminiText(userPrompt, schema = null, maxOutputTokens = 65536, th
   try {
     parts = await geminiApiCall(model, request);
   } catch (err) {
-    // Specialists may retry without thinking if a constrained response reaches
-    // its shared cap. The planning director is deliberately excluded: it must
-    // never silently trade reasoning quality for speed.
-    if (!allowNoThinkingRetry || !String(err).includes('MAX_TOKENS') || generationConfig.thinkingConfig.thinkingBudget === 0) throw err;
-    console.warn('  ⚠ Gemini reached its thinking/output cap; retrying this structured call without thinking.');
-    parts = await geminiApiCall(model, {
-      ...request,
-      generationConfig: { ...generationConfig, thinkingConfig: { thinkingBudget: 0 } },
-    });
+    const msg = String(err);
+    if (allowNoThinkingRetry && msg.includes('MAX_TOKENS') && generationConfig.thinkingConfig.thinkingBudget !== 0) {
+      // Specialists may retry without thinking if a constrained response reaches
+      // its shared cap. The planning director is deliberately excluded: it must
+      // never silently trade reasoning quality for speed.
+      console.warn('  ⚠ Gemini reached its thinking/output cap; retrying this structured call without thinking.');
+      parts = await geminiApiCall(model, {
+        ...request,
+        generationConfig: { ...generationConfig, thinkingConfig: { thinkingBudget: 0 } },
+      });
+    } else if (/timeout|UNAVAILABLE|RESOURCE_EXHAUSTED|overloaded|"code":\s*(429|5\d\d)/i.test(msg)) {
+      // One retry for transient infra failures. A generation is a ~25-call
+      // chain over several minutes; without this, a single flaky request
+      // kills the whole build (seen live: one 300s timeout in a repair call
+      // discarded an otherwise-complete theme).
+      console.warn(`  ⚠ Transient Gemini failure (${msg.slice(0, 100)}); retrying this call once…`);
+      parts = await geminiApiCall(model, request);
+    } else {
+      throw err;
+    }
   }
   return parts.map(p => p.text || '').join('');
 }
@@ -368,13 +379,29 @@ ${SITE_CONTEXT}
 PLACEHOLDER CONTRACT (YOU MUST USE THESE EXACT VARIABLES INSTEAD OF HARDCODING TEXT):
 ${placeholderContract}
 
+PLACEHOLDER SEMANTICS — three kinds, and misusing one is a release-blocking bug:
+- PRE-FORMATTED HTML (complete elements: anchors, images, badge spans, whole blocks). Place these ONLY as element children, NEVER inside an attribute like href/src: {{CONTENT}}, {{NAV_LINKS}}, {{PROJECT_LIST}}, {{DESIGN_CARDS}}, {{FEATURED_PROJECTS}}, {{GENERATOR_FORM}}, {{REPO_LINK}}, {{PROJECT_LINK}}, {{BACKLINK}}, {{TECH_BADGES}}, {{TAG_BADGES}}, {{LOGO}}. Writing <a href="{{PROJECT_LINK}}"> produces a nested broken link — {{PROJECT_LINK}} is already an <a> tag.
+- RAW URLS/PATHS (safe inside href/src): {{URL}}, {{NAV_URL}}, {{LINK_URL}}, {{REPO_URL}}, {{PREVIEW}}.
+- PLAIN TEXT (safe anywhere text goes): everything else ({{NAME}}, {{DESCRIPTION}}, {{HEADLINE}}, {{TAGLINE}}, {{YEAR}}, {{ROLE}}, {{CLIENT}}, {{NAV_NAME}}, {{SOURCE_PATH}}, counts, etc.).
+
 IMAGES (already generated, use them):
-- gi-logo-transparent-dark.png — the verified Greg Iteen brand mark. If a
-  layout displays a brand mark, use exactly src="gi-logo-transparent-dark.png".
+- The verified Greg Iteen brand mark comes in two variants — PICK THE ONE THAT
+  MATCHES YOUR SHELL BACKGROUND, or it is invisible:
+  - src="gi-logo-transparent-dark.png" — WHITE text: ONLY on dark backgrounds.
+  - src="gi-logo-transparent.png" — BLACK text: ONLY on light backgrounds.
+  Use the <img> alone; NEVER overlay or pair text on top of the mark.
   Do not use assets/logo.png; generated logos are not a release-safe brand asset.
 - assets/hero.jpg — hero background. Use prominently.
 - assets/portrait.jpg — verified editorial portrait of Greg. It is placed automatically inside page content (class .md-img) on the contact page — style .md-img to sit well in your layout.
 These fixed asset paths are NOT hardcoded copy — referencing them via url(assets/hero.jpg) is REQUIRED, not a violation of the "no hardcoded text" rule. That rule is about words, never about these image paths.
+
+FIXED INJECTED MARKUP — these placeholders expand to build-side markup you do NOT control. Your stylesheet MUST account for every one of them (assign them to the 'components' CSS section) or they render as giant, unstyled, or broken elements:
+- {{TECH_BADGES}} / {{TAG_BADGES}} → a run of <span class="badge">Name</span> with NO whitespace between spans. Style .badge as a small distinct chip (inline-block + margin, or flex + gap on its container) or the words concatenate into unreadable strings like "PythonFlaskAutomation".
+- {{LOGO}} → a BARE <img src="…logo.png"> with NO class and NO size attributes. Unstyled it renders at full native size (1000px+, opaque white background) and destroys the page. Your item/detail layouts MUST wrap it in a container class whose CSS constrains descendant imgs (e.g. .item-media img { max-height: 56px; width: auto; }).
+- {{PREVIEW}} → a raw image path; you write <img src="{{PREVIEW}}"> yourself — give that img a class and constrain it.
+- {{REPO_LINK}} → <a class="src">source ↗</a>; {{BACKLINK}} → <a class="backlink">← cd ../…</a>; detail pages also emit <a class="btn">visit … ↗</a>. Style .src, .backlink, and .btn as proper theme elements.
+- {{GENERATOR_FORM}} → a form with class="gen-form" containing an <input> and a <button>. Style .gen-form, .gen-form input, .gen-form button to match the theme — unstyled they render as tiny browser-default controls.
+- {{CONTENT}} → rendered markdown: h2, h3, p, ul, ol, li, a, blockquote, code, pre, and <img class="md-img"> (the portrait). Your 'base' CSS section must give ALL of these real typographic treatment with sane vertical rhythm — enormous or missing margins here create dead zones.
 
 NO INLINE <script> TAGS. Layouts are inert markup only — never write <script>…</script> or any inline JS. Interactivity must come from CSS alone (:hover, :focus, transitions, animations). Any layout containing a script tag will have it stripped, so it is always wasted effort.
 `;
@@ -470,6 +497,11 @@ OUTPUT: exactly one JSON object:
   // without any of them waiting on a big serial stylesheet. A failed slot is
   // skipped, not fatal; the async improve pass regenerates weak slots later.
   const layoutKeys = Object.keys(LAYOUT_SPECS);
+  // Wrapped so the review board can re-roll the ENTIRE fan-out once when the
+  // initial sample is deeply bad — surgical repairs cannot rescue an
+  // incoherent base (observed: a 4/10 base churned through both repair
+  // passes without ever converging).
+  const runSpecialistFanOut = async () => {
   console.log(`  → Fan-out: ${CSS_SECTIONS.length} CSS sections + ${layoutKeys.length} layouts = ${CSS_SECTIONS.length + layoutKeys.length} specialists in parallel`);
 
   const cssJobs = CSS_SECTIONS.map((section) =>
@@ -486,7 +518,7 @@ RULES:
 - Implement ONLY the classes/tokens the contract assigns to "${section.key}". Do not restyle other sections' classes.
 - Reference tokens via var(--…); never hardcode a value a token already holds.
 
-OUTPUT: exactly one JSON object: { "css": "…the ${section.key} CSS…" }`, CSS_SECTION_SCHEMA)
+OUTPUT: exactly one JSON object: { "css": "…the ${section.key} CSS…" }`, CSS_SECTION_SCHEMA, 24576, 8192, 'gemini-3.1-pro-preview', false)
       .then((r) => ({ kind: 'css', key: section.key, css: extractJson(r).css }))
       .catch((e) => ({ kind: 'css', key: section.key, error: String(e) }))
   );
@@ -509,10 +541,16 @@ RULES:
 - Compose using ONLY the contract's class names; do not invent a new visual language.
 - Only the "shell" layout may own page-wide wrappers, header, navigation, sidebar, or footer. Every other layout is a single content fragment injected inside shell's {{CONTENT}}; never repeat global chrome.
 - Do not use inline style attributes. Put all visual behavior in the shared CSS classes so mobile behavior and repairs remain reliable.
+${key === 'shell'
+  ? `- The element that holds {{CONTENT}} must be a plain full-width flow container: never give it a multi-column display:grid/flex that would squeeze injected fragments into one track, and never rely on injected children declaring grid-column spans — they won't.`
+  : `- This fragment is injected INSIDE the shell's content container. NEVER include <main>, <header>, <footer>, the theme's root/page wrapper class, or any min-height:100vh container — the shell already provides all of those. Start directly at the section level.`}
+${(key === 'projects_index' || key === 'designs_index' || key === 'home')
+  ? `- ${required} expands to a SERIES of item fragments that already carry their own item classes (the *_item layouts style each entry). Wrap the placeholder in a neutral LIST CONTAINER class only — never in the item classes themselves, or every item gets double-wrapped with doubled borders and broken grids.`
+  : ''}
 
 ${LAYOUT_EXEMPLAR}
 
-OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`, ONE_LAYOUT_SCHEMA)
+OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`, ONE_LAYOUT_SCHEMA, 16384, 8192, 'gemini-3.1-pro-preview', false)
       .then((r) => ({ kind: 'layout', key, html: extractJson(r).html }))
       .catch((e) => ({ kind: 'layout', key, error: String(e) }));
   });
@@ -522,6 +560,7 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`, ON
   // Assemble CSS in the fixed section order (tokens first so var(--…) resolves).
   const cssBySection = {};
   let builtLayouts = 0;
+  payload.layouts = {};
   for (const r of results) {
     if (r.error) { console.warn(`  ⚠ ${r.kind} ${r.key} failed (${r.error}) — skipped`); continue; }
     if (r.kind === 'css') { if (typeof r.css === 'string' && r.css.trim()) cssBySection[r.key] = r.css; }
@@ -530,6 +569,8 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`, ON
   payload.css = CSS_SECTIONS.map((s) => cssBySection[s.key]).filter(Boolean).join('\n\n');
   payload = enforceBrandAssetContract(payload);
   console.log(`  → Built ${Object.keys(cssBySection).length}/${CSS_SECTIONS.length} CSS sections + ${builtLayouts}/${layoutKeys.length} layouts in parallel`);
+  };
+  await runSpecialistFanOut();
 
   // ── Release gate: validate every template, then have a fresh model inspect
   // the complete CSS + every actual HTML layout before any public artifact is
@@ -600,7 +641,7 @@ ${styleSpec}
 CURRENT COMPLETE CSS:
 ${candidate.css}
 
-OUTPUT: exactly one JSON object: { "css": "complete repaired CSS" }`, CSS_SECTION_SCHEMA, 32768, 12288, 'gemini-3.1-pro-preview', false);
+OUTPUT: exactly one JSON object: { "css": "complete repaired CSS" }`, CSS_SECTION_SCHEMA, 32768, 4096, 'gemini-3.5-flash');
         return { target, value: extractJson(raw).css };
       }
       const spec = LAYOUT_SPECS[target];
@@ -617,7 +658,7 @@ ${styleSpec}
 CURRENT "${target}" HTML:
 ${candidate.layouts[target] || '(missing)'}
 
-OUTPUT: exactly one JSON object: { "html": "complete repaired ${target} fragment" }`, ONE_LAYOUT_SCHEMA, 16384, 8192, 'gemini-3.1-pro-preview', false);
+OUTPUT: exactly one JSON object: { "html": "complete repaired ${target} fragment" }`, ONE_LAYOUT_SCHEMA, 16384, 4096, 'gemini-3.5-flash');
       return { target, value: extractJson(raw).html };
       }));
 
@@ -641,6 +682,8 @@ You are the final RELEASE REVIEWER. Inspect the complete source package below: i
 
 Approve only if it is an agency-quality, coherent, responsive portfolio skin with no likely visible breakage. A score below 8 MUST be rejected. Reject for any structural, visual, responsive, placeholder, asset, hierarchy, accessibility, or hardcoded-copy issue that could ship to a visitor.
 
+"Competent but basic" is a FAILURE, not a pass. Reject any design that reads as a default template: a plain centered column of stacked sections, uniform card grids with no compositional idea, default-looking type scale, no distinctive layout gesture (asymmetry, overlap, oversized display type, unusual grid, editorial rhythm). Judge it against real agency portfolio sites — if this would not impress a design-literate client, score it below 8 and name what is generic.
+
 When rejecting, list only surgical blocking issues. Each target MUST be exactly "css" or one of: ${Object.keys(LAYOUT_SPECS).join(', ')}. Do not invent targets and do not rewrite source in this response.
 
 DESIGN PLAN:
@@ -652,7 +695,7 @@ ${styleSpec}
 FULL SOURCE PACKAGE:
 ${source}
 
-OUTPUT: exactly one JSON object: { "approved": true, "score": 8, "blocking_issues": [] }`, RELEASE_REVIEW_SCHEMA, 32768, 12288, 'gemini-3.1-pro-preview', false);
+OUTPUT: exactly one JSON object: { "approved": true, "score": 8, "blocking_issues": [] }`, RELEASE_REVIEW_SCHEMA, 32768, 8192, 'gemini-3.1-pro-preview', false);
     const audit = extractJson(raw);
     if (!Array.isArray(audit.blocking_issues)) audit.blocking_issues = [];
     console.log(`  → Release review (${label}): ${audit.score}/10 — ${audit.approved ? 'approved' : 'repair required'}`);
@@ -666,86 +709,6 @@ OUTPUT: exactly one JSON object: { "approved": true, "score": 8, "blocking_issue
 
   await repairStructuralViolations(payload);
   let theme = validateForRelease(payload);
-  let audit = null;
-  for (let reviewPass = 1; reviewPass <= 3; reviewPass++) {
-    audit = await auditForRelease(theme, reviewPass === 1 ? 'initial' : `repair ${reviewPass - 1}`);
-    if (audit.approved && audit.score >= 8) break;
-    if (reviewPass === 3) {
-      throw new Error(`Release review still rejected the theme (${audit.score}/10) after ${reviewPass - 1} targeted repair passes; nothing was published`);
-    }
-
-    const allowedTargets = new Set(['css', ...Object.keys(LAYOUT_SPECS)]);
-    const issuesByTarget = new Map();
-    for (const issue of audit.blocking_issues) {
-      const target = typeof issue?.target === 'string' ? issue.target : '';
-      const detail = typeof issue?.issue === 'string' ? issue.issue.trim() : '';
-      if (allowedTargets.has(target) && detail) {
-        issuesByTarget.set(target, [...(issuesByTarget.get(target) || []), detail]);
-      }
-    }
-    if (!issuesByTarget.size) {
-      throw new Error('Release review rejected the theme without actionable, valid repair targets');
-    }
-
-    console.log(`  → Repairing ${issuesByTarget.size} release-review target(s) in parallel (pass ${reviewPass}/2)…`);
-    const repairs = await Promise.all([...issuesByTarget.entries()].map(async ([target, issues]) => {
-      const critique = issues.map((issue) => `- ${issue}`).join('\n');
-      if (target === 'css') {
-        const raw = await callAgent(`${baseContext}
-
-You are repairing ONLY the stylesheet after a release review. Keep the approved plan and class vocabulary intact; correct every issue below without adding hardcoded copy.
-
-RELEASE ISSUES:
-${critique}
-
-SHARED DESIGN CONTRACT:
-${styleSpec}
-
-CURRENT COMPLETE CSS:
-${theme.css}
-
-OUTPUT: exactly one JSON object: { "css": "…complete repaired stylesheet…" }`, CSS_SECTION_SCHEMA, 16384, 8192, 'gemini-3.1-pro-preview', false);
-        return { target, value: extractJson(raw).css };
-      }
-
-      const spec = LAYOUT_SPECS[target];
-      const raw = await callAgent(`${baseContext}
-
-You are repairing ONLY the "${target}" HTML layout after a release review. Keep the approved visual language and preserve these exact required placeholder(s): ${spec.required.join(', ')}. Do not add hardcoded copy, document wrappers, or scripts.
-
-RELEASE ISSUES:
-${critique}
-
-SHARED DESIGN CONTRACT:
-${styleSpec}
-
-CURRENT COMPLETE "${target}" HTML:
-${theme.layouts[target]}
-
-OUTPUT: exactly one JSON object: { "html": "…complete repaired ${target} layout…" }`, ONE_LAYOUT_SCHEMA, 16384, 8192, 'gemini-3.1-pro-preview', false);
-      return { target, value: extractJson(raw).html };
-    }));
-
-    for (const repair of repairs) {
-      if (typeof repair.value !== 'string' || !repair.value.trim()) {
-        throw new Error(`Release repair for "${repair.target}" returned no content`);
-      }
-      if (repair.target === 'css') payload.css = repair.value;
-      else payload.layouts[repair.target] = repair.value;
-    }
-    // Reviewer repairs are model output too; send them through the exact same
-    // structural gate before the post-repair score so a visual fix cannot
-    // reintroduce malformed HTML or hardcoded copy.
-    await repairStructuralViolations(payload);
-    theme = validateForRelease(payload);
-  }
-  // Wait for images
-  const imageResults = await imagePromise;
-  if (Array.isArray(imageResults)) {
-    for (const [i, r] of imageResults.entries()) {
-      if (r.status === 'rejected') console.warn(`  ⚠ ${i === 0 ? 'hero' : 'portrait'} failed: ${r.reason?.message}`);
-    }
-  }
 
   const auditVisualAssets = async () => {
     const visualAuditParts = [{
@@ -767,30 +730,45 @@ OUTPUT: exactly one JSON object: { "html": "…complete repaired ${target} layou
     });
     return extractJson(visualParts.map((part) => part.text || '').join(''));
   };
-  let visualAudit = await auditVisualAssets();
-  if (!visualAudit.approved) {
-    console.warn(`  ⚠ Visual asset review rejected the first hero: ${(visualAudit.issues || []).join('; ')}`);
-    const repairedHero = await generateImage(`${planObj.image_prompts?.hero || prompt}\n\nCORRECTIVE REQUIREMENTS: Create a clean, believable, text-free editorial hero only. Never show drafting tools, diagrams, interface overlays, floating HUD marks, logos, watermarks, checkerboards, malformed objects, or distorted architecture.`, heroPath);
-    if (repairedHero) visualAudit = await auditVisualAssets();
-  }
-  if (!visualAudit.approved) {
-    throw new Error(`Release gate rejected theme assets: ${(visualAudit.issues || []).join('; ') || 'visual audit did not approve them'}`);
-  }
-  console.log('  → Visual asset release review: approved');
+
+  // Asset flow — wait for the generated images, audit them, regenerate the
+  // hero once if rejected. Started here so it runs CONCURRENTLY with the first
+  // review-board pass below instead of adding a serial vision round-trip.
+  const assetFlow = (async () => {
+    const imageResults = await imagePromise;
+    if (Array.isArray(imageResults)) {
+      for (const [i, r] of imageResults.entries()) {
+        if (r.status === 'rejected') console.warn(`  ⚠ ${i === 0 ? 'hero' : 'portrait'} failed: ${r.reason?.message}`);
+      }
+    }
+    let visualAudit = await auditVisualAssets();
+    if (!visualAudit.approved) {
+      console.warn(`  ⚠ Visual asset review rejected the first hero: ${(visualAudit.issues || []).join('; ')}`);
+      const repairedHero = await generateImage(`${planObj.image_prompts?.hero || prompt}\n\nCORRECTIVE REQUIREMENTS: Create a clean, believable, text-free editorial hero only. Never show drafting tools, diagrams, interface overlays, floating HUD marks, logos, watermarks, checkerboards, malformed objects, or distorted architecture.`, heroPath);
+      if (repairedHero) visualAudit = await auditVisualAssets();
+    }
+    if (!visualAudit.approved) {
+      throw new Error(`Release gate rejected theme assets: ${(visualAudit.issues || []).join('; ') || 'visual audit did not approve them'}`);
+    }
+    console.log('  → Visual asset release review: approved');
+  })();
+  assetFlow.catch(() => {}); // observed in the review board's Promise.all
 
   // ── Phase 3: Save nodes ──
-  console.log(`[3/3] Saving DESIGN.md into designs/${styleName}/…`);
+  console.log(`[3/5] Saving DESIGN.md into designs/${styleName}/…`);
 
   let designBody = payload.designSpec || `Theme: ${theme.name}\nStyle: ${prompt}\nAccent: ${theme.accent}`;
 
-  const blocks = Object.entries({ css: theme.css, ...Object.fromEntries(Object.entries(theme.layouts).map(([k,v]) => [`layout:${k}`, v])) })
-    .filter(([, content]) => typeof content === 'string' && content.trim())
-    .map(([name, content]) => `## section:${name}\n\n\`\`\`${name === 'css' ? 'css' : 'html'}\n${content.replace(/```/g, '')}\n\`\`\``)
-    .join('\n\n');
+  // Re-runnable: the rendered gate below rewrites DESIGN.md after each repair.
+  const writeDesignMd = async (t) => {
+    const blocks = Object.entries({ css: t.css, ...Object.fromEntries(Object.entries(t.layouts).map(([k,v]) => [`layout:${k}`, v])) })
+      .filter(([, content]) => typeof content === 'string' && content.trim())
+      .map(([name, content]) => `## section:${name}\n\n\`\`\`${name === 'css' ? 'css' : 'html'}\n${content.replace(/```/g, '')}\n\`\`\``)
+      .join('\n\n');
 
-  const designMd = `---
-name: "${theme.name}"
-accent: "${theme.accent}"
+    const designMd = `---
+name: "${t.name}"
+accent: "${t.accent}"
 style: "${prompt.replace(/"/g, '\\"')}"
 ---
 
@@ -800,10 +778,191 @@ ${designBody.trim()}
 
 ${blocks}
 `;
+    await writeFile(join(designDir, 'DESIGN.md'), designMd, 'utf8');
+  };
+  await writeDesignMd(theme);
 
-  await writeFile(join(designDir, 'DESIGN.md'), designMd, 'utf8');
+  // ── Phase 4: Build the isolated design layer ── This always runs (even under
+  // THEME_DEFER_BUILD): the rendered gate must inspect real built pages. Only
+  // the MAIN-site rebuild defers to serve.mjs's serialized build — this slug is
+  // not yet registered as a skin, so no concurrent full build touches its
+  // dist directory.
+  console.log(`[4/5] Building isolated HTML…`);
+  const buildDesignLayer = () => {
+    const buildResult = spawnSync(process.execPath, [join(__dirname, 'build-site.mjs'), '--design', styleName], { stdio: 'inherit' });
+    if (buildResult.status !== 0) throw new Error(`build-site.mjs failed for ${styleName} (exit ${buildResult.status})`);
+  };
+  buildDesignLayer();
 
-  // Write the skin registry entry (separate from portfolio designs)
+  // ── Phase 5: Review board ── The source reviewer (pro, reads the ENTIRE
+  // css + every layout) and the rendered reviewer (vision model, reads real
+  // desktop + mobile screenshots of the built pages) run IN PARALLEL, and the
+  // asset audit joins the first pass. Their findings merge into one targeted
+  // repair pass; both reviewers must approve. Wall-clock per pass is the
+  // slowest reviewer, not the sum — this is what keeps a clean generation
+  // inside the ~2-minute budget while still gating on real pixels. Fail
+  // closed: any rejection or infra failure deletes everything unpublished.
+  console.log(`[5/5] Review board: source + rendered reviews in parallel…`);
+  const { renderAudit } = await import('./render-audit.mjs');
+  const allowedTargets = new Set(['css', ...Object.keys(LAYOUT_SPECS)]);
+  try {
+    let audit = null;
+    let needSourceReview = true;
+    for (let pass = 1; pass <= 4; pass++) {
+      const label = pass === 1 ? 'initial' : `repair ${pass - 1}`;
+      // The source verdict is noisy (observed: 9/10 → 5/10 after an
+      // append-only CSS patch that cannot restructure anything). Once source
+      // approves, only a layout change invalidates that approval — re-rolling
+      // the dice on every pass is how approved themes flip back to rejected.
+      const [srcAudit, renderVerdict] = await Promise.all([
+        needSourceReview ? auditForRelease(theme, label) : Promise.resolve(audit),
+        renderAudit(styleName),
+        ...(pass === 1 ? [assetFlow] : []),
+      ]);
+      audit = srcAudit;
+      const sourceOk = audit.approved && audit.score >= 8;
+      const renderBlocking = renderVerdict.issues.filter((i) => i?.severity !== 'minor');
+      const renderOk = renderVerdict.approved || renderBlocking.length === 0;
+      console.log(`  → Rendered review (${label}): ${renderOk ? 'approved' : 'repair required'} (${renderBlocking.length} blocking, ${renderVerdict.issues.length - renderBlocking.length} minor)`);
+      for (const issue of renderVerdict.issues) {
+        if (typeof issue?.target === 'string' && typeof issue?.issue === 'string') {
+          console.log(`    • [${issue.severity || 'blocking'}] ${issue.target}: ${issue.issue}`);
+        }
+      }
+      if (sourceOk && renderOk) break;
+      if (pass === 4) {
+        throw new Error(`Review board still rejected the theme (source ${audit.score}/10, rendered ${renderOk ? 'approved' : `${renderBlocking.length} blocking issue(s)`}) after 3 targeted repair passes; nothing was published`);
+      }
+
+      // A deeply bad initial sample (≤5/10) is an incoherent base — surgical
+      // repairs cannot rescue it. Re-roll the entire specialist fan-out once
+      // for a fresh sample and review that instead.
+      if (pass === 1 && !sourceOk && audit.score <= 5) {
+        console.log(`  → Deep quality failure (${audit.score}/10) — re-rolling the full specialist fan-out instead of patching…`);
+        await runSpecialistFanOut();
+        await repairStructuralViolations(payload);
+        theme = validateForRelease(payload);
+        await writeDesignMd(theme);
+        buildDesignLayer();
+        needSourceReview = true;
+        continue;
+      }
+
+      const issuesByTarget = new Map();
+      for (const issue of [...(sourceOk ? [] : audit.blocking_issues), ...renderVerdict.issues]) {
+        const target = typeof issue?.target === 'string' ? issue.target : '';
+        const detail = typeof issue?.issue === 'string' ? issue.issue.trim() : '';
+        if (allowedTargets.has(target) && detail) {
+          issuesByTarget.set(target, [...(issuesByTarget.get(target) || []), detail]);
+        }
+      }
+      if (!issuesByTarget.size) {
+        throw new Error('Review board rejected the theme without actionable, valid repair targets');
+      }
+
+      console.log(`  → Repairing ${issuesByTarget.size} review-board target(s) in parallel (pass ${pass}/3)…`);
+      // Repairs see the SAME screenshots the rendered reviewer saw. A blind
+      // repair loop stalls (observed: 3 blocking issues unchanged across 3
+      // passes) because "container clipped on the right" is not actionable
+      // without the pixels; the repair model is multimodal, so show it.
+      const evidenceParts = (renderVerdict.screenshots || []).flatMap(([shotLabel, b64]) => ([
+        { text: `Screenshot: ${shotLabel}` },
+        { inlineData: { mimeType: 'image/jpeg', data: b64 } },
+      ]));
+      const visionRepair = async (promptText, schema) => {
+        const request = {
+          contents: [{ parts: [{ text: promptText }, ...evidenceParts] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            responseSchema: schema,
+            maxOutputTokens: 16384,
+            thinkingConfig: { thinkingBudget: 4096 },
+          },
+        };
+        let parts;
+        try {
+          parts = await geminiApiCall('gemini-3.5-flash', request);
+        } catch (err) {
+          // Same transient-retry contract as geminiText: one flaky request
+          // must not kill a multi-minute build.
+          console.warn(`  ⚠ Transient Gemini failure in vision repair (${String(err).slice(0, 100)}); retrying once…`);
+          parts = await geminiApiCall('gemini-3.5-flash', request);
+        }
+        return parts.map((p) => p.text || '').join('');
+      };
+      const repairs = await Promise.all([...issuesByTarget.entries()].map(async ([target, issues]) => {
+        const critique = issues.map((issue) => `- ${issue}`).join('\n');
+        if (target === 'css') {
+          // Append-only fix layer, never a rewrite: a full-stylesheet
+          // regeneration by the repair model has been observed to REGRESS the
+          // design (source score dropped 7 → 4 in one pass) while chasing two
+          // issues. Override rules appended after the stylesheet can only
+          // patch the named defects — the cascade gives them priority and the
+          // rest of the design is untouchable.
+          const raw = await visionRepair(`${baseContext}
+
+You are writing a CSS FIX LAYER after a release review board. The screenshots attached below are the ACTUAL rendered pages — look at them to locate each defect precisely. Do NOT rewrite or re-emit the existing stylesheet. Output ONLY new override rules that will be APPENDED after it — use the same selectors (or more specific ones) and write only as many rules as the issues below require. Fix every issue; change nothing else.
+
+REVIEW ISSUES (visible in the attached screenshots):
+${critique}
+
+SHARED DESIGN CONTRACT:
+${styleSpec}
+
+EXISTING COMPLETE CSS (reference only — do NOT re-emit it):
+${payload.css}
+
+OUTPUT: exactly one JSON object: { "css": "…ONLY the appended fix-layer override rules…" }`, CSS_SECTION_SCHEMA);
+          return { target, value: extractJson(raw).css, mode: 'patch' };
+        }
+        const spec = LAYOUT_SPECS[target];
+        const raw = await visionRepair(`${baseContext}
+
+You are repairing ONLY the "${target}" HTML layout after a release review board. The screenshots attached below are the ACTUAL rendered pages — look at them to locate each defect precisely. Keep the approved visual language and preserve these exact required placeholder(s): ${spec.required.join(', ')}. Do not add hardcoded copy, document wrappers, or scripts.
+
+REVIEW ISSUES (visible in the attached screenshots):
+${critique}
+
+SHARED DESIGN CONTRACT:
+${styleSpec}
+
+CURRENT COMPLETE "${target}" HTML:
+${payload.layouts[target]}
+
+OUTPUT: exactly one JSON object: { "html": "…complete repaired ${target} layout…" }`, ONE_LAYOUT_SCHEMA);
+        return { target, value: extractJson(raw).html };
+      }));
+
+      for (const repair of repairs) {
+        if (typeof repair.value !== 'string' || !repair.value.trim()) {
+          throw new Error(`Review-board repair for "${repair.target}" returned no content`);
+        }
+        if (repair.target === 'css') {
+          payload.css = `${payload.css}\n\n/* review-board fix layer (pass ${pass}) */\n${repair.value}`;
+        } else {
+          payload.layouts[repair.target] = repair.value;
+        }
+      }
+      // Repairs are model output too: same structural gate, then rebuild so
+      // the next rendered pass screenshots the repaired pages. A CSS-only
+      // patch keeps a prior source approval; any layout rewrite re-reviews.
+      needSourceReview = !sourceOk || repairs.some((r) => r.target !== 'css');
+      await repairStructuralViolations(payload);
+      theme = validateForRelease(payload);
+      await writeDesignMd(theme);
+      buildDesignLayer();
+    }
+  } catch (err) {
+    // Nothing rejected may survive on disk: the design dir and its built
+    // pages are removed so an unapproved theme can never be reached or
+    // resurrected by a later build.
+    await rm(designDir, { recursive: true, force: true }).catch(() => {});
+    await rm(join(__dirname, '..', 'dist', 'site', 'designs', styleName), { recursive: true, force: true }).catch(() => {});
+    throw err;
+  }
+
+  // Register the skin only now — the flipper and main site must never list a
+  // design that has not passed the rendered gate.
   const skinMeta = {
     slug: `skin-${styleName}`,
     name: theme.name,
@@ -831,18 +990,14 @@ ${blocks}
   const elapsed = Math.round((Date.now() - t0) / 1000);
   console.log(`[Success] "${theme.name}" → designs/${styleName} [${elapsed}s]`);
 
-  // ── Phase 4: Build HTML ──
-  // serve.mjs owns the one serialized build when it launches this script. That
+  // Main-site rebuild (registers the now-approved skin in the flipper).
+  // serve.mjs owns the one serialized build when it launches this script — that
   // avoids the watcher / generator / improver race that previously caused
   // ENOTEMPTY failures while deleting dist/site/designs/* directories.
   if (process.env.THEME_DEFER_BUILD === '1') {
-    console.log(`[4/4] Build deferred to the serialized server rebuild.`);
+    console.log(`  → Main-site rebuild deferred to the serialized server rebuild.`);
   } else {
-    console.log(`[4/4] Building isolated HTML...`);
-    const buildResult = spawnSync(process.execPath, [join(__dirname, 'build-site.mjs'), '--design', styleName], { stdio: 'inherit' });
-    if (buildResult.status !== 0) throw new Error(`build-site.mjs failed for ${styleName} (exit ${buildResult.status})`);
-
-    console.log(`[4/4] Rebuilding main site to register design...`);
+    console.log(`  → Rebuilding main site to register design…`);
     const mainBuildResult = spawnSync(process.execPath, [join(__dirname, 'build-site.mjs')], { stdio: 'inherit' });
     if (mainBuildResult.status !== 0) throw new Error(`build-site.mjs failed for the main site (exit ${mainBuildResult.status})`);
   }

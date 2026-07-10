@@ -965,12 +965,22 @@ ${TRANSITIONS}
 
     const headInjection = `\n${LIVE_RELOAD_SCRIPT}\n${FONTS}\n${FAVICON}\n${TRANSITIONS}\n<style>${stylesheet}</style>\n</head>`;
     if (customHtml.includes('</head>')) {
-      customHtml = customHtml.replace('</head>', headInjection);
+      // Legacy full-document shell (pre release-gate): it owns its own
+      // <head>/<body>; inject our head assets into its head and leave the
+      // document structure alone.
+      finalHtml = customHtml.replace('</head>', headInjection);
+      if (!finalHtml.includes('<body')) {
+        // A head without a body is already malformed; salvage by opening the
+        // body right after the injected head instead of wrapping the whole
+        // document (which nested <!doctype>/<html> inside <body> and shipped
+        // visibly broken pages).
+        finalHtml = finalHtml.replace(headInjection, `${headInjection}\n<body>`) + '\n</body>\n</html>';
+      }
     } else {
-      customHtml = headContent + customHtml;
+      // Release-gate contract: the shell is a body fragment. Assemble the one
+      // real document around it — headContent already ends at </head>.
+      finalHtml = `${headContent}\n<body>\n${customHtml}\n</body>\n</html>`;
     }
-
-    finalHtml = customHtml.includes('<body') ? customHtml : `<body>\n${customHtml}\n</body>\n</html>`;
     finalHtml = finalHtml.includes('</body>')
       ? finalHtml.replace('</body>', `${CNA_BANNER_FIXED}\n</body>`)
       : finalHtml + CNA_BANNER_FIXED;

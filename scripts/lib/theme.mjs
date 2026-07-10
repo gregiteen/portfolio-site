@@ -188,10 +188,14 @@ const KNOWN_PLACEHOLDERS = new Set(
 // Generated logo images are a frequent source of embedded checkerboards,
 // illegible marks, and unbounded intrinsic dimensions. The static brand asset
 // is verified, copied into every design build, and has a predictable footprint.
+// Both verified brand marks: -dark is white text (for dark backgrounds),
+// the plain one is black text (for light backgrounds). Themes pick by their
+// shell background; both get the same enforced sizing.
 const VERIFIED_BRAND_ASSET = 'gi-logo-transparent-dark.png';
+const BRAND_ASSET_RE = /gi-logo-transparent(-dark)?\.png/i;
 const BRAND_ASSET_CSS = `
 /* Release invariant: a generated skin may not let an untrusted logo asset take over the viewport. */
-.nav-bar img[src*="${VERIFIED_BRAND_ASSET}"], header img[src*="${VERIFIED_BRAND_ASSET}"] {
+.nav-bar img[src*="gi-logo-transparent"], header img[src*="gi-logo-transparent"] {
   display: block;
   inline-size: min(11.25rem, 48vw) !important;
   block-size: 3.5rem !important;
@@ -210,7 +214,6 @@ const BRAND_ASSET_CSS = `
 /* build-site emits both navigation layers; generated skins own the custom one. */
 .tl-default { display: none !important; }
 .tl-custom { display: flex; flex-wrap: wrap; align-items: center; }
-}
 `;
 
 /**
@@ -224,7 +227,7 @@ export function enforceBrandAssetContract(payload) {
       key,
       typeof html !== 'string' ? html : html
         .replace(/(['"])assets\/logo\.png\1/gi, `$1${VERIFIED_BRAND_ASSET}$1`)
-        .replace(/<img\b([^>]*\bsrc=(['"])gi-logo-transparent-dark\.png\2[^>]*)>/gi, (tag, attributes) => {
+        .replace(/<img\b([^>]*\bsrc=(['"])gi-logo-transparent(?:-dark)?\.png\2[^>]*)>/gi, (tag, attributes) => {
           if (/\bclass\s*=/.test(attributes)) {
             return `<img${attributes.replace(/class=(['"])([^'"]*)\1/i, (_, quote, classes) => `class=${quote}${classes} verified-brand-mark${quote}`)}>`;
           }
@@ -232,7 +235,7 @@ export function enforceBrandAssetContract(payload) {
         }),
     ])
   );
-  const css = typeof payload.css === 'string' && !payload.css.includes(VERIFIED_BRAND_ASSET)
+  const css = typeof payload.css === 'string' && !BRAND_ASSET_RE.test(payload.css)
     ? `${payload.css}\n${BRAND_ASSET_CSS}`
     : payload.css;
   return { ...payload, css, layouts };
