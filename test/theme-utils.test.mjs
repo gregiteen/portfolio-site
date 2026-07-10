@@ -125,16 +125,18 @@ test('validateThemePayload release mode requires complete layout coverage and a 
   assert.ok(errors.some((error) => error.includes('assets/hero.jpg')));
 });
 
-test('enforceBrandAssetContract replaces generated logos and bounds the verified brand mark', () => {
+test('enforceBrandAssetContract keeps the generated logo and bounds brand marks', () => {
   const normalized = enforceBrandAssetContract({
     css: '.nav-bar { display: flex; }',
     layouts: { shell: '<header><img src="assets/logo.png" /></header>{{CONTENT}}' },
   });
-  assert.match(normalized.layouts.shell, /src="gi-logo-transparent-dark\.png"/);
+  // The per-theme generated logo is a first-class audited asset now — it must
+  // survive untouched but receive the size-bounding brand-mark class.
+  assert.match(normalized.layouts.shell, /src="assets\/logo\.png"/);
   assert.match(normalized.layouts.shell, /class="verified-brand-mark"/);
-  assert.doesNotMatch(normalized.layouts.shell, /assets\/logo\.png/);
   assert.match(normalized.css, /inline-size: min\(11\.25rem, 48vw\) !important/);
   assert.match(normalized.css, /\.tl-default \{ display: none !important; \}/);
+  assert.match(normalized.css, /\.gi-reveal/);
 });
 
 test('extractJson handles fences, prose, and trailing commas', () => {

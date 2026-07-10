@@ -13,7 +13,7 @@ export const LAYOUT_SPECS = {
   },
   home: {
     required: ['{{FEATURED_PROJECTS}}'],
-    optional: ['{{HEADLINE}}', '{{TAGLINE}}', '{{INTRO}}', '{{FEATURED_COUNT}}', '{{GENERATOR_FORM}}'],
+    optional: ['{{HEADLINE}}', '{{TAGLINE}}', '{{INTRO}}', '{{FEATURED_COUNT}}'],
   },
   projects_index: {
     required: ['{{PROJECT_LIST}}'],
@@ -195,7 +195,8 @@ const VERIFIED_BRAND_ASSET = 'gi-logo-transparent-dark.png';
 const BRAND_ASSET_RE = /gi-logo-transparent(-dark)?\.png/i;
 const BRAND_ASSET_CSS = `
 /* Release invariant: a generated skin may not let an untrusted logo asset take over the viewport. */
-.nav-bar img[src*="gi-logo-transparent"], header img[src*="gi-logo-transparent"] {
+.nav-bar img[src*="gi-logo-transparent"], header img[src*="gi-logo-transparent"],
+.nav-bar img[src*="assets/logo"], header img[src*="assets/logo"] {
   display: block;
   inline-size: min(11.25rem, 48vw) !important;
   block-size: 3.5rem !important;
@@ -216,6 +217,19 @@ const BRAND_ASSET_CSS = `
 .tl-custom { display: flex; flex-wrap: wrap; align-items: center; }
 `;
 
+/* Motion runtime contract: build-site injects a script that tags content
+   sections with .gi-reveal and flips .gi-in as they scroll into view. Themes
+   may override the transition; this default guarantees every generated site
+   has scroll life even if the theme ignores it. Hidden states live behind
+   no-preference so reduced-motion users (and the rendered release audit,
+   which emulates reduced motion) always see fully-painted pages. */
+const MOTION_CSS = `
+@media (prefers-reduced-motion: no-preference) {
+  .gi-reveal { opacity: 0; transform: translateY(28px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.7,.2,1); transition-delay: var(--gi-stagger, 0s); }
+  .gi-reveal.gi-in { opacity: 1; transform: none; }
+}
+`;
+
 /**
  * Normalize layout references to the known brand asset and make its rendered
  * size explicit. This is deterministic release hardening, not model judgment.
@@ -226,8 +240,7 @@ export function enforceBrandAssetContract(payload) {
     Object.entries(payload.layouts || {}).map(([key, html]) => [
       key,
       typeof html !== 'string' ? html : html
-        .replace(/(['"])assets\/logo\.png\1/gi, `$1${VERIFIED_BRAND_ASSET}$1`)
-        .replace(/<img\b([^>]*\bsrc=(['"])gi-logo-transparent(?:-dark)?\.png\2[^>]*)>/gi, (tag, attributes) => {
+        .replace(/<img\b([^>]*\bsrc=(['"])(?:gi-logo-transparent(?:-dark)?\.png|assets\/logo\.png)\2[^>]*)>/gi, (tag, attributes) => {
           if (/\bclass\s*=/.test(attributes)) {
             return `<img${attributes.replace(/class=(['"])([^'"]*)\1/i, (_, quote, classes) => `class=${quote}${classes} verified-brand-mark${quote}`)}>`;
           }
@@ -235,9 +248,11 @@ export function enforceBrandAssetContract(payload) {
         }),
     ])
   );
-  const css = typeof payload.css === 'string' && !BRAND_ASSET_RE.test(payload.css)
-    ? `${payload.css}\n${BRAND_ASSET_CSS}`
-    : payload.css;
+  let css = payload.css;
+  if (typeof css === 'string') {
+    if (!BRAND_ASSET_RE.test(css)) css = `${css}\n${BRAND_ASSET_CSS}`;
+    if (!css.includes('.gi-reveal')) css = `${css}\n${MOTION_CSS}`;
+  }
   return { ...payload, css, layouts };
 }
 

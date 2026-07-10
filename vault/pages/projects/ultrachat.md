@@ -11,7 +11,7 @@ x_year: 2026
 x_role: "Founder & lead engineer"
 x_tech:
   - "TypeScript"
-  - "Express"
+  - "React"
   - "Supabase"
   - "ssss"
 x_link: "https://ultrachat.app"

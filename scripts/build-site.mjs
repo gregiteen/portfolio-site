@@ -4,6 +4,7 @@
 // document under vault/pages/, parsed with the canonical @ssss/cli frontmatter
 // parser. Output goes to dist/site/.
 import { readdir, readFile, writeFile, mkdir, rm, cp, stat } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // @ts-ignore
@@ -616,7 +617,11 @@ const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400..700;1,400..700&family=Archivo:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">`;
 
-const FAVICON = `<link rel="icon" type="image/png" href="/assets/favicon.png">`;
+// Each generated design ships its own favicon (compile-theme generates it);
+// fall back to the global mark for the main site and pre-favicon designs.
+const FAVICON = targetDesign && existsSync(join(root, 'designs', targetDesign, 'assets', 'favicon.png'))
+  ? `<link rel="icon" type="image/png" href="/designs/${targetDesign}/assets/favicon.png">`
+  : `<link rel="icon" type="image/png" href="/assets/favicon.png">`;
 
 // Cross-page fades + 3D design-morph (View Transition API; no-op where unsupported).
 const TRANSITIONS = `<style>
@@ -960,6 +965,46 @@ ${TRANSITIONS}
 </style>
 <script>${CNA_BANNER_SCRIPT}</script>`;
 
+  // Scroll-reveal runtime for generated designs: tags content sections with
+  // .gi-reveal and flips .gi-in as they enter the viewport, staggered per
+  // sibling. The theme CSS contract styles the transition (a default lives in
+  // lib/theme.mjs MOTION_CSS). Behind prefers-reduced-motion the hidden state
+  // never applies, so reduced-motion users and the rendered release audit see
+  // fully-painted pages.
+  const MOTION_SCRIPT = `<script>
+(function(){
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var run = function(){
+    var els = document.querySelectorAll('main section, main article, main li, body > section, body > article');
+    if (!els.length) els = document.querySelectorAll('section, article');
+    var seen = 0;
+    els.forEach(function(el){
+      if (el.closest('.gi-reveal') && el.closest('.gi-reveal') !== el) return; // no nested reveals
+      el.classList.add('gi-reveal');
+      el.style.setProperty('--gi-stagger', ((seen++ % 6) * 0.08) + 's');
+    });
+    if (!('IntersectionObserver' in window)) {
+      els.forEach(function(el){ el.classList.add('gi-in'); });
+      return;
+    }
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (e.isIntersecting) { e.target.classList.add('gi-in'); io.unobserve(e.target); }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.05 });
+    document.querySelectorAll('.gi-reveal').forEach(function(el){ io.observe(el); });
+    // Failsafe: nothing may stay invisible if the observer never fires.
+    setTimeout(function(){
+      document.querySelectorAll('.gi-reveal:not(.gi-in)').forEach(function(el){
+        var r = el.getBoundingClientRect();
+        if (r.top < innerHeight * 1.5) el.classList.add('gi-in');
+      });
+    }, 2500);
+  };
+  document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', run) : run();
+})();
+</script>`;
+
   let finalHtml;
   if (customLayouts.shell) {
     let customHtml = fillTemplate(customLayouts.shell, {
@@ -988,8 +1033,8 @@ ${TRANSITIONS}
       finalHtml = `${headContent}\n<body>\n${customHtml}\n</body>\n</html>`;
     }
     finalHtml = finalHtml.includes('</body>')
-      ? finalHtml.replace('</body>', `${CNA_BANNER_FIXED}\n</body>`)
-      : finalHtml + CNA_BANNER_FIXED;
+      ? finalHtml.replace('</body>', `${CNA_BANNER_FIXED}\n${MOTION_SCRIPT}\n</body>`)
+      : finalHtml + CNA_BANNER_FIXED + MOTION_SCRIPT;
   } else {
     finalHtml = headContent + `<body>
 <div class="ambient-glows">
@@ -1170,11 +1215,11 @@ themePillsHtml = ''; // No more CSS theme pills!
 
 if (!targetDesign) {
   themeCss = themeCssBlocks.join('\n\n');
-  generatorScript = GENERATOR_SCRIPT;
 } else {
   themeCss = '';
-  generatorScript = '';
 }
+// Generation UI lives ONLY on the splash page; built pages never carry it.
+generatorScript = '';
 
 LIVE_RELOAD_SCRIPT = `
 <script>
@@ -1347,23 +1392,16 @@ for (const page of pages) {
 ${featured.map(projectRow).join('\n')}
 </ul>`;
 
-    const generatorForm = `<div class="custom-generator">
-  <div class="gen-label">Initiate Layout Generation</div>
-  <form class="gen-form">
-    <input type="text" placeholder="Prompt the aesthetic..." required>
-    <button type="submit">Execute</button>
-  </form>
-  <div class="gen-status"></div>
-</div>`;
-    const ensureGeneratorForm = (html) => html.includes('class="gen-form"') ? html : html + '\n' + generatorForm;
+    // Generation lives ONLY on the splash page — no generator box on any
+    // built page, default or generated.
     const customContent = customLayouts.home
-      ? ensureGeneratorForm(fillTemplate(customLayouts.home, {
+      ? fillTemplate(customLayouts.home, {
           HEADLINE: headline,
           TAGLINE: escapeHtml(page.data.x_tagline ?? ''),
           INTRO: page.html,
           FEATURED_PROJECTS: customProjectList(featured),
           FEATURED_COUNT: featuredCount,
-        }))
+        })
       : null;
     content = withCustomLayer(defaultContent, customContent);
   } else if (page.data.x_kind === 'project') {

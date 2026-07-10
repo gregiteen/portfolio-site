@@ -49,8 +49,10 @@ const PLAN_SCHEMA = {
       type: 'OBJECT',
       properties: {
         hero: { type: 'STRING', maxLength: 700 },
+        logo: { type: 'STRING', maxLength: 500 },
+        portrait_style: { type: 'STRING', maxLength: 500 },
       },
-      required: ['hero'],
+      required: ['hero', 'logo', 'portrait_style'],
     },
   },
   required: ['plan', 'image_prompts'],
@@ -346,6 +348,8 @@ async function run() {
 
   const heroPath = join(genDir, 'hero.jpg');
   const portraitPath = join(genDir, 'portrait.jpg');
+  const logoPath = join(genDir, 'logo.png');
+  const faviconPath = join(genDir, 'favicon.png');
   const portraitSource = join(assetsDir, 'greg-portrait.jpg');
 
   // ── Phase 1: Planning and Architecture (including Image Prompts) ──
@@ -380,27 +384,27 @@ PLACEHOLDER CONTRACT (YOU MUST USE THESE EXACT VARIABLES INSTEAD OF HARDCODING T
 ${placeholderContract}
 
 PLACEHOLDER SEMANTICS — three kinds, and misusing one is a release-blocking bug:
-- PRE-FORMATTED HTML (complete elements: anchors, images, badge spans, whole blocks). Place these ONLY as element children, NEVER inside an attribute like href/src: {{CONTENT}}, {{NAV_LINKS}}, {{PROJECT_LIST}}, {{DESIGN_CARDS}}, {{FEATURED_PROJECTS}}, {{GENERATOR_FORM}}, {{REPO_LINK}}, {{PROJECT_LINK}}, {{BACKLINK}}, {{TECH_BADGES}}, {{TAG_BADGES}}, {{LOGO}}. Writing <a href="{{PROJECT_LINK}}"> produces a nested broken link — {{PROJECT_LINK}} is already an <a> tag.
+- PRE-FORMATTED HTML (complete elements: anchors, images, badge spans, whole blocks). Place these ONLY as element children, NEVER inside an attribute like href/src: {{CONTENT}}, {{NAV_LINKS}}, {{PROJECT_LIST}}, {{DESIGN_CARDS}}, {{FEATURED_PROJECTS}}, {{REPO_LINK}}, {{PROJECT_LINK}}, {{BACKLINK}}, {{TECH_BADGES}}, {{TAG_BADGES}}, {{LOGO}}. Writing <a href="{{PROJECT_LINK}}"> produces a nested broken link — {{PROJECT_LINK}} is already an <a> tag.
 - RAW URLS/PATHS (safe inside href/src): {{URL}}, {{NAV_URL}}, {{LINK_URL}}, {{REPO_URL}}, {{PREVIEW}}.
 - PLAIN TEXT (safe anywhere text goes): everything else ({{NAME}}, {{DESCRIPTION}}, {{HEADLINE}}, {{TAGLINE}}, {{YEAR}}, {{ROLE}}, {{CLIENT}}, {{NAV_NAME}}, {{SOURCE_PATH}}, counts, etc.).
 
-IMAGES (already generated, use them):
-- The verified Greg Iteen brand mark comes in two variants — PICK THE ONE THAT
-  MATCHES YOUR SHELL BACKGROUND, or it is invisible:
-  - src="gi-logo-transparent-dark.png" — WHITE text: ONLY on dark backgrounds.
-  - src="gi-logo-transparent.png" — BLACK text: ONLY on light backgrounds.
-  Use the <img> alone; NEVER overlay or pair text on top of the mark.
-  Do not use assets/logo.png; generated logos are not a release-safe brand asset.
+IMAGES (all four are generated specifically for THIS theme — use them):
+- assets/logo.png — the theme's own generated brand mark for Greg Iteen, designed to sit on your shell/header background. Use it as the shell's brand mark, sized via CSS (height 28-48px, width auto). Use the <img> alone; NEVER overlay or pair text on top of the mark.
+- assets/favicon.png — the theme's favicon; the build injects it automatically, do not reference it in layouts.
 - assets/hero.jpg — hero background. Use prominently.
-- assets/portrait.jpg — verified editorial portrait of Greg. It is placed automatically inside page content (class .md-img) on the contact page — style .md-img to sit well in your layout.
+- assets/portrait.jpg — Greg's editorial portrait re-rendered in this theme's style. It is placed automatically inside page content (class .md-img) on the contact page — style .md-img to sit well in your layout.
 These fixed asset paths are NOT hardcoded copy — referencing them via url(assets/hero.jpg) is REQUIRED, not a violation of the "no hardcoded text" rule. That rule is about words, never about these image paths.
+
+MOTION & INTERACTIVITY — a static page is a FAILED page:
+- The build injects a scroll-reveal runtime: content sections get class .gi-reveal and receive .gi-in as they enter the viewport (staggered via --gi-stagger). A default transition exists; OVERRIDE .gi-reveal/.gi-reveal.gi-in in your 'pages' CSS section with a transition that expresses this theme (slide, clip-path wipe, blur-in, scale — whatever fits).
+- Every interactive element (links, cards, badges, buttons, nav items) MUST have a designed hover/focus state with a real transition — not just a color swap.
+- Include at least one signature CSS-only kinetic flourish that fits the theme: a marquee, a sticky/scroll-pinned element, an infinite subtle animation (grain, drift, rotation), animated underlines, or CSS scroll-driven effects. Wrap purely decorative motion in @media (prefers-reduced-motion: no-preference).
 
 FIXED INJECTED MARKUP — these placeholders expand to build-side markup you do NOT control. Your stylesheet MUST account for every one of them (assign them to the 'components' CSS section) or they render as giant, unstyled, or broken elements:
 - {{TECH_BADGES}} / {{TAG_BADGES}} → a run of <span class="badge">Name</span> with NO whitespace between spans. Style .badge as a small distinct chip (inline-block + margin, or flex + gap on its container) or the words concatenate into unreadable strings like "PythonFlaskAutomation".
 - {{LOGO}} → a BARE <img src="…logo.png"> with NO class and NO size attributes. Unstyled it renders at full native size (1000px+, opaque white background) and destroys the page. Your item/detail layouts MUST wrap it in a container class whose CSS constrains descendant imgs (e.g. .item-media img { max-height: 56px; width: auto; }).
 - {{PREVIEW}} → a raw image path; you write <img src="{{PREVIEW}}"> yourself — give that img a class and constrain it.
 - {{REPO_LINK}} → <a class="src">source ↗</a>; {{BACKLINK}} → <a class="backlink">← cd ../…</a>; detail pages also emit <a class="btn">visit … ↗</a>. Style .src, .backlink, and .btn as proper theme elements.
-- {{GENERATOR_FORM}} → a form with class="gen-form" containing an <input> and a <button>. Style .gen-form, .gen-form input, .gen-form button to match the theme — unstyled they render as tiny browser-default controls.
 - {{CONTENT}} → rendered markdown: h2, h3, p, ul, ol, li, a, blockquote, code, pre, and <img class="md-img"> (the portrait). Your 'base' CSS section must give ALL of these real typographic treatment with sane vertical rhythm — enormous or missing margins here create dead zones.
 
 NO INLINE <script> TAGS. Layouts are inert markup only — never write <script>…</script> or any inline JS. Interactivity must come from CSS alone (:hover, :focus, transitions, animations). Any layout containing a script tag will have it stripped, so it is always wasted effort.
@@ -444,7 +448,10 @@ Choose a specific, credible design movement and make concrete decisions. Avoid g
 You are starting a new design build. Plan the architecture and visual identity, silently critiquing and improving your first idea before you write — never settle for a generic result.
 1. Analyze the brief; decide typography, color palette, layouts, and interactive mechanics.
 2. Reject generic AI tropes (neon gradients, generic dark modes, lazy cyberpunk); reference real design movements, specific typographic choices, and concrete palettes.
-3. Write one bespoke hero-image prompt that fits the design. It must be a wide, atmospheric composition with no text, logos, watermarks, checkerboard/transparency patterns, or UI mockups.
+3. Write bespoke image prompts that fit the design:
+   - "hero": a wide, atmospheric composition with no text, logos, watermarks, checkerboard/transparency patterns, or UI mockups.
+   - "logo": a personal brand mark for "Greg Iteen" in THIS theme's visual language — a simple, confident wordmark or monogram ("GI" or "greg.iteen"), flat, on a background matching the theme's header/shell color so it composites cleanly. No taglines, no clutter, no photorealism.
+   - "portrait_style": a style-transfer directive for re-rendering a supplied editorial photograph of Greg in this theme's aesthetic (palette, grain, treatment). His face, identity, and likeness MUST stay clearly recognizable — restyle the treatment, never the person.
 
 CRITICAL: Be CONCISE. The "plan" must be a tight brief of ~250-350 words — enough to direct the build, NOT an essay. Do not narrate your scoring or critique; output only the final plan. A rambling plan is a failure.
 
@@ -452,19 +459,31 @@ OUTPUT: exactly one JSON object:
 {
   "plan": "A tight ~300-word design brief: identity, palette, type, layout, interaction.",
   "image_prompts": {
-    "hero": "Create an atmospheric, wide hero background image... Cinematic quality, 16:9..."
+    "hero": "Create an atmospheric, wide hero background image... Cinematic quality, 16:9...",
+    "logo": "Design a flat brand wordmark for Greg Iteen...",
+    "portrait_style": "Re-render the supplied portrait photograph in ... keeping the subject's likeness intact"
   }
 }`, PLAN_SCHEMA, 32768, 16384, 'gemini-3.1-pro-preview', false);
   let planObj = extractJson(rawPlan);
   let plan = planObj.plan || planObj.thought_process || 'No plan provided.';
 
-  // The portrait is an approved supplied asset. Only the background hero is
-  // generated; this avoids AI face/HUD artifacts while keeping each skin fast.
-  console.log(`[2/3] Generating Images in background using bespoke prompts…`);
+  // Four generated assets per design: hero, brand logo, favicon, and a
+  // theme-styled portrait (style transfer over the real photo so likeness is
+  // preserved). Each falls back safely: portrait → the untouched source photo;
+  // logo/favicon failures surface in the asset audit.
+  console.log(`[2/3] Generating Images (hero, logo, favicon, portrait) in background…`);
+  const logoPrompt = planObj.image_prompts?.logo
+    || `A flat, minimal personal brand wordmark for "Greg Iteen" fitting this brief: ${prompt}. No tagline, no photo, no clutter.`;
+  const portraitStyle = planObj.image_prompts?.portrait_style
+    || `Re-render this portrait photograph to match this design brief: ${prompt}. Keep the subject's face and likeness clearly recognizable; change only the treatment, palette, and grain.`;
   const imagePromise = GOOGLE_API_KEY
     ? Promise.allSettled([
         generateImage(planObj.image_prompts?.hero || 'Hero', heroPath),
-        copyFile(portraitSource, portraitPath),
+        generateImage(`${logoPrompt}\n\nRULES: flat graphic design, sharp edges, one confident mark, background must match the theme's shell/header color exactly so it composites seamlessly. No watermark, no mockup, no 3D render, no photograph.`, logoPath),
+        generateImage(`${logoPrompt}\n\nNow as a FAVICON: a single square app-icon glyph version of that mark — one bold letterform or symbol, readable at 32px, flat, centered, filling the square. No words, no fine detail.`, faviconPath),
+        generateImage(`${portraitStyle}\n\nHARD CONSTRAINT: this is the same person — identical face, identical likeness, editorial quality. Restyle the photographic treatment only. No text, no watermark, no distortion of features.`, portraitPath, portraitSource)
+          .then(async (ok) => { if (!ok) await copyFile(portraitSource, portraitPath); return ok; })
+          .catch(async () => { await copyFile(portraitSource, portraitPath); return false; }),
       ])
     : (console.warn('  ⚠ GOOGLE_API_KEY not set — skipping images'), Promise.resolve([]));
 
@@ -712,11 +731,26 @@ OUTPUT: exactly one JSON object: { "approved": true, "score": 8, "blocking_issue
 
   const auditVisualAssets = async () => {
     const visualAuditParts = [{
-      text: `You are the final visual asset release inspector. Review the supplied hero image and portrait for a premium creative-technologist portfolio. Reject any visible checkerboard/transparency pattern, watermark, garbled text, accidental logo, UI mockup, low-resolution artifact, broken anatomy, or image that would make the page look unprofessional. The hero must be a text-free wide visual; the portrait must look like a credible editorial photograph. Be strict: when uncertain, reject.\n\nOUTPUT: exactly one JSON object: { "approved": true, "issues": [] }`,
+      text: `You are the final visual asset release inspector for a premium creative-technologist portfolio. Review the four supplied assets:
+- hero: must be a text-free, wide atmospheric visual. Reject watermarks, garbled text, UI mockups, checkerboard/transparency patterns, broken anatomy, low-res artifacts.
+- portrait: a theme-styled editorial portrait. It may be stylized, but must read as a credible, undistorted human portrait — reject melted features, extra limbs, or uncanny artifacts.
+- logo: a flat brand mark for "Greg Iteen" or "GI". Its text MUST be legible and correctly spelled; reject garbled letterforms, watermarks, photorealism, or a mark that reads as clip-art.
+- favicon: a single bold glyph readable at small size; reject fine detail, multiple words, or mush.
+Be strict: when uncertain, reject and name the asset in the issue text (e.g. "logo: ...").
+
+OUTPUT: exactly one JSON object: { "approved": true, "issues": [] }`,
     }];
-    for (const [label, imagePath, mimeType] of [['hero', heroPath, 'image/jpeg'], ['portrait', portraitPath, 'image/jpeg']]) {
+    for (const [label, imagePath, mimeType, required] of [
+      ['hero', heroPath, 'image/jpeg', true],
+      ['portrait', portraitPath, 'image/jpeg', true],
+      ['logo', logoPath, 'image/png', true],
+      ['favicon', faviconPath, 'image/png', true],
+    ]) {
       const data = await readFile(imagePath).catch(() => null);
-      if (!data) throw new Error(`Release gate rejected theme: required ${label} image was not generated`);
+      if (!data) {
+        if (required) throw new Error(`Release gate rejected theme: required ${label} image was not generated`);
+        continue;
+      }
       visualAuditParts.push({ text: `Image: ${label}` }, { inlineData: { mimeType, data: data.toString('base64') } });
     }
     const visualParts = await geminiApiCall('gemini-3.1-pro-preview', {
@@ -731,26 +765,36 @@ OUTPUT: exactly one JSON object: { "approved": true, "score": 8, "blocking_issue
     return extractJson(visualParts.map((part) => part.text || '').join(''));
   };
 
-  // Asset flow — wait for the generated images, audit them, regenerate the
-  // hero once if rejected. Started here so it runs CONCURRENTLY with the first
+  // Asset flow — wait for the generated images, audit them, regenerate any
+  // rejected asset once. Started here so it runs CONCURRENTLY with the first
   // review-board pass below instead of adding a serial vision round-trip.
+  const IMAGE_LABELS = ['hero', 'logo', 'favicon', 'portrait'];
   const assetFlow = (async () => {
     const imageResults = await imagePromise;
     if (Array.isArray(imageResults)) {
       for (const [i, r] of imageResults.entries()) {
-        if (r.status === 'rejected') console.warn(`  ⚠ ${i === 0 ? 'hero' : 'portrait'} failed: ${r.reason?.message}`);
+        if (r.status === 'rejected') console.warn(`  ⚠ ${IMAGE_LABELS[i] || i} failed: ${r.reason?.message}`);
       }
     }
     let visualAudit = await auditVisualAssets();
     if (!visualAudit.approved) {
-      console.warn(`  ⚠ Visual asset review rejected the first hero: ${(visualAudit.issues || []).join('; ')}`);
-      const repairedHero = await generateImage(`${planObj.image_prompts?.hero || prompt}\n\nCORRECTIVE REQUIREMENTS: Create a clean, believable, text-free editorial hero only. Never show drafting tools, diagrams, interface overlays, floating HUD marks, logos, watermarks, checkerboards, malformed objects, or distorted architecture.`, heroPath);
-      if (repairedHero) visualAudit = await auditVisualAssets();
+      const issues = (visualAudit.issues || []).join('; ');
+      console.warn(`  ⚠ Visual asset review rejected: ${issues}`);
+      // Regenerate exactly the assets the audit named; hero if none named.
+      const named = IMAGE_LABELS.filter((l) => issues.toLowerCase().includes(l));
+      const regen = named.length ? named : ['hero'];
+      await Promise.allSettled(regen.map((asset) => {
+        if (asset === 'hero') return generateImage(`${planObj.image_prompts?.hero || prompt}\n\nCORRECTIVE REQUIREMENTS: Create a clean, believable, text-free editorial hero only. Never show drafting tools, diagrams, interface overlays, floating HUD marks, logos, watermarks, checkerboards, malformed objects, or distorted architecture.`, heroPath);
+        if (asset === 'logo') return generateImage(`${logoPrompt}\n\nCORRECTIVE REQUIREMENTS: the mark must read "Greg Iteen" or "GI" with perfectly legible, correctly-spelled letterforms. Flat graphic design only — no photo, no 3D, no watermark, no garbled type.`, logoPath);
+        if (asset === 'favicon') return generateImage(`${logoPrompt}\n\nNow as a FAVICON, corrective pass: ONE bold flat glyph filling a square, readable at 32px. No words, no fine detail, no photo.`, faviconPath);
+        return copyFile(portraitSource, portraitPath); // portrait fallback: the verified original
+      }));
+      visualAudit = await auditVisualAssets();
     }
     if (!visualAudit.approved) {
       throw new Error(`Release gate rejected theme assets: ${(visualAudit.issues || []).join('; ') || 'visual audit did not approve them'}`);
     }
-    console.log('  → Visual asset release review: approved');
+    console.log('  → Visual asset release review: approved (hero, logo, favicon, portrait)');
   })();
   assetFlow.catch(() => {}); // observed in the review board's Promise.all
 

@@ -92,7 +92,11 @@ function geminiVision(parts) {
 }
 
 async function screenshotPage(browser, url, viewport) {
-  const page = await browser.newPage({ viewport });
+  // Reduced motion: the injected scroll-reveal runtime hides below-fold
+  // sections until they intersect, which a fullPage screenshot never triggers
+  // — without this, healthy pages read as "enormous dead zones" and get
+  // rejected. The motion CSS keeps everything painted under reduced motion.
+  const page = await browser.newPage({ viewport, reducedMotion: 'reduce' });
   try {
     const resp = await page.goto(url, { waitUntil: 'load', timeout: 30_000 });
     if (!resp || !resp.ok()) throw new Error(`page load failed (${resp ? resp.status() : 'no response'}) for ${url}`);
