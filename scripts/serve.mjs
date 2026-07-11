@@ -18,6 +18,26 @@ import { extractJson } from './lib/theme.mjs';
 import { buildLetterheadPdf } from './lib/letterhead.mjs';
 import { createSigningRequest, signingStatusForEvent, verifyWebhookSecret, startDocumensoPoller } from './lib/documenso.mjs';
 import { advanceDripState, createUnsubscribeToken, enrollInCampaign, renderDripTemplate, verifyUnsubscribeToken } from './lib/drip.mjs';
+
+function emailTextToHtml(text) {
+  if (!text) return '';
+  let html = text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/^#{1,3}\s+(.*)$/gm, '<h3>$1</h3>')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/^[-*]\s+(.*)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>(?:\n<li>.*<\/li>)*)/g, '<ul>$1</ul>')
+    .replace(/^[─═]{10,}$/gm, '<hr style="border:0; border-top:1px solid #ccc; margin: 16px 0;">');
+  
+  html = html.split('\n').map(line => {
+    if (line.match(/^(<h|<ul|<li|<hr|<\/ul)/)) return line;
+    return line + '<br>';
+  }).join('\n');
+  
+  return `<div style="font-family: sans-serif; line-height: 1.6; color: #222;">${html}</div>`;
+}
+
 import { parseProposalOutput } from './lib/proposal-output.mjs';
 import { handleWebmail } from './lib/webmail-ui.mjs';
 import {
@@ -851,12 +871,14 @@ async function sendProposalToClient(proposalId, thread) {
     ? `\n\nReview & sign: ${wrapperSigningUrl}\n`
     : `\n\n(A signable copy will follow separately — for now, please review the attached PDF.)\n`;
 
+  const clientEmailText = `${thread.proposal.client_email_draft}${signingBlock}\n${'─'.repeat(40)}\n\n${thread.proposal.proposal_text}\n\n— Greg Iteen\ngregiteen.xyz`;
   await smtpTransport.sendMail({
     from: mailFrom,
     to: thread.clientEmail,
     cc: mailOwner,
     subject: clientSubject,
-    text: `${thread.proposal.client_email_draft}${signingBlock}\n${'─'.repeat(40)}\n\n${thread.proposal.proposal_text}\n\n— Greg Iteen\ngregiteen.xyz`,
+    text: clientEmailText,
+    html: emailTextToHtml(clientEmailText),
     attachments: [{ filename: `proposal-${proposalId}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }],
   });
   await smtpTransport.sendMail({
@@ -898,12 +920,14 @@ async function reviseProposal(proposalId, thread, replyText) {
   thread.status = 'pending_approval';
   await upsertProposal(proposalId, thread);
   const replyTo = `proposal-${proposalId}@${process.env.MAIL_DOMAIN || 'gregiteen.xyz'}`;
+  const revisionEmailText = `REVISION #${thread.revisions}\n${'─'.repeat(60)}\nCHANGES: ${revision.changes_made || 'Applied your feedback'}\n\n${'─'.repeat(60)}\nREVISED PROPOSAL\n${'─'.repeat(60)}\n${revision.proposal_text}\n\n${'─'.repeat(60)}\nREVISED CLIENT EMAIL\n${'─'.repeat(60)}\n${revision.client_email_draft}\n\n${'═'.repeat(60)}\nReply with more edits, or reply "send it" to send to ${thread.clientEmail}.\n${'═'.repeat(60)}`;
   await smtpTransport.sendMail({
     from: mailFrom,
     to: mailOwner,
     replyTo,
     subject: `Re: [PROPOSAL] ${revision.subject_line || 'Revised'} — Rev ${thread.revisions}`,
-    text: `REVISION #${thread.revisions}\n${'─'.repeat(60)}\nCHANGES: ${revision.changes_made || 'Applied your feedback'}\n\n${'─'.repeat(60)}\nREVISED PROPOSAL\n${'─'.repeat(60)}\n${revision.proposal_text}\n\n${'─'.repeat(60)}\nREVISED CLIENT EMAIL\n${'─'.repeat(60)}\n${revision.client_email_draft}\n\n${'═'.repeat(60)}\nReply with more edits, or reply "send it" to send to ${thread.clientEmail}.\n${'═'.repeat(60)}`,
+    text: revisionEmailText,
+    html: emailTextToHtml(revisionEmailText),
   });
   return { status: 'revised' };
 }
@@ -1982,6 +2006,7 @@ ${'═'.repeat(60)}`;
           replyTo,
           subject: `[PROPOSAL] ${proposalDraft.subject_line || 'New Proposal'} — Reply to edit`,
           text: emailToGreg,
+          html: emailTextToHtml(emailToGreg),
           headers: { 'X-Proposal-ID': proposalId },
           attachments: previewPdf ? [{ filename: `proposal-${proposalId}-preview.pdf`, content: previewPdf, contentType: 'application/pdf' }] : [],
         });

@@ -41,15 +41,29 @@ export function buildLetterheadPdf({ subject, bodyText, clientName, clientEmail,
       const heading = para.match(/^#{1,3}\s+(.*)$/);
       if (heading) {
         doc.moveDown(0.4);
-        doc.font('Helvetica-Bold').fontSize(13).fillColor('#111111').text(heading[1]);
+        doc.font('Helvetica-Bold').fontSize(13).fillColor('#111111').text(heading[1].replace(/\*\*/g, ''));
         doc.font('Helvetica').fontSize(11).fillColor('#222222');
         continue;
       }
-      const clean = para.replace(/\*\*(.*?)\*\*/g, '$1').replace(/^[-*]\s+/gm, '•  ').trim();
-      if (clean) {
-        doc.text(clean, { align: 'left' });
-        doc.moveDown(0.6);
+      
+      const cleanPara = para.replace(/^[-*]\s+/gm, '•  ').trim();
+      if (!cleanPara) continue;
+
+      const parts = cleanPara.split(/(\*\*.*?\*\*)/g);
+      for (let i = 0; i < parts.length; i++) {
+        const isLast = i === parts.length - 1;
+        const part = parts[i];
+        
+        if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
+          doc.font('Helvetica-Bold').text(part.slice(2, -2), { align: 'left', continued: !isLast });
+        } else if (part) {
+          doc.font('Helvetica').text(part, { align: 'left', continued: !isLast });
+        } else if (isLast) {
+          // Empty last part, we just need to end the continued text without adding anything
+          doc.text('', { continued: false });
+        }
       }
+      doc.moveDown(0.6);
     }
 
     // Footer on every page (must run after content flows, via bufferPages).
