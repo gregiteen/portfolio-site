@@ -2,19 +2,19 @@
 type: "visitor_profile"
 title: "Visitor profile: gregiteen@gmail.com"
 description: "Runtime visitor profile for gregiteen.xyz."
-timestamp: "2026-07-10T18:52:30.976Z"
+timestamp: "2026-07-10T22:31:12.797Z"
 email: "gregiteen@gmail.com"
 first_seen: "2026-07-07T07:39:04.658Z"
-last_seen: "2026-07-10T18:52:30.976Z"
-visits: 9
-style_prompt: "new york new york"
+last_seen: "2026-07-10T22:31:12.797Z"
+visits: 10
+style_prompt: "blue skies"
 opt_in: true
-generation_count: 5
+generation_count: 6
 status: "Lead"
 timeline: ""
 enrichment:
   email: "gregiteen@gmail.com"
-  style: "new york new york"
+  style: "blue skies"
   optIn: true
   ip: "71.205.253.218"
   userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
@@ -43,7 +43,7 @@ drip:
   "timeline": [],
   "enrichment": {
     "email": "gregiteen@gmail.com",
-    "style": "new york new york",
+    "style": "blue skies",
     "optIn": true,
     "ip": "71.205.253.218",
     "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
@@ -74,7 +74,7 @@ drip:
 ```json
 {
   "email": "gregiteen@gmail.com",
-  "style": "new york new york",
+  "style": "blue skies",
   "optIn": true,
   "ip": "71.205.253.218",
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
