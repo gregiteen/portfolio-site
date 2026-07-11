@@ -265,7 +265,10 @@ function maybeRedirect(){
       document.getElementById('heading').textContent='You\'re in.';
       setTimeout(()=>window.location.href=targetUrl,1500);
     } else {
-      document.getElementById('heading').textContent='Almost ready...';
+      // Hand off to the waiting page: it owns the build narration, the
+      // intake questions, and the final reveal.
+      document.getElementById('heading').textContent='Verified.';
+      setTimeout(()=>window.location.href='/generate.html',900);
     }
   }
 }

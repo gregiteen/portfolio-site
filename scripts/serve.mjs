@@ -108,6 +108,16 @@ still winning good-fit smaller work.
 | Cloud platform / infra build | $15,000 – $50,000 | Multi-service architecture, IaC, scaling |
 | Full product build | $40,000 – $120,000+ | Multi-month, full-stack + AI + infra (UltraChat-scale) |
 
+## Product setups (Greg's own platforms, deployed for your business)
+
+| Package | Range | Notes |
+|---|---|---|
+| UltraChat workspace setup | $8,000 – $25,000 | A private AI workspace on UltraChat: assistants, workflows, telephony/email channels, and a skill marketplace configured to the client's business. Tenant data stays portable (.ucw export). Low end = standard workspace + branding; high end = custom skills, integrations, and multi-team rollout. |
+| festech.live event platform setup | $10,000 – $35,000 | The full event-operations platform stood up for a festival or event brand: web + mobile + communications apps, artist logistics, mapping, and AI-assisted comms. Low end = single event; high end = season-long multi-event operation with custom integrations. |
+
+Product setups include deployment, configuration, and a training handoff.
+Ongoing operation falls under the retainer.
+
 ## Rules for the proposal generator
 
 1. Match the CNA assessment's \`project_type\` (and conversation context) to the
@@ -165,7 +175,13 @@ watch(vaultDir, { recursive: true }, (eventType, filename) => {
 });
 
 // ─── Theme generation job (queued, async, polled via /generate-status) ────────
-const genJob = { status: 'idle', phase: '', prompt: '', error: null, startedAt: null, finishedAt: null, runId: null };
+const genJob = { status: 'idle', phase: '', prompt: '', error: null, startedAt: null, finishedAt: null, runId: null, slug: null };
+
+// Mirror of compile-theme.mjs's styleName derivation — lets the waiting page
+// peek at the in-progress design's generated assets as they are written.
+function slugForPrompt(prompt) {
+  return prompt.replace(/[^a-zA-Z0-9]+/g, '-').slice(0, 40).toLowerCase() || 'custom';
+}
 const genQueue = [];
 
 /** Start now if idle, otherwise queue — nothing gets silently dropped. */
@@ -192,6 +208,7 @@ function startGeneration(prompt) {
   genJob.startedAt = Date.now();
   genJob.finishedAt = null;
   genJob.runId = runId;
+  genJob.slug = slugForPrompt(prompt);
   appendRun({ run_id: runId, prompt, status: 'running', startedAt: genJob.startedAt }).catch((err) => {
     console.error('[Runtime] Failed to persist generation start:', (err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)));
   });
@@ -923,8 +940,10 @@ function isPublicPath(urlPath) {
   if (urlPath.startsWith('/gi-logo')) return true; // brand marks — used on pre-auth pages
   if (urlPath.startsWith('/sign/')) return true;
   if (urlPath.startsWith('/designs/')) return true;
-  // Dev/generation endpoints are API-like
+  // Dev/generation endpoints are API-like; asset previews feed the waiting
+  // page, which is also shown mid-verification.
   if (urlPath === '/dev-status' || urlPath === '/generate-status' || urlPath === '/generate-theme') return true;
+  if (urlPath.startsWith('/generating-asset/')) return true;
   return false;
 }
 
@@ -1355,13 +1374,48 @@ createServer(async (req, res) => {
       }
     } catch {}
 
+    // In-progress generated assets, revealed on the waiting page as each one
+    // is written by the pipeline.
+    const assets = {};
+    if (genJob.slug && (genJob.status === 'running' || genJob.status === 'done')) {
+      const assetDir = join(__dirname, '..', 'designs', genJob.slug, 'assets');
+      const { existsSync } = await import('node:fs');
+      for (const file of ['hero.jpg', 'logo.png', 'favicon.png', 'portrait.jpg']) {
+        if (existsSync(join(assetDir, file))) {
+          assets[file.split('.')[0]] = `/generating-asset/${file}?v=${buildVersion}`;
+        }
+      }
+    }
+
     return sendJson(res, 200, {
       status: genJob.status,
       phase: genJob.phase,
       error: genJob.error,
       version: buildVersion,
+      startedAt: genJob.startedAt,
+      assets,
       latestUrl
     });
+  }
+
+  // ── Waiting-page preview of the in-progress design's generated assets ──
+  if (urlPath.startsWith('/generating-asset/')) {
+    const file = urlPath.slice('/generating-asset/'.length);
+    if (!genJob.slug || !/^[a-z]+\.(jpg|png)$/.test(file)) {
+      res.writeHead(404).end();
+      return;
+    }
+    try {
+      const data = await readFile(join(__dirname, '..', 'designs', genJob.slug, 'assets', file));
+      res.writeHead(200, {
+        'content-type': file.endsWith('.png') ? 'image/png' : 'image/jpeg',
+        'cache-control': 'no-store',
+      });
+      res.end(data);
+    } catch {
+      res.writeHead(404, { 'cache-control': 'no-store' }).end();
+    }
+    return;
   }
 
   if (urlPath === '/generate-theme' && req.method === 'POST') {
@@ -1381,6 +1435,39 @@ createServer(async (req, res) => {
         sendJson(res, 202, { started: true, queued: genJob.status === 'running' });
       } catch {
         sendJson(res, 400, { started: false, error: 'Invalid JSON body' });
+      }
+    });
+    return;
+  }
+
+  // ── API: Intake answers gathered on the generation waiting page ──
+  // Business visitors answer 3 quick questions while their design builds;
+  // answers land on the visitor profile and feed enrichment + proposals.
+  if (urlPath === '/api/intake' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; if (body.length > 5_000) req.destroy(); });
+    req.on('end', async () => {
+      try {
+        const cookies = parseCookies(req.headers.cookie);
+        const session = cookies.gi_auth ? authTokens.get(cookies.gi_auth) : null;
+        if (!session?.email) return sendJson(res, 401, { ok: false });
+        const answers = JSON.parse(body);
+        const clean = {};
+        for (const key of ['reason', 'timeline', 'project']) {
+          if (typeof answers[key] === 'string' && answers[key].trim()) clean[key] = answers[key].trim().slice(0, 300);
+        }
+        if (!Object.keys(clean).length) return sendJson(res, 400, { ok: false });
+        const existing = visitorProfiles.get(session.email);
+        if (existing) {
+          const timeline = existing.timeline || [];
+          timeline.push(`Waiting-page intake at ${new Date().toISOString()}: ${JSON.stringify(clean)}`);
+          const next = { ...existing, intake: { ...(existing.intake || {}), ...clean }, timeline };
+          visitorProfiles.set(session.email, next);
+          await upsertVisitor(session.email, next).catch(() => {});
+        }
+        sendJson(res, 200, { ok: true });
+      } catch {
+        sendJson(res, 400, { ok: false });
       }
     });
     return;

@@ -43,6 +43,34 @@ input[type=text]:focus{border-color:var(--accent)}
 .chip:hover{border-color:var(--accent);color:var(--white)}
 a.out{color:var(--gray);text-decoration:none;font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.14em;text-transform:uppercase}
 a.out:hover{color:var(--white)}
+.narrate{margin-top:8px;font-size:.92rem;color:var(--white);min-height:1.4em;transition:opacity .4s}
+.meta{margin-top:10px;display:flex;gap:18px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+
+/* ── Intake card ── */
+.intake{margin-top:38px;border:1px solid var(--line);padding:24px 22px;max-width:560px}
+.intake-label{font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:18px}
+.q{transition:opacity .4s}
+.q.hidden{display:none}
+.q-title{font-size:1rem;margin-bottom:12px}
+.q-title .opt{color:var(--faint);font-size:.8rem}
+.q-chips{display:flex;flex-wrap:wrap;gap:8px}
+.qchip{font-family:'IBM Plex Mono',monospace;font-size:.64rem;letter-spacing:.12em;text-transform:uppercase;border:1px solid var(--line);background:transparent;color:var(--gray);padding:10px 14px;cursor:pointer;transition:all .2s}
+.qchip:hover{border-color:var(--accent);color:var(--white)}
+.qchip.send{margin-top:12px;background:var(--white);color:var(--black);border-color:var(--white)}
+.qchip.send:hover{background:var(--accent);color:var(--white);border-color:var(--accent)}
+.q input[type=text]{width:100%;background:transparent;border:0;border-bottom:1px solid var(--line);color:var(--white);font-family:'Archivo',sans-serif;font-size:1rem;padding:8px 2px 10px;outline:none}
+.q input[type=text]:focus{border-color:var(--accent)}
+
+/* ── Dramatic reveal ── */
+.reveal{position:fixed;inset:0;z-index:100;background:#000;display:none;align-items:center;justify-content:center;flex-direction:column}
+.reveal.on{display:flex}
+.reveal-hero{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transform:scale(1.12);transition:opacity 2.2s ease,transform 6s ease}
+.reveal.stage2 .reveal-hero{opacity:.55;transform:scale(1)}
+.reveal-scrim{position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 0%,rgba(0,0,0,.72) 100%)}
+.reveal-logo{position:relative;z-index:2;max-width:min(62vw,520px);max-height:30vh;object-fit:contain;opacity:0;transform:scale(.86);filter:blur(10px);transition:opacity 1.4s ease,transform 1.8s cubic-bezier(.16,.8,.26,1),filter 1.4s ease}
+.reveal.stage1 .reveal-logo{opacity:1;transform:scale(1);filter:blur(0)}
+.reveal-line{position:relative;z-index:2;margin-top:34px;font-family:'IBM Plex Mono',monospace;font-size:.78rem;letter-spacing:.32em;text-transform:uppercase;color:var(--white);opacity:0;transition:opacity 1.2s ease .4s}
+.reveal.stage2 .reveal-line{opacity:1}
 </style>
 </head>
 <body>
@@ -66,6 +94,46 @@ a.out:hover{color:var(--white)}
     <div class="progress" id="progress">
       <div class="bar"><i id="barFill"></i></div>
       <div class="status" id="status">Waiting to start…</div>
+      <div class="narrate" id="narrate"></div>
+      <div class="meta"><span id="elapsed"></span><span>Typically 2–4 minutes — every design is quality-reviewed before you see it.</span></div>
+
+      <!-- While the studio works: 3 quick taps that shape the visitor's proposal -->
+      <div class="intake" id="intake">
+        <div class="intake-label">While the studio works — 20 seconds, and your proposal gets sharper:</div>
+        <div class="q" data-q="reason">
+          <div class="q-title">What brings you here?</div>
+          <div class="q-chips">
+            <button type="button" class="qchip" data-v="custom-project">A custom build</button>
+            <button type="button" class="qchip" data-v="ultrachat-setup">An AI workspace (UltraChat)</button>
+            <button type="button" class="qchip" data-v="festech-setup">An event platform (festech)</button>
+            <button type="button" class="qchip" data-v="exploring">Just exploring</button>
+          </div>
+        </div>
+        <div class="q hidden" data-q="timeline">
+          <div class="q-title">When would it need to be live?</div>
+          <div class="q-chips">
+            <button type="button" class="qchip" data-v="asap">ASAP</button>
+            <button type="button" class="qchip" data-v="this-quarter">This quarter</button>
+            <button type="button" class="qchip" data-v="later">Exploring for later</button>
+          </div>
+        </div>
+        <div class="q hidden" data-q="project">
+          <div class="q-title">One line on what you'd build first? <span class="opt">(optional)</span></div>
+          <input type="text" id="projectLine" maxlength="300" placeholder="e.g. an AI concierge for our booking flow">
+          <button type="button" class="qchip send" id="intakeSend">Send it →</button>
+        </div>
+        <div class="q hidden" data-q="thanks">
+          <div class="q-title">Noted. If you request a proposal, it'll already know this.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dramatic final reveal: their logo, then their hero, then in. -->
+    <div class="reveal" id="reveal">
+      <img class="reveal-hero" id="revealHero" alt="">
+      <div class="reveal-scrim"></div>
+      <img class="reveal-logo" id="revealLogo" alt="">
+      <div class="reveal-line" id="revealLine">Your studio is ready.</div>
     </div>
   </main>
   <footer class="bottom"><span>gregiteen.xyz</span><span>Generated · Reviewed · Yours</span></footer>
@@ -76,6 +144,74 @@ a.out:hover{color:var(--white)}
       btn=document.getElementById('goBtn'),prog=document.getElementById('progress'),
       bar=document.getElementById('barFill'),status=document.getElementById('status');
   var phaseMap={'[1/':18,'[2/':42,'[3/':62,'[4/':78,'[5/':90};
+  var narrate=document.getElementById('narrate'),elapsedEl=document.getElementById('elapsed');
+  var narrateMap=[
+    ['[1/','A design director is drafting your visual identity — palette, type, and layout language.'],
+    ['[2/','Generating your four bespoke assets: hero, logo, favicon, and your styled portrait.'],
+    ['Fan-out','Fifteen specialists are writing the stylesheet and page layouts in parallel.'],
+    ['[3/','Assembling the design system into real pages.'],
+    ['[4/','Building your pages.'],
+    ['[5/','The review board is inspecting real screenshots of your site — nothing ships unreviewed.'],
+    ['Repairing','The review board requested refinements — specialists are repairing them now.'],
+    ['re-rolling','First draft wasn’t good enough — regenerating from scratch with a fresh take.'],
+  ];
+  var startedAt=null;
+  setInterval(function(){
+    if(!startedAt||!polling)return;
+    var s=Math.max(0,Math.round((Date.now()-startedAt)/1000));
+    elapsedEl.textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+  },1000);
+  function updateNarration(phase){
+    if(!phase)return;
+    for(var i=0;i<narrateMap.length;i++){
+      if(phase.indexOf(narrateMap[i][0])>-1){narrate.textContent=narrateMap[i][1];return;}
+    }
+  }
+  // Assets are kept back for one dramatic reveal at the end — but preloaded
+  // silently as they're generated so the finale is instant.
+  var latestAssets={};
+  function updateAssets(assets){
+    if(!assets)return;
+    for(var k in assets){
+      if(!latestAssets[k]){var pre=new Image();pre.src=assets[k];}
+      latestAssets[k]=assets[k];
+    }
+  }
+  function runReveal(targetUrl){
+    var reveal=document.getElementById('reveal');
+    var logo=document.getElementById('revealLogo');
+    var hero=document.getElementById('revealHero');
+    if(latestAssets.logo)logo.src=latestAssets.logo;else logo.remove();
+    if(latestAssets.hero)hero.src=latestAssets.hero;else hero.remove();
+    reveal.classList.add('on');
+    setTimeout(function(){reveal.classList.add('stage1');},250);   // logo blooms
+    setTimeout(function(){reveal.classList.add('stage2');},1900);  // hero swells behind
+    setTimeout(function(){location.href=targetUrl;},4600);         // enter
+  }
+
+  // ── Intake: 3 quick taps → visitor profile → sharper proposal ──
+  var intakeAnswers={};
+  function showQ(name){
+    document.querySelectorAll('.q').forEach(function(q){q.classList.add('hidden');});
+    var q=document.querySelector('.q[data-q="'+name+'"]');
+    if(q)q.classList.remove('hidden');
+  }
+  function sendIntake(){
+    fetch('/api/intake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(intakeAnswers)}).catch(function(){});
+    showQ('thanks');
+  }
+  document.querySelectorAll('.q[data-q="reason"] .qchip').forEach(function(c){
+    c.addEventListener('click',function(){intakeAnswers.reason=c.dataset.v;showQ('timeline');});
+  });
+  document.querySelectorAll('.q[data-q="timeline"] .qchip').forEach(function(c){
+    c.addEventListener('click',function(){intakeAnswers.timeline=c.dataset.v;showQ('project');});
+  });
+  document.getElementById('intakeSend').addEventListener('click',function(){
+    var v=document.getElementById('projectLine').value.trim();
+    if(v)intakeAnswers.project=v;
+    sendIntake();
+  });
+
   var polling=false;
 
   document.getElementById('chips').addEventListener('click',function(e){
@@ -98,13 +234,17 @@ a.out:hover{color:var(--white)}
   function poll(){
     polling=true;
     fetch('/generate-status').then(function(r){return r.json()}).then(function(d){
+      if(d.startedAt)startedAt=d.startedAt;
+      updateAssets(d.assets);
       if(d.status==='done'){
         bar.style.width='100%';status.classList.remove('err');
-        status.textContent='Design approved. Entering…';
-        setTimeout(function(){location.href=d.latestUrl||'/splash.html';},1200);
+        status.textContent='Design approved.';
+        narrate.textContent='The review board signed off.';
+        runReveal(d.latestUrl||'/splash.html');
       }else if(d.status==='running'){
         status.classList.remove('err');
         status.textContent=d.phase||'Working…';
+        updateNarration(d.phase);
         for(var k in phaseMap){if(d.phase&&d.phase.indexOf(k)>-1){bar.style.width=phaseMap[k]+'%';break}}
         setTimeout(poll,2000);
       }else if(d.status==='error'){

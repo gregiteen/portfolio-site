@@ -470,7 +470,7 @@ OUTPUT: exactly one JSON object:
     "logo": "Design a flat brand wordmark for Greg Iteen...",
     "portrait_style": "Re-render the supplied portrait photograph in ... keeping the subject's likeness intact"
   }
-}`, PLAN_SCHEMA, 32768, 16384, 'gemini-3.1-pro-preview', false);
+}`, PLAN_SCHEMA, 24576, 8192, 'gemini-3.1-pro-preview', false);
   let planObj = extractJson(rawPlan);
   let plan = planObj.plan || planObj.thought_process || 'No plan provided.';
 
