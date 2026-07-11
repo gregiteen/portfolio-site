@@ -1005,12 +1005,10 @@ ${TRANSITIONS}
 })();
 </script>`;
 
-  // Session control that survives ANY theme: generated shells don't carry the
-  // default header, so logout must be injected as fixed chrome on every page.
   const LOGOUT_FIXED = `<a href="/api/logout" id="giLogout" title="Sign out">sign out</a>
 <style>
-#giLogout{position:fixed;top:14px;right:14px;z-index:9999;font-family:monospace;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;text-decoration:none;color:rgba(255,255,255,.85);background:rgba(10,10,10,.78);border:1px solid rgba(255,255,255,.25);border-radius:4px;padding:7px 12px;backdrop-filter:blur(6px);transition:all .2s}
-#giLogout:hover{background:rgba(255,255,255,.92);color:#0a0a0a}
+#giLogout{position:fixed !important;top:14px !important;right:14px !important;z-index:2147483647 !important;font-family:monospace !important;font-size:.68rem !important;letter-spacing:.08em !important;text-transform:uppercase !important;text-decoration:none !important;color:#fff !important;background:#000 !important;border:2px solid #fff !important;border-radius:4px !important;padding:7px 12px !important;backdrop-filter:blur(6px) !important;transition:all .2s !important;box-shadow:0 2px 10px rgba(0,0,0,0.5) !important}
+#giLogout:hover{background:#fff !important;color:#000 !important;border-color:#000 !important}
 </style>`;
 
   let finalHtml;
