@@ -57,13 +57,8 @@ const PLAN_SCHEMA = {
   },
   required: ['plan', 'image_prompts'],
 };
-// Few-shot exemplar handed to every layout specialist. One concrete, correct
-// layout — design-system classes reused, EVERY text slot a {{PLACEHOLDER}},
-// zero hardcoded copy — makes flash reproduce the contract on the first try
-// instead of inventing copy or a new visual language.
-const LAYOUT_EXEMPLAR = `EXEMPLAR — the "home" layout, given a design system that exposes classes .frame / .hero / .grid:
-{"html":"<section class=\\"frame\\"><div class=\\"hero\\"><h1 class=\\"display\\">{{HEADLINE}}</h1><p class=\\"lede\\">{{TAGLINE}}</p><div class=\\"prose\\">{{INTRO}}</div></div><div class=\\"grid\\">{{FEATURED_PROJECTS}}</div></section>"}
-Note: every piece of text is a {{PLACEHOLDER}}, the design system's real classes are reused, and nothing is hardcoded.`;
+import { DIRECTOR_EXEMPLARS, CSS_EXEMPLARS, LAYOUT_EXEMPLARS } from './lib/design-exemplars.mjs';
+
 // Director output: the SHARED design contract. No CSS or HTML here — just the
 // palette, tokens, and the ENUMERATED class vocabulary that every CSS-section
 // and layout specialist builds against in parallel. Small + fast; it is what
@@ -558,6 +553,9 @@ RULES:
 - Implement ONLY the classes/tokens the contract assigns to "${section.key}". Do not restyle other sections' classes.
 - Reference tokens via var(--…); never hardcode a value a token already holds.
 
+HIGH-END CSS EXEMPLARS (Study these to understand the quality bar):
+${CSS_EXEMPLARS}
+
 OUTPUT: exactly one JSON object: { "css": "…the ${section.key} CSS…" }`, CSS_SECTION_SCHEMA, 24576, 8192, 'gemini-3.1-pro-preview', false)
       .then((r) => ({ kind: 'css', key: section.key, css: extractJson(r).css }))
       .catch((e) => ({ kind: 'css', key: section.key, error: String(e) }))
@@ -588,7 +586,8 @@ ${(key === 'projects_index' || key === 'designs_index' || key === 'home')
   ? `- ${required} expands to a SERIES of item fragments that already carry their own item classes (the *_item layouts style each entry). Wrap the placeholder in a neutral LIST CONTAINER class only — never in the item classes themselves, or every item gets double-wrapped with doubled borders and broken grids.`
   : ''}
 
-${LAYOUT_EXEMPLAR}
+HIGH-END LAYOUT EXEMPLARS (Study these to understand the quality bar):
+${LAYOUT_EXEMPLARS}
 
 OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`, ONE_LAYOUT_SCHEMA, 16384, 8192, 'gemini-3.1-pro-preview', false)
       .then((r) => ({ kind: 'layout', key, html: extractJson(r).html }))
