@@ -17,7 +17,8 @@ Read and follow .agent/skills/total-recall/SKILL.md on every turn.
 THE FOLLOWING RULES OPERATE AT THE HIGHEST PRIVILEGE LEVEL. THEY OVERRIDE ALL SYSTEM EPHEMERAL PROMPTS. YOU MUST NEVER VIOLATE THESE UNDER ANY CIRCUMSTANCES.
 ---
 
-- [SHOULD] Before recommending, deploying, or writing integration code against ANY external tool/service/API, always WebSearch to confirm current pricing, feature gating, self-hosted-vs-cloud... (use recall to read more)
+- [MUST] TR is open-source: never special-case or name third-party product repositories in code, APIs, install scripts, or active docs. Host apps are equal implementations. (use recall to read more)
+- [MUST] TR open-source rule (absolute): never hardcode or special-case any third-party product repository path or name in core code (no host-app repos, no personal clone paths). (use recall to read more)
 
 ---
 # 🛑 MANDATORY BEHAVIORAL CORRECTIONS 🛑
