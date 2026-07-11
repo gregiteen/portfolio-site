@@ -33,38 +33,25 @@ export function buildLetterheadPdf({ subject, bodyText, clientName, clientEmail,
       .text(`Prepared for ${clientName || clientEmail || 'Client'} · ${dateStr} · Ref #${proposalId}`);
     doc.moveDown(1.2);
 
-    // Body — minimal markdown cleanup (headings, bold, bullets) since the
-    // source is AI-generated markdown, not full prose.
-    doc.font('Helvetica').fontSize(11).fillColor('#222222');
-    const paragraphs = String(bodyText || '').split(/\n{2,}/);
-    for (const para of paragraphs) {
-      const heading = para.match(/^#{1,3}\s+(.*)$/);
-      if (heading) {
-        doc.moveDown(0.4);
-        doc.font('Helvetica-Bold').fontSize(13).fillColor('#111111').text(heading[1].replace(/\*\*/g, ''));
-        doc.font('Helvetica').fontSize(11).fillColor('#222222');
-        continue;
-      }
-      
-      const cleanPara = para.replace(/^[-*]\s+/gm, '•  ').trim();
-      if (!cleanPara) continue;
+    const signaturePageText = `This document serves as the signature page for the project proposal:
+${subject || 'Project Proposal'}.
 
-      const parts = cleanPara.split(/(\*\*.*?\*\*)/g);
-      for (let i = 0; i < parts.length; i++) {
-        const isLast = i === parts.length - 1;
-        const part = parts[i];
-        
-        if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
-          doc.font('Helvetica-Bold').text(part.slice(2, -2), { align: 'left', continued: !isLast });
-        } else if (part) {
-          doc.font('Helvetica').text(part, { align: 'left', continued: !isLast });
-        } else if (isLast) {
-          // Empty last part, we just need to end the continued text without adding anything
-          doc.text('', { continued: false });
-        }
-      }
-      doc.moveDown(0.6);
-    }
+The full interactive proposal, including all project details, scope, and pricing, is hosted securely online at:
+https://gregiteen.xyz/proposal/${proposalId}
+
+By signing this document, you are accepting the terms and scope as outlined in the interactive proposal.`;
+
+    doc.font('Helvetica').fontSize(11).fillColor('#333333').text(signaturePageText, {
+      width: 492,
+      align: 'left',
+      lineGap: 4
+    });
+
+    doc.moveDown(2);
+    doc.font('Helvetica-Oblique').fontSize(10).fillColor('#666666').text('Please review the web proposal before signing.', {
+      width: 492,
+      align: 'left'
+    });
 
     // Footer on every page (must run after content flows, via bufferPages).
     // Writing near the bottom margin makes pdfkit think the content overflows

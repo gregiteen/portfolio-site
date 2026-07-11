@@ -766,7 +766,7 @@ async function generateDelimitedProposal(apiKey, prompt, { requireChanges = fals
   try {
     return parseProposalOutput(first, { requireChanges });
   } catch {
-    const repaired = await geminiCall(apiKey, `Reformat the following proposal response without changing its meaning. Output only this exact delimiter contract, with plain Markdown outside JSON:\n\nSUBJECT: one-line subject\n---PROPOSAL---\nfull proposal\n---CLIENT_EMAIL---\nclient email${requireChanges ? '\n---CHANGES---\nbrief change summary' : ''}\n---END---\n\nSOURCE:\n${first}`, { json: false });
+    const repaired = await geminiCall(apiKey, `Reformat the following proposal response without changing its meaning. Output only this exact delimiter contract, with plain text outside JSON:\n\nSUBJECT: one-line subject\n---PROPOSAL---\n<div class="proposal-html">\nfull HTML proposal\n</div>\n---CLIENT_EMAIL---\nclient email${requireChanges ? '\n---CHANGES---\nbrief change summary' : ''}\n---END---\n\nSOURCE:\n${first}`, { json: false });
     return parseProposalOutput(repaired, { requireChanges });
   }
 }
@@ -871,7 +871,8 @@ async function sendProposalToClient(proposalId, thread) {
     ? `\n\nReview & sign: ${wrapperSigningUrl}\n`
     : `\n\n(A signable copy will follow separately — for now, please review the attached PDF.)\n`;
 
-  const clientEmailText = `${thread.proposal.client_email_draft}${signingBlock}\n${'─'.repeat(40)}\n\n${thread.proposal.proposal_text}\n\n— Greg Iteen\ngregiteen.xyz`;
+  const webUrl = `${SITE_URL}/proposal/${proposalId}`;
+  const clientEmailText = `${thread.proposal.client_email_draft}\n\nView your interactive proposal here: ${webUrl}${signingBlock}\n\n— Greg Iteen\ngregiteen.xyz`;
   await smtpTransport.sendMail({
     from: mailFrom,
     to: thread.clientEmail,
@@ -910,7 +911,7 @@ async function reviseProposal(proposalId, thread, replyText) {
   if (!GOOGLE_API_KEY) throw new Error('No API key for revision');
   thread.revisions++;
   thread.status = 'revising';
-  const revisionPrompt = `You are revising a project proposal based on feedback from the author (Greg Iteen).\n\nCURRENT PROPOSAL:\n${thread.proposal.proposal_text}\n\nCURRENT CLIENT EMAIL DRAFT:\n${thread.proposal.client_email_draft}\n\nGREG'S FEEDBACK:\n${replyText}\n\nApply Greg's feedback precisely. Do not add anything he didn't ask for. Do not remove anything he didn't mention. If he gives specific wording, use it verbatim.\n\nReturn plain Markdown using exactly this delimiter contract. Do NOT return JSON and do not wrap the response in a code fence:\nSUBJECT: updated one-line subject\n---PROPOSAL---\nfull revised proposal\n---CLIENT_EMAIL---\nrevised client email\n---CHANGES---\nbrief factual summary of changes\n---END---`;
+  const revisionPrompt = `You are revising a project proposal based on feedback from the author (Greg Iteen).\n\nCURRENT PROPOSAL:\n${thread.proposal.proposal_text}\n\nCURRENT CLIENT EMAIL DRAFT:\n${thread.proposal.client_email_draft}\n\nGREG'S FEEDBACK:\n${replyText}\n\nApply Greg's feedback precisely. Do not add anything he didn't ask for. Do not remove anything he didn't mention. If he gives specific wording, use it verbatim.\n\nReturn plain text using exactly this delimiter contract. Do NOT return JSON and do not wrap the response in a code fence:\nSUBJECT: updated one-line subject\n---PROPOSAL---\n<div class="proposal-html">\nfull revised HTML proposal\n</div>\n---CLIENT_EMAIL---\nrevised client email\n---CHANGES---\nbrief factual summary of changes\n---END---`;
   const revision = await generateDelimitedProposal(GOOGLE_API_KEY, revisionPrompt, { requireChanges: true });
   thread.revision_history = [
     ...(Array.isArray(thread.revision_history) ? thread.revision_history : []),
@@ -1062,6 +1063,44 @@ createServer(async (req, res) => {
       res.writeHead(302, { 'Location': '/generate.html' });
     }
     res.end();
+    return;
+  }
+
+  // ── Branded proposal HTML page ──
+  if (urlPath.startsWith('/proposal/') && req.method === 'GET') {
+    const proposalId = urlPath.slice('/proposal/'.length).replace(/\/+$/, '');
+    const thread = proposalThreads.get(proposalId);
+    if (!thread) {
+      res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' });
+      res.end('<h1>Proposal not found</h1>');
+      return;
+    }
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(thread.proposal.subject_line || 'Proposal')}</title>
+<style>
+  body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 900px; margin: 0 auto; padding: 40px; background: #f9f9f9; }
+  .proposal-html { background: #fff; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+  h1, h2, h3 { color: #111; margin-top: 1.5em; }
+  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+  th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+  th { background-color: #f5f5f5; }
+  a { color: #ff6a00; text-decoration: none; }
+  .cta { display: inline-block; background: #ff6a00; color: #fff; padding: 12px 24px; text-decoration: none; font-weight: bold; border-radius: 4px; margin-top: 30px; }
+</style>
+</head>
+<body>
+  ${thread.proposal.proposal_text}
+  <div style="margin-top: 40px; text-align: center;">
+    <a class="cta" href="/sign/${proposalId}">Proceed to Signing &rarr;</a>
+  </div>
+</body>
+</html>`;
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    res.end(html);
     return;
   }
 
@@ -1902,12 +1941,14 @@ Write a professional, compelling, and SUPER SPECIFIC project proposal. Include:
 7. Why Greg is the right fit
 8. Next steps
 
-Keep it direct, confident, and professional. No fluff. This is from a technical expert, not a sales department. Use rich formatting in your Markdown (e.g., bolding, lists, nested bullet points) so it looks highly structured and detailed.
+Keep it direct, confident, and professional. No fluff. This is from a technical expert, not a sales department. Use rich, beautiful HTML (e.g., semantic tags, styled tables, CSS infographics, charts, and inline styles) so it looks highly structured and detailed, like a modern PRD.
 
-Return plain Markdown using exactly this delimiter contract. Do NOT put Markdown inside a JSON string and do not wrap the response in a code fence:
+Return plain text using exactly this delimiter contract. Do NOT put the HTML inside a JSON string and do not wrap the response in a code fence:
 SUBJECT: Proposal: [project type] for [company]
 ---PROPOSAL---
-the full proposal in clean Markdown
+<div class="proposal-html">
+the full proposal in rich HTML
+</div>
 ---CLIENT_EMAIL---
 a brief, warm email to the client that accompanies the proposal
 ---END---`;
