@@ -144,3 +144,28 @@ test('extractJson handles fences, prose, and trailing commas', () => {
   assert.deepEqual(extractJson('prefix {"a": [1, 2,], "b": {"c": 3,},} suffix'), { a: [1, 2], b: { c: 3 } });
   assert.throws(() => extractJson('no json here'), /no JSON object/);
 });
+
+test('extractJson ignores a stray trailing brace after a complete object', () => {
+  // Observed live: gemini-3.5-flash occasionally tacks on an extra '}' after
+  // an otherwise well-formed object. lastIndexOf('}') would slice that in,
+  // producing invalid JSON whose caller then leaked the raw text to users.
+  const raw = '{\n  "message": "hi there",\n  "complete": false\n}\n}\n';
+  assert.deepEqual(extractJson(raw), { message: 'hi there', complete: false });
+});
+
+test('extractJson repairs a single stray character spliced into otherwise-valid JSON', () => {
+  // Also observed live: a stray '"' spliced in right after a boolean literal,
+  // e.g. `"complete": false"}`. This isn't trailing garbage — the object
+  // itself is malformed — so it needs the position-based repair, not just
+  // brace-balancing.
+  const raw = '{"message": "hi there", "complete": false"}\n';
+  assert.deepEqual(extractJson(raw), { message: 'hi there', complete: false });
+});
+
+test('extractJson closes an object the model stopped emitting mid-way', () => {
+  // Also observed live: finishReason STOP (not MAX_TOKENS) but the model
+  // never emitted a closing brace at all — no '}' exists anywhere in the
+  // output, so brace-balancing alone can't recover it.
+  const raw = '{\n  "message": "hi there",\n  "complete": false';
+  assert.deepEqual(extractJson(raw), { message: 'hi there', complete: false });
+});

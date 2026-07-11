@@ -1740,7 +1740,11 @@ If NOT complete, respond with just:
         // blob to the user as the chat message.
         cnaResponse = extractJson(text);
       } catch {
-        cnaResponse = { message: text || 'I\'d love to hear about your project. What are you looking to build?', complete: false };
+        // Never fall back to raw `text` here — on genuine parse failure
+        // (e.g. truncated output) it's still JSON-shaped and would leak
+        // straight to the chat UI as the exact bug this fallback exists to
+        // avoid. Always use a clean, human-facing message instead.
+        cnaResponse = { message: 'I\'d love to hear about your project. What are you looking to build?', complete: false };
       }
 
       return sendJson(res, 200, cnaResponse);

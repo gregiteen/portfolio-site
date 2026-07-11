@@ -420,29 +420,119 @@ export function validateThemePayload(payload, { strict = true, requireAllLayouts
   return { errors, warnings, theme: errors.length ? null : { name, accent, css, layouts } };
 }
 
+// Scans for the closing brace matching the '{' at `start` by tracking depth
+// and respecting string literals — unlike lastIndexOf('}'), a stray extra
+// '}' some models tack on after an otherwise-complete object won't get
+// pulled in. Returns -1 if no balanced close is found (e.g. a stray quote
+// elsewhere in the object fooled the string tracker).
+function findBalancedEnd(s, start) {
+  let depth = 0, inString = false, escaped = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+// Closes an object the model stopped emitting mid-way (observed live with
+// finishReason STOP, not MAX_TOKENS — the model just never emitted a closing
+// brace) by tracking open strings/braces/brackets from `start` to the end of
+// the output and appending whatever's needed to close them, in reverse order.
+function closeIncompleteJson(s) {
+  let inString = false, escaped = false;
+  const stack = [];
+  for (const ch of s) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') stack.push('}');
+    else if (ch === '[') stack.push(']');
+    else if (ch === '}' || ch === ']') stack.pop();
+  }
+  let repaired = s;
+  if (inString) repaired += '"';
+  while (stack.length) repaired += stack.pop();
+  return repaired;
+}
+
+// Attempts increasingly aggressive repairs of near-valid JSON. Beyond
+// trailing commas, models occasionally splice a single stray character into
+// otherwise well-formed output (e.g. an extra '"' right after a boolean
+// literal). V8 reports the offending offset in its error message; deleting
+// that character and retrying — bounded so genuinely broken input still
+// throws — heals these without guessing at every possible corruption.
+function parseWithRepairs(s) {
+  try {
+    return JSON.parse(s);
+  } catch (err) {
+    try {
+      return JSON.parse(s.replace(/,\s*([}\]])/g, '$1'));
+    } catch {
+      let current = s;
+      for (let i = 0; i < 5; i++) {
+        try {
+          return JSON.parse(current);
+        } catch (repairErr) {
+          const m = /position (\d+)/.exec(repairErr.message);
+          const pos = m ? Number(m[1]) : -1;
+          if (pos < 0 || pos >= current.length) {
+            throw new Error(`could not parse JSON from model output: ${String(err)}`);
+          }
+          current = current.slice(0, pos) + current.slice(pos + 1);
+        }
+      }
+      throw new Error(`could not parse JSON from model output: ${String(err)}`);
+    }
+  }
+}
+
 /**
  * Pull the first JSON object out of raw model output. Handles code fences,
- * leading prose, and trailing junk. Throws with a useful message on failure.
+ * leading prose, trailing junk, and a bounded set of single-character model
+ * glitches. Throws with a useful message on failure.
  */
 export function extractJson(raw) {
   let s = String(raw).trim();
   const fence = s.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
   if (fence) s = fence[1].trim();
   const start = s.indexOf('{');
-  const end = s.lastIndexOf('}');
-  if (start < 0 || end <= start) throw new Error('no JSON object found in model output');
-  s = s.slice(start, end + 1);
-  try {
-    return JSON.parse(s);
-  } catch (err) {
-    // One common failure: trailing commas.
+  if (start < 0) throw new Error('no JSON object found in model output');
+
+  const balancedEnd = findBalancedEnd(s, start);
+  const lastEnd = s.lastIndexOf('}');
+  const candidates = [...new Set([balancedEnd, lastEnd])].filter((end) => end > start);
+
+  let lastError;
+  for (const end of candidates) {
     try {
-      return JSON.parse(s.replace(/,\s*([}\]])/g, '$1'));
-    } catch {
-      // Consistent contract: return a parsed object or throw. Silently
-      // returning undefined here made callers crash later on `undefined.x`
-      // (e.g. improve-theme reading `.score`) instead of skipping gracefully.
-      throw new Error(`could not parse JSON from model output: ${String(err)}`);
+      return parseWithRepairs(s.slice(start, end + 1));
+    } catch (err) {
+      lastError = err;
     }
+  }
+  // No closing brace anywhere (or every candidate still failed): the model
+  // may have stopped mid-object. Try auto-closing whatever's left open.
+  try {
+    return parseWithRepairs(closeIncompleteJson(s.slice(start)));
+  } catch (err) {
+    // Consistent contract: return a parsed object or throw. Silently
+    // returning undefined here made callers crash later on `undefined.x`
+    // (e.g. improve-theme reading `.score`) instead of skipping gracefully.
+    throw lastError || err;
   }
 }

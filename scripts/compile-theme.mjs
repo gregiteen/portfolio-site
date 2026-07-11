@@ -297,7 +297,15 @@ async function geminiText(userPrompt, schema = null, maxOutputTokens = 65536, th
   return parts.map(p => p.text || '').join('');
 }
 
-async function generateImage(imagePrompt, outputPath, baseImagePath = null) {
+// Logo/favicon stay on the full image model — it renders small legible text
+// far more reliably, and that's exactly the defect ("garbled letterforms",
+// "GI" reading as "CII") that's been triggering repair passes and re-rolls.
+// Hero/portrait have no text to render, so they get the ~4x faster Lite
+// model (Nano Banana 2 Lite) with no observed quality tradeoff.
+const IMAGE_MODEL = 'gemini-3.1-flash-image';
+const IMAGE_MODEL_LITE = 'gemini-3.1-flash-lite-image';
+
+async function generateImage(imagePrompt, outputPath, baseImagePath = null, model = IMAGE_MODEL) {
   const parts = [];
   if (baseImagePath) {
     const { readFile: rf } = await import('node:fs/promises');
@@ -305,11 +313,11 @@ async function generateImage(imagePrompt, outputPath, baseImagePath = null) {
     parts.push({ inlineData: { mimeType: 'image/jpeg', data } });
   }
   parts.push({ text: imagePrompt });
-  return generateImageParts(parts, outputPath, imagePrompt);
+  return generateImageParts(parts, outputPath, imagePrompt, model);
 }
 
-async function generateImageParts(requestParts, outputPath, label) {
-  const parts = await geminiApiCall('gemini-3.1-flash-image', {
+async function generateImageParts(requestParts, outputPath, label, model = IMAGE_MODEL) {
+  const parts = await geminiApiCall(model, {
     contents: [{ parts: requestParts }],
     generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
   });
@@ -493,10 +501,10 @@ OUTPUT: exactly one JSON object:
     .catch(async () => { await copyFile(fallbackSource, targetPath); return false; });
   const imagePromise = GOOGLE_API_KEY
     ? Promise.allSettled([
-        withFallback(generateImage(planObj.image_prompts?.hero || 'Hero', heroPath), heroFallback, heroPath),
+        withFallback(generateImage(planObj.image_prompts?.hero || 'Hero', heroPath, null, IMAGE_MODEL_LITE), heroFallback, heroPath),
         withFallback(generateImage(`${logoPrompt}\n\nRULES: a flat, professional brand wordmark reading exactly "greg.iteen" or the monogram "GI" — perfect spelling, crisp legible letterforms. One confident mark; the background must match the theme's shell/header color so it composites seamlessly. No watermark, no mockup, no 3D render, no photograph.`, logoPath), logoSource, logoPath),
         withFallback(generateImage(`${logoPrompt}\n\nNow as a FAVICON: a single square app-icon glyph — the monogram "GI" or one bold symbol from the mark, perfectly legible at 32px, flat, centered, filling the square. Exact spelling if letters are used; no other words, no fine detail.`, faviconPath), faviconSource, faviconPath),
-        withFallback(generateImage(`${portraitStyle}\n\nHARD CONSTRAINT: this is the same person — identical face, identical likeness, editorial quality. Restyle the photographic treatment only. No text, no watermark, no distortion of features.`, portraitPath, portraitSource), portraitSource, portraitPath),
+        withFallback(generateImage(`${portraitStyle}\n\nHARD CONSTRAINT: this is the same person — identical face, identical likeness, editorial quality. Restyle the photographic treatment only. No text, no watermark, no distortion of features.`, portraitPath, portraitSource, IMAGE_MODEL_LITE), portraitSource, portraitPath),
       ])
     : (console.warn('  ⚠ GOOGLE_API_KEY not set — skipping images'), Promise.resolve([]));
 
@@ -800,7 +808,7 @@ OUTPUT: exactly one JSON object: { "approved": true, "issues": [] }`,
       const named = IMAGE_LABELS.filter((l) => issues.toLowerCase().includes(l));
       const regen = named.length ? named : ['hero'];
       await Promise.allSettled(regen.map((asset) => {
-        if (asset === 'hero') return withFallback(generateImage(`${planObj.image_prompts?.hero || prompt}\n\nCORRECTIVE REQUIREMENTS: Create a clean, believable, text-free editorial hero only. Never show drafting tools, diagrams, interface overlays, floating HUD marks, logos, watermarks, checkerboards, malformed objects, or distorted architecture.`, heroPath), heroFallback, heroPath);
+        if (asset === 'hero') return withFallback(generateImage(`${planObj.image_prompts?.hero || prompt}\n\nCORRECTIVE REQUIREMENTS: Create a clean, believable, text-free editorial hero only. Never show drafting tools, diagrams, interface overlays, floating HUD marks, logos, watermarks, checkerboards, malformed objects, or distorted architecture.`, heroPath, null, IMAGE_MODEL_LITE), heroFallback, heroPath);
         if (asset === 'logo') return withFallback(generateImage(`${logoPrompt}\n\nCORRECTIVE PASS — the previous attempt had illegible letterforms. The mark must read EXACTLY "greg.iteen" or "GI", perfectly spelled and crisply legible. Flat graphic design on the theme's shell color. Nothing else.`, logoPath), logoSource, logoPath);
         if (asset === 'favicon') return withFallback(generateImage(`${logoPrompt}\n\nCORRECTIVE FAVICON PASS — one bold, flat glyph ("GI" monogram or single symbol), perfectly legible at 32px, centered, filling the square, theme colors. Nothing else.`, faviconPath), faviconSource, faviconPath);
         return copyFile(portraitSource, portraitPath);
@@ -905,19 +913,7 @@ ${blocks}
         throw new Error(`Review board still rejected the theme (source ${audit.score}/10, rendered ${renderOk ? 'approved' : `${renderBlocking.length} blocking issue(s)`}) after 3 targeted repair passes; nothing was published`);
       }
 
-      // A deeply bad initial sample (≤5/10) is an incoherent base — surgical
-      // repairs cannot rescue it. Re-roll the entire specialist fan-out once
-      // for a fresh sample and review that instead.
-      if (pass === 1 && !sourceOk && audit.score <= 5) {
-        console.log(`  → Deep quality failure (${audit.score}/10) — re-rolling the full specialist fan-out instead of patching…`);
-        await runSpecialistFanOut();
-        await repairStructuralViolations(payload);
-        theme = validateForRelease(payload);
-        await writeDesignMd(theme);
-        buildDesignLayer();
-        needSourceReview = true;
-        continue;
-      }
+
 
       const issuesByTarget = new Map();
       for (const issue of [...(sourceOk ? [] : audit.blocking_issues), ...renderVerdict.issues]) {

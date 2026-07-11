@@ -46,20 +46,21 @@ a.out:hover{color:var(--white)}
 .narrate{margin-top:8px;font-size:.92rem;color:var(--white);min-height:1.4em;transition:opacity .4s}
 .meta{margin-top:10px;display:flex;gap:18px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
 
-/* ── Intake card ── */
-.intake{margin-top:38px;border:1px solid var(--line);padding:24px 22px;max-width:560px}
+/* ── Chat ── */
+.chat{margin-top:38px;display:flex;flex-direction:column;max-width:560px;border:1px solid var(--line);padding:20px;height:350px;display:none;}
+.chat.visible{display:flex;}
 .intake-label{font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:18px}
-.q{transition:opacity .4s}
-.q.hidden{display:none}
-.q-title{font-size:1rem;margin-bottom:12px}
-.q-title .opt{color:var(--faint);font-size:.8rem}
-.q-chips{display:flex;flex-wrap:wrap;gap:8px}
-.qchip{font-family:'IBM Plex Mono',monospace;font-size:.64rem;letter-spacing:.12em;text-transform:uppercase;border:1px solid var(--line);background:transparent;color:var(--gray);padding:10px 14px;cursor:pointer;transition:all .2s}
-.qchip:hover{border-color:var(--accent);color:var(--white)}
-.qchip.send{margin-top:12px;background:var(--white);color:var(--black);border-color:var(--white)}
-.qchip.send:hover{background:var(--accent);color:var(--white);border-color:var(--accent)}
-.q input[type=text]{width:100%;background:transparent;border:0;border-bottom:1px solid var(--line);color:var(--white);font-family:'Archivo',sans-serif;font-size:1rem;padding:8px 2px 10px;outline:none}
-.q input[type=text]:focus{border-color:var(--accent)}
+.messages{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;margin-bottom:16px;}
+.msg{max-width:90%;padding:10px 14px;font-size:.85rem;line-height:1.5;border-radius:2px;}
+.msg.ai{align-self:flex-start;background:rgba(245,245,243,.06);border-left:2px solid var(--accent);color:var(--white);}
+.msg.user{align-self:flex-end;background:var(--white);color:var(--black);}
+.msg.typing::after{content:'…';animation:blink 1s steps(3) infinite;}
+@keyframes blink{0%,100%{opacity:.2}50%{opacity:1}}
+.input-row{display:flex;gap:8px;}
+.input-row input{flex:1;padding:10px;border:1px solid var(--line);background:transparent;color:var(--white);font-family:'Archivo',sans-serif;font-size:.9rem;outline:none;}
+.input-row input:focus{border-color:var(--white);}
+.input-row button{padding:10px 16px;border:1px solid var(--accent);background:var(--accent);color:var(--white);font-family:'IBM Plex Mono',monospace;font-size:.7rem;text-transform:uppercase;cursor:pointer;}
+.input-row button:hover{background:transparent;color:var(--white);}
 
 /* ── Dramatic reveal ── */
 .reveal{position:fixed;inset:0;z-index:100;background:#000;display:none;align-items:center;justify-content:center;flex-direction:column}
@@ -97,33 +98,13 @@ a.out:hover{color:var(--white)}
       <div class="narrate" id="narrate"></div>
       <div class="meta"><span id="elapsed"></span><span>Typically 2–4 minutes — every design is quality-reviewed before you see it.</span></div>
 
-      <!-- While the studio works: 3 quick taps that shape the visitor's proposal -->
-      <div class="intake" id="intake">
-        <div class="intake-label">While the studio works — 20 seconds, and your proposal gets sharper:</div>
-        <div class="q" data-q="reason">
-          <div class="q-title">What brings you here?</div>
-          <div class="q-chips">
-            <button type="button" class="qchip" data-v="custom-project">A custom build</button>
-            <button type="button" class="qchip" data-v="ultrachat-setup">An AI workspace (UltraChat)</button>
-            <button type="button" class="qchip" data-v="festech-setup">An event platform (festech)</button>
-            <button type="button" class="qchip" data-v="exploring">Just exploring</button>
-          </div>
-        </div>
-        <div class="q hidden" data-q="timeline">
-          <div class="q-title">When would it need to be live?</div>
-          <div class="q-chips">
-            <button type="button" class="qchip" data-v="asap">ASAP</button>
-            <button type="button" class="qchip" data-v="this-quarter">This quarter</button>
-            <button type="button" class="qchip" data-v="later">Exploring for later</button>
-          </div>
-        </div>
-        <div class="q hidden" data-q="project">
-          <div class="q-title">One line on what you'd build first? <span class="opt">(optional)</span></div>
-          <input type="text" id="projectLine" maxlength="300" placeholder="e.g. an AI concierge for our booking flow">
-          <button type="button" class="qchip send" id="intakeSend">Send it →</button>
-        </div>
-        <div class="q hidden" data-q="thanks">
-          <div class="q-title">Noted. If you request a proposal, it'll already know this.</div>
+      <!-- Chat during generation -->
+      <div class="chat" id="chatContainer">
+        <div class="intake-label">While the studio works, let's talk about your project:</div>
+        <div class="messages" id="chatMsgs"></div>
+        <div class="input-row">
+          <input type="text" id="chatInput" placeholder="Tell me about your project…">
+          <button type="button" id="chatSend">Send</button>
         </div>
       </div>
     </div>
@@ -160,6 +141,13 @@ a.out:hover{color:var(--white)}
     if(!startedAt||!polling)return;
     var s=Math.max(0,Math.round((Date.now()-startedAt)/1000));
     elapsedEl.textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+    if (s > 240 && !window.emailNotified) {
+      window.emailNotified = true;
+      var errEl = document.createElement('div');
+      errEl.style.cssText = 'color:#ff5a4e;margin-top:10px;font-family:"IBM Plex Mono",monospace;font-size:0.7rem;';
+      errEl.textContent = 'This is taking longer than usual. We will email you when it completes.';
+      document.getElementById('progress').appendChild(errEl);
+    }
   },1000);
   function updateNarration(phase){
     if(!phase)return;
@@ -189,28 +177,40 @@ a.out:hover{color:var(--white)}
     setTimeout(function(){location.href=targetUrl;},4600);         // enter
   }
 
-  // ── Intake: 3 quick taps → visitor profile → sharper proposal ──
-  var intakeAnswers={};
-  function showQ(name){
-    document.querySelectorAll('.q').forEach(function(q){q.classList.add('hidden');});
-    var q=document.querySelector('.q[data-q="'+name+'"]');
-    if(q)q.classList.remove('hidden');
+  // ── Chat ──
+  var chatContainer=document.getElementById('chatContainer');
+  var chatMsgs=document.getElementById('chatMsgs');
+  var chatInput=document.getElementById('chatInput');
+  var chatSend=document.getElementById('chatSend');
+  var conversationHistory=[];
+  var chatInitialized=false;
+
+  function addMsg(text,role){
+    var d=document.createElement('div');d.className='msg '+role;d.textContent=text;
+    chatMsgs.appendChild(d);chatMsgs.scrollTop=chatMsgs.scrollHeight;
+    return d;
   }
-  function sendIntake(){
-    fetch('/api/intake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(intakeAnswers)}).catch(function(){});
-    showQ('thanks');
+  function sendChat(){
+    var v=chatInput.value.trim();if(!v)return;
+    chatInput.value='';addMsg(v,'user');
+    conversationHistory.push({role:'user',content:v});
+    var t=addMsg('','ai typing');
+    fetch('/api/cna',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({history:conversationHistory})})
+      .then(function(r){return r.json()}).then(function(d){
+        t.remove();
+        if(d.message){addMsg(d.message,'ai');conversationHistory.push({role:'assistant',content:d.message});}
+      }).catch(function(){t.remove();addMsg('Error connecting to chat.','ai');});
   }
-  document.querySelectorAll('.q[data-q="reason"] .qchip').forEach(function(c){
-    c.addEventListener('click',function(){intakeAnswers.reason=c.dataset.v;showQ('timeline');});
-  });
-  document.querySelectorAll('.q[data-q="timeline"] .qchip').forEach(function(c){
-    c.addEventListener('click',function(){intakeAnswers.timeline=c.dataset.v;showQ('project');});
-  });
-  document.getElementById('intakeSend').addEventListener('click',function(){
-    var v=document.getElementById('projectLine').value.trim();
-    if(v)intakeAnswers.project=v;
-    sendIntake();
-  });
+  chatSend.addEventListener('click',sendChat);
+  chatInput.addEventListener('keypress',function(e){if(e.key==='Enter')sendChat();});
+
+  function startChat(){
+    if(chatInitialized)return;
+    chatInitialized=true;
+    chatContainer.classList.add('visible');
+    addMsg('Welcome! Tell me about the project you have in mind while we generate your design.','ai');
+    conversationHistory.push({role:'assistant',content:'Welcome! Tell me about the project you have in mind while we generate your design.'});
+  }
 
   var polling=false;
 
@@ -259,6 +259,7 @@ a.out:hover{color:var(--white)}
     e.preventDefault();
     var v=input.value.trim();if(!v)return;
     setBusy(true);prog.classList.add('on');status.classList.remove('err');
+    startChat();
     status.textContent='Dispatching the design team…';bar.style.width='6%';
     fetch('/generate-theme',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:v})})
       .then(function(r){return r.json()})
@@ -268,7 +269,7 @@ a.out:hover{color:var(--white)}
 
   // Resume a generation already in flight (e.g. arrived from verify).
   fetch('/generate-status').then(function(r){return r.json()}).then(function(d){
-    if(d.status==='running'){setBusy(true);prog.classList.add('on');poll();}
+    if(d.status==='running'){setBusy(true);prog.classList.add('on');startChat();poll();}
   }).catch(function(){});
 })();
 </script>
