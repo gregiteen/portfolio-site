@@ -309,7 +309,7 @@ async function generateImage(imagePrompt, outputPath, baseImagePath = null) {
 }
 
 async function generateImageParts(requestParts, outputPath, label) {
-  const parts = await geminiApiCall('gemini-3.1-flash-lite-image', {
+  const parts = await geminiApiCall('gemini-3.1-flash-image', {
     contents: [{ parts: requestParts }],
     generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
   });
@@ -494,8 +494,8 @@ OUTPUT: exactly one JSON object:
   const imagePromise = GOOGLE_API_KEY
     ? Promise.allSettled([
         withFallback(generateImage(planObj.image_prompts?.hero || 'Hero', heroPath), heroFallback, heroPath),
-        withFallback(generateImage(`Restyle this existing wordmark to fit this design language: ${logoPrompt}\n\nHARD CONSTRAINTS: keep the letterforms EXACTLY as given — same glyphs, same spelling, same proportions. Change ONLY color, texture, and background treatment; the background must match the theme's shell/header color so it composites seamlessly. Flat graphic design — no 3D, no photo, no watermark, no added text.`, logoPath, logoSource), logoSource, logoPath),
-        withFallback(generateImage(`Restyle this existing square favicon glyph to fit this design language: ${logoPrompt}\n\nHARD CONSTRAINTS: keep the glyph shape EXACTLY as given. Change ONLY the colors and background to match the theme. One bold mark filling the square, readable at 32px, flat, no added detail or text.`, faviconPath, faviconSource), faviconSource, faviconPath),
+        withFallback(generateImage(`${logoPrompt}\n\nRULES: a flat, professional brand wordmark reading exactly "greg.iteen" or the monogram "GI" — perfect spelling, crisp legible letterforms. One confident mark; the background must match the theme's shell/header color so it composites seamlessly. No watermark, no mockup, no 3D render, no photograph.`, logoPath), logoSource, logoPath),
+        withFallback(generateImage(`${logoPrompt}\n\nNow as a FAVICON: a single square app-icon glyph — the monogram "GI" or one bold symbol from the mark, perfectly legible at 32px, flat, centered, filling the square. Exact spelling if letters are used; no other words, no fine detail.`, faviconPath), faviconSource, faviconPath),
         withFallback(generateImage(`${portraitStyle}\n\nHARD CONSTRAINT: this is the same person — identical face, identical likeness, editorial quality. Restyle the photographic treatment only. No text, no watermark, no distortion of features.`, portraitPath, portraitSource), portraitSource, portraitPath),
       ])
     : (console.warn('  ⚠ GOOGLE_API_KEY not set — skipping images'), Promise.resolve([]));
@@ -801,8 +801,8 @@ OUTPUT: exactly one JSON object: { "approved": true, "issues": [] }`,
       const regen = named.length ? named : ['hero'];
       await Promise.allSettled(regen.map((asset) => {
         if (asset === 'hero') return withFallback(generateImage(`${planObj.image_prompts?.hero || prompt}\n\nCORRECTIVE REQUIREMENTS: Create a clean, believable, text-free editorial hero only. Never show drafting tools, diagrams, interface overlays, floating HUD marks, logos, watermarks, checkerboards, malformed objects, or distorted architecture.`, heroPath), heroFallback, heroPath);
-        if (asset === 'logo') return copyFile(logoSource, logoPath);
-        if (asset === 'favicon') return copyFile(faviconSource, faviconPath);
+        if (asset === 'logo') return withFallback(generateImage(`${logoPrompt}\n\nCORRECTIVE PASS — the previous attempt had illegible letterforms. The mark must read EXACTLY "greg.iteen" or "GI", perfectly spelled and crisply legible. Flat graphic design on the theme's shell color. Nothing else.`, logoPath), logoSource, logoPath);
+        if (asset === 'favicon') return withFallback(generateImage(`${logoPrompt}\n\nCORRECTIVE FAVICON PASS — one bold, flat glyph ("GI" monogram or single symbol), perfectly legible at 32px, centered, filling the square, theme colors. Nothing else.`, faviconPath), faviconSource, faviconPath);
         return copyFile(portraitSource, portraitPath);
       }));
       visualAudit = await auditVisualAssets();
@@ -954,10 +954,15 @@ ${blocks}
         try {
           parts = await geminiApiCall('gemini-3.5-flash', request);
         } catch (err) {
-          // Same transient-retry contract as geminiText: one flaky request
-          // must not kill a multi-minute build.
-          console.warn(`  ⚠ Transient Gemini failure in vision repair (${String(err).slice(0, 100)}); retrying once…`);
-          parts = await geminiApiCall('gemini-3.5-flash', request);
+          // The screenshot payload is what makes these calls slow enough to
+          // time out — a same-payload retry has been observed to time out
+          // twice in a row and kill the build. Retry BLIND (text only):
+          // a less-informed repair beats a dead generation.
+          console.warn(`  ⚠ Vision repair failed (${String(err).slice(0, 100)}); retrying without screenshots…`);
+          parts = await geminiApiCall('gemini-3.5-flash', {
+            ...request,
+            contents: [{ parts: [request.contents[0].parts[0]] }],
+          });
         }
         return parts.map((p) => p.text || '').join('');
       };
