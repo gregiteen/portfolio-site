@@ -20,6 +20,7 @@ import {
   validateThemePayload,
   serializeThemeDoc,
 } from './lib/theme.mjs';
+import { CSS_EXEMPLARS, LAYOUT_EXEMPLARS } from './lib/design-exemplars.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const designsDir = join(__dirname, '..', 'designs');
@@ -197,6 +198,11 @@ ${JSON.stringify({ css, layouts })}
 
 PLACEHOLDER CONTRACT:
 ${placeholderContract}
+
+TECHNICAL TOOLKIT (HIGH-END FRONTEND MECHANICS):
+The CSS and HTML should aggressively utilize the high-end techniques demonstrated below (like scroll-driven animations, fluid masking, or glassmorphism). If the theme just uses basic flex/grid layouts without these mechanics, score it lower and force an improvement.
+${CSS_EXEMPLARS}
+${LAYOUT_EXEMPLARS}
 
 OUTPUT: Return exactly one JSON object:
 {

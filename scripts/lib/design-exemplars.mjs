@@ -1,5 +1,5 @@
 export const DIRECTOR_EXEMPLARS = `
-**Example 1: 2026 Tactile Brutalism & Precision**
+**Example 1: Valid YAML Token Structure (SYNTAX ONLY - DO NOT COPY STYLE)**
 OUTPUT:
 \`\`\`yaml
 tokens:
@@ -16,8 +16,7 @@ tokens:
   layout:
     max_width: '100vw'
 \`\`\`
-
-**Example 2: 2026 High-Fashion Editorial & Storytelling**
+**Example 2: Valid YAML Layout Architecture (SYNTAX ONLY - DO NOT COPY STYLE)**
 OUTPUT:
 \`\`\`yaml
 tokens:
@@ -37,42 +36,42 @@ tokens:
 `;
 
 export const CSS_EXEMPLARS = `
-**Example 1 (For CSS section: 'layout')**
-PROMPT (User Input):
-THIS SECTION'S JOB: Structural scaffolding: header/nav/footer, page containers/wrappers, and the grid/column systems. Style ONLY the layout-group classes the contract assigns.
+**Example 1 (Technical Toolkit: Scroll-Driven Animations)**
+PROMPT (User Input): THIS SECTION'S JOB: Add scroll-driven reveals to elements.
 OUTPUT (Your Response):
-{"css": ".frame { width: 100vw; min-height: 100vh; background: var(--bg); color: var(--text); display: grid; grid-template-columns: 1fr; position: relative; } @media (min-width: 768px) { .frame { grid-template-columns: 320px 1fr; border-left: 1px solid var(--text); } } .asymmetric-grid { display: grid; grid-template-columns: 1fr; gap: var(--grid_gap); } @media (min-width: 1024px) { .asymmetric-grid { grid-template-columns: repeat(3, 1fr); } }"}
+{"css": "@supports (animation-timeline: scroll()) { .scroll-reveal { opacity: 0; transform: translateY(40px) scale(0.98); animation: reveal linear both; animation-timeline: view(); animation-range: entry 10% cover 30%; } } @keyframes reveal { to { opacity: 1; transform: translateY(0) scale(1); } }"}
 
-**Example 2 (For CSS section: 'base')**
-PROMPT (User Input):
-THIS SECTION'S JOB: Reset, box-sizing, html/body, base typography (headings, paragraphs, lists), links, images, and any global element defaults. Reference tokens via var(--…).
+**Example 2 (Technical Toolkit: Kinetic Hover & Fluid Masking)**
+PROMPT (User Input): THIS SECTION'S JOB: Create high-end kinetic hover states for image cards.
 OUTPUT (Your Response):
-{"css": "*, *::before, *::after { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-body); -webkit-font-smoothing: antialiased; } h1.display { font-family: var(--font-display); font-size: clamp(4rem, 12vw, 11rem); line-height: 0.82; letter-spacing: -0.05em; text-transform: uppercase; margin: 0; padding-bottom: var(--space-lg); transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1); } h1.display:hover { transform: skewX(-5deg) scale(1.02); color: var(--accent); } p.lede { font-family: var(--font-body); font-size: clamp(1.2rem, 2.5vw, 1.8rem); max-width: 40ch; line-height: 1.3; }"}
+{"css": ".fluid-mask { overflow: hidden; clip-path: inset(0 round var(--radius)); transition: clip-path 0.6s cubic-bezier(0.16, 1, 0.3, 1); } .hover-trigger:hover .fluid-mask { clip-path: inset(2% round var(--radius-lg)); } .fluid-mask img { transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1); } .hover-trigger:hover .fluid-mask img { transform: scale(1.05); }"}
+
+**Example 3 (Technical Toolkit: Glassmorphism & Structural CSS Noise)**
+PROMPT (User Input): THIS SECTION'S JOB: Create a tactile, premium glassmorphism container with physical texture.
+OUTPUT (Your Response):
+{"css": ".glass-panel { background: rgba(var(--bg-rgb), 0.6); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); border: 1px solid rgba(var(--text-rgb), 0.1); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08); position: relative; } .glass-panel::after { content: ''; position: absolute; inset: 0; background-image: url('data:image/svg+xml;utf8,%3Csvg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"%3E%3Cfilter id="noiseFilter"%3E%3CfeTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" stitchTiles="stitch"/%3E%3C/filter%3E%3Crect width="100%25" height="100%25" filter="url(%23noiseFilter)" opacity="0.04"/%3E%3C/svg%3E'); pointer-events: none; z-index: 10; }"}
 `;
 
 export const LAYOUT_EXEMPLARS = `
-**Example 1 (For Layout: 'shell')**
+**Example 1 (For Layout: 'shell' - SHOWS CORRECT PLACEHOLDER INJECTION)**
 PROMPT (User Input):
 This "shell" layout MUST contain these exact placeholder(s): {{CONTENT}}
 Optional placeholder(s): {{NAV_LINKS}}, {{THEME_PILLS}}, {{SOURCE_PATH}}
 OUTPUT (Your Response):
 {"html": "<div class=\\"frame\\"><nav class=\\"global-nav\\">{{NAV_LINKS}}</nav><main class=\\"main-content-flow\\">{{CONTENT}}</main><footer class=\\"global-footer\\">{{THEME_PILLS}}</footer></div>"}
-
-**Example 2 (For Layout: 'home')**
+**Example 2 (For Layout: 'home' - SHOWS CORRECT PLACEHOLDER INJECTION)**
 PROMPT (User Input):
 This "home" layout MUST contain these exact placeholder(s): {{FEATURED_PROJECTS}}
 Optional placeholder(s): {{HEADLINE}}, {{TAGLINE}}, {{INTRO}}
 OUTPUT (Your Response):
 {"html": "<section class=\\"home-container\\"><header class=\\"hero\\"><h1 class=\\"display kinetic-hover\\">{{HEADLINE}}</h1><p class=\\"lede\\">{{TAGLINE}}</p><div class=\\"prose\\">{{INTRO}}</div></header><div class=\\"grid precision-border-top\\">{{FEATURED_PROJECTS}}</div></section>"}
-
-**Example 3 (For Layout: 'projects_index')**
+**Example 3 (For Layout: 'projects_index' - SHOWS CORRECT PLACEHOLDER INJECTION)**
 PROMPT (User Input):
 This "projects_index" layout MUST contain these exact placeholder(s): {{PROJECT_LIST}}
 Optional placeholder(s): {{PROJECT_COUNT}}
 OUTPUT (Your Response):
 {"html": "<div class=\\"editorial-wrapper\\"><h2 class=\\"section-title\\">Selected Works ({{PROJECT_COUNT}})</h2><div class=\\"asymmetric-grid scroll-reveal\\">{{PROJECT_LIST}}</div></div>"}
-
-**Example 4 (For Layout: 'project_item')**
+**Example 4 (For Layout: 'project_item' - SHOWS CORRECT PLACEHOLDER INJECTION)**
 PROMPT (User Input):
 This "project_item" layout MUST contain these exact placeholder(s): {{NAME}}, {{URL}}
 Optional placeholder(s): {{DESCRIPTION}}, {{YEAR}}, {{TECH_BADGES}}, {{LOGO}}, {{INDEX}}, {{REPO_URL}}

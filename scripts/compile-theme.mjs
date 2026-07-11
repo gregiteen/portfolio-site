@@ -432,7 +432,11 @@ THE BRIEF: "${prompt}"
 SITE CONTEXT:
 ${SITE_CONTEXT}
 
-Choose a specific, credible design movement and make concrete decisions. Avoid generic dark-tech, glass, gradient, and cyberpunk tropes.`;
+TECHNICAL TOOLKIT (HIGH-END FRONTEND MECHANICS):
+${CSS_EXEMPLARS}
+${LAYOUT_EXEMPLARS}
+
+Choose a specific, credible design movement and make concrete decisions. Avoid generic dark-tech, glass, gradient, and cyberpunk tropes. You are the Orchestrator; you must explicitly dictate WHICH advanced frontend mechanics (e.g. scroll-reveals, fluid masking, glassmorphism) from the Technical Toolkit should be used to execute your vision. You must articulate this clearly so your CSS/HTML specialists know exactly what mechanics to build.`;
 
   async function callAgent(p, schema = null, maxOutputTokens = 16384, thinkingBudget = null, model = 'gemini-3.5-flash', allowNoThinkingRetry = true) {
     if (GOOGLE_API_KEY) {
