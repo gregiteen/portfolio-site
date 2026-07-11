@@ -1,5 +1,6 @@
 export const DIRECTOR_EXEMPLARS = `
-### EXEMPLAR 1: "2026 Tactile Brutalism & Precision"
+**Example 1: 2026 Tactile Brutalism & Precision**
+OUTPUT:
 \`\`\`yaml
 tokens:
   color:
@@ -15,10 +16,9 @@ tokens:
   layout:
     max_width: '100vw'
 \`\`\`
-**Design Rationale:**
-Reflecting the July 2026 shift toward "Tactile Brutalism" and engineered precision. We are avoiding the homogenized, soft, blurry UI typical of low-end AI generators. The layout relies on a strict, visible 1px grid structure (using borders as structural architecture). Typography is massive, acting as the interface itself rather than just content. Performance is paramount: we use CSS noise and grain instead of heavy 3D assets to create a human-crafted, tactile feel.
 
-### EXEMPLAR 2: "2026 High-Fashion Editorial & Storytelling"
+**Example 2: 2026 High-Fashion Editorial & Storytelling**
+OUTPUT:
 \`\`\`yaml
 tokens:
   color:
@@ -34,77 +34,48 @@ tokens:
   layout:
     max_width: '1440px'
 \`\`\`
-**Design Rationale:**
-Driven by the 2026 trend of human-centric storytelling to counter AI saturation. This design relies on dramatic, emotional whitespace and high-contrast typography. The hero section eschews traditional photography in favor of kinetic, viewport-scaled typography that serves as the brand narrative. Micro-interactions and hover states are gamified and purposeful, guiding the user through a cinematic vertical scroll journey.
 `;
 
 export const CSS_EXEMPLARS = `
-### EXEMPLAR 1: 2026 Tactile Brutalism (Structural Grid & CSS Textures)
-\`\`\`css
-.frame {
-  width: 100vw;
-  min-height: 100vh;
-  background: var(--bg);
-  color: var(--text);
-  display: grid;
-  grid-template-columns: 1fr;
-  /* CSS Texture: subtle noise overlay for tactile feel */
-  position: relative;
-}
-.frame::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background-image: url('data:image/svg+xml;utf8,%3Csvg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"%3E%3Cfilter id="noiseFilter"%3E%3CfeTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="3" stitchTiles="stitch"/%3E%3C/filter%3E%3Crect width="100%25" height="100%25" filter="url(%23noiseFilter)" opacity="0.04"/%3E%3C/svg%3E');
-  pointer-events: none;
-  z-index: 9999;
-}
-@media (min-width: 768px) {
-  .frame {
-    grid-template-columns: 320px 1fr;
-    /* 1px Solid Borders for Engineered Precision */
-    border-left: 1px solid var(--text);
-  }
-}
-\`\`\`
+**Example 1 (For CSS section: 'layout')**
+PROMPT (User Input):
+THIS SECTION'S JOB: Structural scaffolding: header/nav/footer, page containers/wrappers, and the grid/column systems. Style ONLY the layout-group classes the contract assigns.
+OUTPUT (Your Response):
+{"css": ".frame { width: 100vw; min-height: 100vh; background: var(--bg); color: var(--text); display: grid; grid-template-columns: 1fr; position: relative; } @media (min-width: 768px) { .frame { grid-template-columns: 320px 1fr; border-left: 1px solid var(--text); } } .asymmetric-grid { display: grid; grid-template-columns: 1fr; gap: var(--grid_gap); } @media (min-width: 1024px) { .asymmetric-grid { grid-template-columns: repeat(3, 1fr); } }"}
 
-### EXEMPLAR 2: Typography as Interface (Viewport Scaled & Kinetic)
-\`\`\`css
-h1.display {
-  font-family: var(--font-display);
-  /* Massive, viewport-scaled typography replacing traditional hero imagery */
-  font-size: clamp(4rem, 12vw, 11rem);
-  line-height: 0.82;
-  letter-spacing: -0.05em;
-  text-transform: uppercase;
-  margin: 0;
-  padding-bottom: var(--space-lg);
-  /* Hover-triggered macro-animation */
-  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-}
-h1.display:hover {
-  transform: skewX(-5deg) scale(1.02);
-  color: var(--accent);
-}
-p.lede {
-  font-family: var(--font-body);
-  font-size: clamp(1.2rem, 2.5vw, 1.8rem);
-  max-width: 40ch;
-  line-height: 1.3;
-}
-\`\`\`
+**Example 2 (For CSS section: 'base')**
+PROMPT (User Input):
+THIS SECTION'S JOB: Reset, box-sizing, html/body, base typography (headings, paragraphs, lists), links, images, and any global element defaults. Reference tokens via var(--…).
+OUTPUT (Your Response):
+{"css": "*, *::before, *::after { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-body); -webkit-font-smoothing: antialiased; } h1.display { font-family: var(--font-display); font-size: clamp(4rem, 12vw, 11rem); line-height: 0.82; letter-spacing: -0.05em; text-transform: uppercase; margin: 0; padding-bottom: var(--space-lg); transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1); } h1.display:hover { transform: skewX(-5deg) scale(1.02); color: var(--accent); } p.lede { font-family: var(--font-body); font-size: clamp(1.2rem, 2.5vw, 1.8rem); max-width: 40ch; line-height: 1.3; }"}
 `;
 
 export const LAYOUT_EXEMPLARS = `
-### EXEMPLAR 1: The "Home" Layout (2026 Tactile Brutalism)
-{"html":"<section class=\\"frame\\"><header class=\\"hero\\"><h1 class=\\"display kinetic-hover\\">{{HEADLINE}}</h1><p class=\\"lede\\">{{TAGLINE}}</p><div class=\\"prose\\">{{INTRO}}</div></header><div class=\\"grid precision-border-top\\">{{FEATURED_PROJECTS}}</div></section>"}
-*Note: Uses Semantic HTML (Machine Experience MX optimized). Typography is the focal point. Zero hardcoded copy.*
+**Example 1 (For Layout: 'shell')**
+PROMPT (User Input):
+This "shell" layout MUST contain these exact placeholder(s): {{CONTENT}}
+Optional placeholder(s): {{NAV_LINKS}}, {{THEME_PILLS}}, {{SOURCE_PATH}}
+OUTPUT (Your Response):
+{"html": "<div class=\\"frame\\"><nav class=\\"global-nav\\">{{NAV_LINKS}}</nav><main class=\\"main-content-flow\\">{{CONTENT}}</main><footer class=\\"global-footer\\">{{THEME_PILLS}}</footer></div>"}
 
-### EXEMPLAR 2: The "Projects Index" Layout (Cinematic Vertical Scroll)
-{"html":"<div class=\\"editorial-wrapper\\"><h2 class=\\"section-title\\">Selected Works</h2><div class=\\"asymmetric-grid scroll-reveal\\">{{PROJECT_LIST}}</div></div>"}
-*Note: The list of projects is wrapped in a neutral \`.asymmetric-grid\` container to support 2026-style organic, human-centric layouts.*
+**Example 2 (For Layout: 'home')**
+PROMPT (User Input):
+This "home" layout MUST contain these exact placeholder(s): {{FEATURED_PROJECTS}}
+Optional placeholder(s): {{HEADLINE}}, {{TAGLINE}}, {{INTRO}}
+OUTPUT (Your Response):
+{"html": "<section class=\\"home-container\\"><header class=\\"hero\\"><h1 class=\\"display kinetic-hover\\">{{HEADLINE}}</h1><p class=\\"lede\\">{{TAGLINE}}</p><div class=\\"prose\\">{{INTRO}}</div></header><div class=\\"grid precision-border-top\\">{{FEATURED_PROJECTS}}</div></section>"}
 
-### EXEMPLAR 3: The "Project Item" Layout (Hover-Triggered Gamification)
-{"html":"<article class=\\"project-card hover-preview-trigger\\"><figure class=\\"project-image fluid-mask\\">{{PREVIEW}}</figure><div class=\\"project-meta\\"><h3 class=\\"project-title\\">{{TITLE}}</h3><span class=\\"project-date mono-tag\\">{{DATE}}</span></div></article>"}
-*Note: Uses \`<article>\` and \`<figure>\` for semantic MX parsing. Classes imply modern hover-triggered previews and fluid masking.*
+**Example 3 (For Layout: 'projects_index')**
+PROMPT (User Input):
+This "projects_index" layout MUST contain these exact placeholder(s): {{PROJECT_LIST}}
+Optional placeholder(s): {{PROJECT_COUNT}}
+OUTPUT (Your Response):
+{"html": "<div class=\\"editorial-wrapper\\"><h2 class=\\"section-title\\">Selected Works ({{PROJECT_COUNT}})</h2><div class=\\"asymmetric-grid scroll-reveal\\">{{PROJECT_LIST}}</div></div>"}
+
+**Example 4 (For Layout: 'project_item')**
+PROMPT (User Input):
+This "project_item" layout MUST contain these exact placeholder(s): {{NAME}}, {{URL}}
+Optional placeholder(s): {{DESCRIPTION}}, {{YEAR}}, {{TECH_BADGES}}, {{LOGO}}, {{INDEX}}, {{REPO_URL}}
+OUTPUT (Your Response):
+{"html": "<article class=\\"project-card hover-preview-trigger\\"><figure class=\\"project-image fluid-mask\\">{{LOGO}}</figure><div class=\\"project-meta\\"><a href=\\"{{URL}}\\" class=\\"project-link\\"><h3 class=\\"project-title\\">{{NAME}}</h3></a><p class=\\"project-desc\\">{{DESCRIPTION}}</p><span class=\\"project-date mono-tag\\">{{YEAR}}</span><div class=\\"badges\\">{{TECH_BADGES}}</div></div></article>"}
 `;
