@@ -372,6 +372,9 @@ async function run() {
 
 CRITICAL DIRECTIVE: NO TRITE DESIGNS. ALL MUST BE BESPOKE, AGENCY LEVEL DESIGNS. NO AI SLOP. Do NOT output crappy cyberpunk AI slop. You MUST write custom HTML with awesome, interactive frontend features. Avoid generic gradients, overused tech aesthetics, or lazy layouts. Push the visual envelope and write real, bespoke code.
 
+ABSOLUTE SYSTEM RULE - INNOVATE AND DIFFERENTIATE:
+EVERY SINGLE SITE MUST BE COMPLETELY DIFFERENT, INNOVATIVE, BESPOKE, AND INSPIRED. You are provided with high-end exemplars below to show you the QUALITY BAR and the structural standards (like tactile brutalism or semantic MX HTML). DO NOT COPY THE EXEMPLARS DIRECTLY. You must invent a completely unique layout, color palette, and typographic scale tailored exactly to the specific user prompt. Do not re-use the same structure twice.
+
 ABSOLUTE SYSTEM RULE - NO FAKE COPY ALLOWED:
 You MUST NEVER write any hardcoded text, marketing copy, titles, or "lorem ipsum" into the HTML layouts. Your ONLY job is to write the structural HTML/CSS.
 For ALL text, you MUST USE the EXACT {{PLACEHOLDER}} variables provided in the Placeholder Contract. The build script will inject Greg's real portfolio copy into those variables.
@@ -552,6 +555,7 @@ THIS SECTION'S JOB: ${section.intent}
 RULES:
 - Implement ONLY the classes/tokens the contract assigns to "${section.key}". Do not restyle other sections' classes.
 - Reference tokens via var(--…); never hardcode a value a token already holds.
+- INNOVATE AND DIFFERENTIATE: The exemplars below show the QUALITY BAR, but you MUST invent completely unique, bespoke CSS architecture for this specific prompt. DO NOT COPY THE EXEMPLARS EXACTLY. Make it innovative and inspired.
 
 HIGH-END CSS EXEMPLARS (Study these to understand the quality bar):
 ${CSS_EXEMPLARS}
@@ -579,6 +583,7 @@ RULES:
 - Compose using ONLY the contract's class names; do not invent a new visual language.
 - Only the "shell" layout may own page-wide wrappers, header, navigation, sidebar, or footer. Every other layout is a single content fragment injected inside shell's {{CONTENT}}; never repeat global chrome.
 - Do not use inline style attributes. Put all visual behavior in the shared CSS classes so mobile behavior and repairs remain reliable.
+- INNOVATE AND DIFFERENTIATE: The exemplars below show the QUALITY BAR, but you MUST invent completely unique, bespoke HTML architecture for this specific prompt. DO NOT COPY THE EXEMPLARS EXACTLY. Make it innovative and inspired.
 ${key === 'shell'
   ? `- The element that holds {{CONTENT}} must be a plain full-width flow container: never give it a multi-column display:grid/flex that would squeeze injected fragments into one track, and never rely on injected children declaring grid-column spans — they won't.`
   : `- This fragment is injected INSIDE the shell's content container. NEVER include <main>, <header>, <footer>, the theme's root/page wrapper class, or any min-height:100vh container — the shell already provides all of those. Start directly at the section level.`}
