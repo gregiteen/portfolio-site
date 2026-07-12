@@ -185,6 +185,7 @@ tr:hover td{background:var(--surface);color:var(--white)}
     <button class="sidebar-link" data-page="visitors" onclick="showPage('visitors')">⊕ Visitors</button>
     <button class="sidebar-link" data-page="themes" onclick="showPage('themes')">◈ Themes</button>
     <button class="sidebar-link" data-page="proposals" onclick="showPage('proposals')">⊞ Proposals</button>
+    <button class="sidebar-link" data-page="campaigns" onclick="showPage('campaigns')">⋈ Campaigns</button>
     <span class="sidebar-label">System</span>
     <button class="sidebar-link" data-page="webmail" onclick="showPage('webmail')">✉️ Webmail</button>
     <button class="sidebar-link" data-page="settings" onclick="showPage('settings')">⊡ Settings</button>
@@ -239,6 +240,15 @@ tr:hover td{background:var(--surface);color:var(--white)}
         </table>
       </div>
       <div class="empty" id="noProposals" style="display:none">No active proposals.</div>
+    </div>
+
+    <!-- CAMPAIGNS -->
+    <div class="page" id="page-campaigns" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <h1 class="page-title" style="margin:0">Drip Campaigns</h1>
+        <button class="btn" onclick="openCampaignBuilder()">+ New Campaign</button>
+      </div>
+      <div id="campaignsList" style="display:flex;flex-direction:column;gap:12px;"></div>
     </div>
 
     <!-- WEBMAIL -->
@@ -365,6 +375,27 @@ tr:hover td{background:var(--surface);color:var(--white)}
       <div class="btn-row" style="margin-top:24px;">
         <button class="btn" onclick="sendCompose()">Send</button>
         <button class="btn" style="background:transparent;" onclick="closeCompose()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="campaignModal">
+    <div class="modal-content" style="max-width:700px; max-height:85vh; overflow-y:auto;">
+      <h2 id="campaignModalTitle" style="margin-bottom:20px;">Campaign Builder</h2>
+      <div class="field">
+        <label>Campaign Name</label>
+        <input type="text" id="campaignName" placeholder="e.g. Default Nurture">
+      </div>
+      <div class="field">
+        <label>Slug (internal ID)</label>
+        <input type="text" id="campaignSlug" placeholder="e.g. default-nurture" readonly>
+      </div>
+      <h3 style="margin-top:20px; border-bottom:1px solid var(--line); padding-bottom:8px;">Email Sequence</h3>
+      <div id="campaignSteps" style="display:flex;flex-direction:column;gap:16px;margin-bottom:20px;"></div>
+      <button class="btn btn-sm" onclick="addCampaignStep()" style="margin-bottom:20px; background:var(--surface3); border:1px dashed var(--gray); width:100%; padding:12px;">+ Add Email Step</button>
+      <div class="btn-row" style="margin-top:24px;">
+        <button class="btn" onclick="saveCampaign()">Save Campaign</button>
+        <button class="btn" style="background:transparent;" onclick="closeCampaignModal()">Cancel</button>
       </div>
     </div>
   </div>
@@ -539,6 +570,7 @@ function showPage(id) {
   if (id === 'visitors') loadVisitors();
   if (id === 'themes') loadThemes();
   if (id === 'proposals') loadProposals();
+  if (id === 'campaigns') loadCampaigns();
   if (id === 'webmail') loadWebmail();
   if (id === 'settings') loadSettings();
   if (id === 'logs') loadLogs();
@@ -824,6 +856,112 @@ async function loadLogs() {
 
 // Initial load
 loadDashboard();
+// ── Campaigns ──
+let campaignSteps = [];
+
+async function loadCampaigns() {
+  try {
+    const data = await api('/campaigns');
+    const container = document.getElementById('campaignsList');
+    if (!data.length) {
+      container.innerHTML = '<div class="empty">No campaigns found.</div>';
+      return;
+    }
+    container.innerHTML = data.map(c => `
+      <div class="row-card" style="cursor:pointer;" onclick="openCampaignBuilder('${escapeHtml(c.slug)}')">
+        <div style="flex:1">
+          <div style="font-weight:600">${escapeHtml(c.name || c.slug)}</div>
+          <div style="font-size:0.8rem;color:var(--text-dim)">${c.steps.length} emails in sequence</div>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    document.getElementById('campaignsList').innerHTML = `<div class="empty">Failed to load campaigns: ${e.message}</div>`;
+  }
+}
+
+async function openCampaignBuilder(slug = '') {
+  document.getElementById('campaignModal').style.display = 'flex';
+  campaignSteps = [];
+  
+  if (!slug) {
+    document.getElementById('campaignModalTitle').textContent = 'New Campaign';
+    document.getElementById('campaignName').value = '';
+    document.getElementById('campaignSlug').value = '';
+    document.getElementById('campaignSlug').readOnly = false;
+    renderCampaignSteps();
+    return;
+  }
+  
+  document.getElementById('campaignModalTitle').textContent = 'Edit Campaign';
+  document.getElementById('campaignSlug').value = slug;
+  document.getElementById('campaignSlug').readOnly = true;
+  
+  try {
+    const campaigns = await api('/campaigns');
+    const c = campaigns.find(x => x.slug === slug);
+    if (c) {
+      document.getElementById('campaignName').value = c.name || c.slug;
+      campaignSteps = c.steps || [];
+      renderCampaignSteps();
+    }
+  } catch(e) { toast('Error loading campaign details'); }
+}
+
+function renderCampaignSteps() {
+  const container = document.getElementById('campaignSteps');
+  container.innerHTML = campaignSteps.map((step, i) => `
+    <div style="background:var(--surface2);padding:16px;border-radius:8px;border:1px solid var(--line);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <strong style="color:var(--white);">Step ${i + 1}</strong>
+        <button class="btn btn-sm" style="background:transparent;border:none;" onclick="campaignSteps.splice(${i}, 1); renderCampaignSteps()">✕</button>
+      </div>
+      <div class="field">
+        <label>Delay (Hours after previous step)</label>
+        <input type="number" value="${step.delay_hours || 0}" onchange="campaignSteps[${i}].delay_hours = parseInt(this.value, 10)">
+      </div>
+      <div class="field">
+        <label>Subject</label>
+        <input type="text" value="${escapeHtml(step.subject || '')}" onchange="campaignSteps[${i}].subject = this.value">
+      </div>
+      <div class="field">
+        <label>Email Body (Use {{FIRST_NAME}}, {{SITE_URL}}, {{UNSUBSCRIBE_URL}})</label>
+        <textarea rows="6" onchange="campaignSteps[${i}].body_template = this.value">${escapeHtml(step.body_template || '')}</textarea>
+      </div>
+    </div>
+  `).join('');
+  if (!campaignSteps.length) {
+    container.innerHTML = '<div class="empty" style="padding:10px">No emails in sequence.</div>';
+  }
+}
+
+function addCampaignStep() {
+  campaignSteps.push({ delay_hours: 24, subject: '', body_template: '' });
+  renderCampaignSteps();
+}
+
+function closeCampaignModal() {
+  document.getElementById('campaignModal').style.display = 'none';
+}
+
+async function saveCampaign() {
+  const name = document.getElementById('campaignName').value;
+  const slug = document.getElementById('campaignSlug').value;
+  if (!name || !slug) return toast('Name and slug are required');
+  
+  try {
+    await api('/campaigns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, slug, steps: campaignSteps })
+    });
+    toast('Campaign saved');
+    closeCampaignModal();
+    loadCampaigns();
+  } catch(e) {
+    toast(`Failed to save: ${e.message}`);
+  }
+}
 </script>
 </body>
 </html>
