@@ -313,6 +313,7 @@ const proposalThreads = new Map();
 
 /** token → { email, style, issuedAt, … } — persisted so sessions survive restarts */
 const authTokens = new Map();
+const passwordResets = new Map(); // token -> { email, expires }
 
 /** email → { style, firstSeen, lastSeen, visits } — visitor memory for auto-login/welcome-back */
 const visitorProfiles = new Map();
@@ -1320,6 +1321,84 @@ createServer(async (req, res) => {
       return sendJson(res, 200, { success: true });
     } catch (/** @type {any} */ err) {
       return sendJson(res, 400, { success: false, error: String(err) });
+    }
+  }
+
+  // ── API: Webmail Forgot Password ──
+  if (urlPath === '/api/forgot-password' && req.method === 'POST') {
+    try {
+      const { email } = await readBody(req);
+      if (!email || email !== 'sales@gregiteen.xyz') {
+        return sendJson(res, 400, { success: false, error: 'Invalid or unknown webmail address.' });
+      }
+      
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      passwordResets.set(resetToken, { email, expires: Date.now() + 15 * 60 * 1000 });
+      
+      const resetUrl = `${SITE_URL}/reset.html?token=${resetToken}`;
+      const mailOwner = process.env.MAIL_OWNER;
+      
+      const result = await sendEmailSMTP2GO(
+        mailOwner,
+        'Password Reset Request for Webmail',
+        `A password reset was requested for ${email}.\n\nClick the link below to securely reset the password (expires in 15 minutes):\n${resetUrl}\n\nIf this wasn't you, ignore this email.`,
+        `<div style="font-family:sans-serif;color:#111;">
+          <h2>Webmail Password Reset</h2>
+          <p>A password reset was requested for <strong>${email}</strong>.</p>
+          <p><a href="${resetUrl}" style="background:#0a0a0a;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;margin-top:10px;">Reset Password</a></p>
+          <p style="margin-top:20px;font-size:0.85em;color:#666;">This link expires in 15 minutes.</p>
+        </div>`
+      );
+      
+      return sendJson(res, 200, { success: true });
+    } catch (err) {
+      return sendJson(res, 500, { success: false, error: 'Failed to request reset.' });
+    }
+  }
+
+  // ── API: Webmail Reset Password ──
+  if (urlPath === '/api/reset-password' && req.method === 'POST') {
+    try {
+      const { token, password } = await readBody(req);
+      if (!token || !password || password.length < 8) {
+        return sendJson(res, 400, { success: false, error: 'Invalid token or password too short.' });
+      }
+      
+      const resetReq = passwordResets.get(token);
+      if (!resetReq || Date.now() > resetReq.expires) {
+        return sendJson(res, 400, { success: false, error: 'Reset token is invalid or expired.' });
+      }
+      
+      // We must run doveadm on the docker container to generate the password hash.
+      // And then run a mysql query to update the mailbox table in mailcow.
+      const execSync = require('node:child_process').execSync;
+      
+      // 1. Generate Mailcow SSHA512 hash using dovecot container
+      const hashCmd = `docker exec mailcowdockerized-dovecot-mailcow-1 doveadm pw -s SHA512-CRYPT -p '${password.replace(/'/g, "'\\''")}'`;
+      const hash = execSync(hashCmd).toString().trim();
+      
+      // 2. Update Mailcow database
+      // Using the DBPASS from /opt/mailcow-dockerized/mailcow.conf (IMf6Q76lVXgzP1xmXCDOVg9TfRir)
+      const dbCmd = `docker exec mailcowdockerized-mysql-mailcow-1 mysql -u mailcow -pIMf6Q76lVXgzP1xmXCDOVg9TfRir mailcow -e "UPDATE mailbox SET password='${hash}' WHERE username='${resetReq.email}';"`;
+      execSync(dbCmd);
+      
+      // 3. Update the .env file with the new IMAP_PASS so the webmail works!
+      const envPath = join(__dirname, '..', '.env');
+      let envContent = await readFile(envPath, 'utf8');
+      envContent = envContent.replace(/^IMAP_PASS=.*$/m, `IMAP_PASS="${password.replace(/"/g, '\\"')}"`);
+      await writeFile(envPath, envContent, 'utf8');
+      
+      // Clear token
+      passwordResets.delete(token);
+      
+      // Trigger PM2 reload so the new IMAP_PASS is loaded into process.env!
+      // PM2 will gracefully reload this process in the background.
+      setTimeout(() => execSync('pm2 reload portfolio'), 1000);
+      
+      return sendJson(res, 200, { success: true });
+    } catch (err) {
+      console.error('[Reset Error]', err);
+      return sendJson(res, 500, { success: false, error: 'Failed to reset password.' });
     }
   }
 

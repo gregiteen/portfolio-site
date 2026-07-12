@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Reset Webmail Password</title>
+  <style>
+    :root { --bg: #0a0a0a; --surface: #111; --line: #2a2a2a; --white: #f5f5f3; --gray: #888; --red: #e22b22; }
+    body { font-family: sans-serif; background: var(--bg); color: var(--white); display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+    .box { background: var(--surface); padding: 30px; border: 1px solid var(--line); border-radius: 8px; width: 100%; max-width: 400px; text-align: center; }
+    input { width: 100%; padding: 12px; margin: 12px 0; background: var(--bg); border: 1px solid var(--line); color: var(--white); box-sizing: border-box; }
+    button { width: 100%; padding: 12px; background: var(--white); color: var(--bg); font-weight: bold; border: none; cursor: pointer; text-transform: uppercase; }
+    button:hover { background: #ddd; }
+    .msg { margin-top: 15px; font-size: 0.9em; color: var(--gray); }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>Reset Webmail Password</h2>
+    <p style="color:var(--gray); font-size:0.9em; margin-bottom:20px;">Enter your webmail address. A reset link will be sent to the backup email.</p>
+    <input type="email" id="email" placeholder="sales@gregiteen.xyz" required>
+    <button onclick="requestReset()">Send Reset Link</button>
+    <div id="msg" class="msg"></div>
+  </div>
+  <script>
+    async function requestReset() {
+      const email = document.getElementById('email').value;
+      if (!email) return;
+      document.getElementById('msg').textContent = 'Sending...';
+      try {
+        const res = await fetch('/api/forgot-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          document.getElementById('msg').innerHTML = `<span style="color:var(--green)">Success! Check the backup email for the reset link.</span>`;
+        } else {
+          document.getElementById('msg').innerHTML = `<span style="color:var(--red)">${data.error || 'Failed to send'}</span>`;
+        }
+      } catch(e) {
+        document.getElementById('msg').innerHTML = `<span style="color:var(--red)">Error: ${e.message}</span>`;
+      }
+    }
+  </script>
+</body>
+</html>
