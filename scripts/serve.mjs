@@ -1273,6 +1273,28 @@ createServer(async (req, res) => {
 
       const emailKey = email.toLowerCase();
 
+      // Capture into CRM immediately, before they even verify the code
+      const prior = visitorProfiles.get(emailKey);
+      if (!prior) {
+        const nextProfile = {
+          style: style.trim(),
+          optIn: !!optIn,
+          firstSeen: Date.now(),
+          lastSeen: Date.now(),
+          visits: 1,
+          generations: 0,
+          enrichment: {},
+          pending_notification: null,
+          drip: null,
+        };
+        visitorProfiles.set(emailKey, nextProfile);
+        upsertVisitor(emailKey, nextProfile).catch(err => console.error('[Runtime] Failed to persist pre-verify visitor:', err.message));
+      } else {
+        prior.lastSeen = Date.now();
+        visitorProfiles.set(emailKey, prior);
+        upsertVisitor(emailKey, prior).catch(err => console.error('[Runtime] Failed to persist pre-verify visitor:', err.message));
+      }
+
       const code = generateCode();
       pendingCodes.set(emailKey, {
         code,
