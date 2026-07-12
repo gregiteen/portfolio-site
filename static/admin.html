@@ -392,22 +392,45 @@ async function loadWebmail() {
   
   try {
     const data = await api('/webmail/inbox');
+    const visitorsData = await api('/visitors').catch(() => []);
+    
     if (!data.messages || !data.messages.length) {
       container.innerHTML = '<div class="empty">Inbox is empty.</div>';
     } else {
-      container.innerHTML = data.messages.map(m => `
+      container.innerHTML = data.messages.map(m => {
+        let senderEmail = m.from;
+        const match = m.from.match(/<([^>]+)>/);
+        if (match) senderEmail = match[1];
+        senderEmail = senderEmail.trim().toLowerCase();
+        
+        const v = visitorsData.find(x => x.email === senderEmail);
+        
+        let crmBadge = '';
+        if (v) {
+          crmBadge = `<div style="margin-top:12px;display:flex;gap:8px;align-items:center;background:var(--surface2);padding:10px 14px;border-radius:6px;border:1px solid var(--line);">
+            <span class="badge-pill" style="background:#333;font-size:0.65rem;">${escapeHtml(v.status || 'Lead')}</span>
+            ${v.drip ? `<span class="badge-pill ${v.drip.status === 'active' ? 'badge-green' : 'badge-amber'}" style="font-size:0.65rem;">Drip: ${escapeHtml(v.drip.status)}</span> 
+            <button class="btn btn-sm" onclick='event.stopPropagation(); manageDrip(${JSON.stringify(v.email)}, "${v.drip.status === 'active' ? 'pause' : 'resume'}")'>${v.drip.status === 'active' ? 'Pause' : 'Resume'} Drip</button>` : ''}
+            <button class="btn btn-sm" onclick='event.stopPropagation(); enrichLead(${JSON.stringify(v.email)})'>Research Lead</button>
+            <div style="flex:1"></div>
+            <span class="mono text-gray" style="font-size:0.6rem;">CRM RECORD</span>
+          </div>`;
+        }
+
+        return `
         <div class="row-card" style="cursor:pointer;" onclick="replyEmail('${escapeHtml(m.id)}', '${escapeHtml(m.from)}', '${escapeHtml(m.subject)}')">
           <div style="flex:1">
             <div style="font-weight:600">${escapeHtml(m.from)}</div>
             <div style="font-size:0.9rem">${escapeHtml(m.subject)}</div>
             <div style="color:var(--text-dim);font-size:0.8rem">${escapeHtml(m.snippet || '')}</div>
+            ${crmBadge}
           </div>
-          <div style="color:var(--text-dim);font-size:0.8rem">${ts(m.date)}</div>
+          <div style="color:var(--text-dim);font-size:0.8rem">${timeAgo(new Date(m.date).getTime())}</div>
         </div>
-      `).join('');
+      `}).join('');
     }
   } catch (e) {
-    container.innerHTML = `<div class="empty">Failed to load webmail: ${e.message}</div>`;
+    container.innerHTML = \`<div class="empty">Failed to load webmail: \${e.message}</div>\`;
   }
   
   try {
