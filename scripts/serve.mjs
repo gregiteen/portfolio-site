@@ -55,6 +55,7 @@ import {
   ensureBannerOffersSeeded,
   appendBannerEvent,
   getDripCampaign,
+  getAllDripCampaigns,
   pendingDripVisitors,
   getWebmailSettings,
   updateWebmailSettings,
@@ -2227,13 +2228,29 @@ ${'═'.repeat(60)}`;
       return sendJson(res, 200, visitors);
     }
 
-    // POST /api/admin/visitors/drip { email, action: pause|resume|unenroll }
+    // GET /api/admin/campaigns
+    if (adminPath === '/campaigns' && req.method === 'GET') {
+      const campaigns = await getAllDripCampaigns();
+      return sendJson(res, 200, campaigns);
+    }
+
+    // POST /api/admin/visitors/drip { email, action: pause|resume|unenroll|enroll, campaign?: slug }
     if (adminPath === '/visitors/drip' && req.method === 'POST') {
       try {
-        const { email, action } = await readBody(req);
+        const { email, action, campaign: campaignSlug } = await readBody(req);
         const key = String(email || '').trim().toLowerCase();
         const visitor = visitorProfiles.get(key);
-        if (!visitor?.drip) return sendJson(res, 404, { error: 'Visitor has no drip enrollment' });
+        if (!visitor) return sendJson(res, 404, { error: 'Visitor not found' });
+        
+        if (action === 'enroll') {
+          if (!campaignSlug) return sendJson(res, 400, { error: 'Campaign slug required' });
+          const campaign = await getDripCampaign(campaignSlug);
+          if (!campaign) return sendJson(res, 409, { error: 'Campaign is unavailable' });
+          const updated = await updateVisitorDrip(key, enrollInCampaign(campaign));
+          return sendJson(res, 200, { success: true, visitor: updated });
+        }
+
+        if (!visitor.drip) return sendJson(res, 404, { error: 'Visitor has no drip enrollment' });
         let drip = { ...visitor.drip };
         if (action === 'pause') {
           drip = { ...drip, status: 'paused', pause_reason: 'admin_paused' };

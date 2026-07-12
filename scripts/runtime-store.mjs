@@ -539,3 +539,20 @@ export async function deleteProposal(id) {
 export async function flushRuntimeStore() {
   await Promise.allSettled([...flushPromises.values()]);
 }
+
+export async function getAllDripCampaigns() {
+  try {
+    const { readdir } = await import('node:fs/promises');
+    const files = await readdir(campaignsDir);
+    const campaigns = [];
+    for (const f of files) {
+      if (!f.endsWith('.md')) continue;
+      const slug = f.replace('.md', '');
+      const c = await getDripCampaign(slug);
+      if (c) campaigns.push(c);
+    }
+    return campaigns;
+  } catch (e) {
+    return [];
+  }
+}
