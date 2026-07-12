@@ -110,7 +110,10 @@ function loginPage(flash) {
 <form method="POST" action="/login">
   <label>Email</label>
   <input type="email" name="email" required autofocus placeholder="sales@gregiteen.xyz">
-  <label>Password</label>
+  <label style="display:flex; justify-content:space-between; align-items:baseline;">
+    <span>Password</span>
+    <a href="https://gregiteen.xyz/forgot.html" style="font-size:0.85em; color:var(--gray); text-decoration:none;">Forgot password?</a>
+  </label>
   <input type="password" name="password" required>
   <button type="submit">Sign in</button>
 </form>`,
