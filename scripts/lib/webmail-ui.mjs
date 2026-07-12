@@ -9,7 +9,7 @@ import { verifyLogin, listMessages, getMessage, sendMessage } from './webmail.mj
 // token -> { email, password, createdAt }. Deliberately in-memory only —
 // mailbox passwords never touch disk. A server restart just means everyone
 // re-logs in, which is an acceptable trade for not persisting credentials.
-const sessions = new Map();
+export const webmailSessions = new Map();
 const SESSION_TTL = 12 * 60 * 60 * 1000; // 12h
 
 function parseCookies(cookieHeader) {
@@ -29,10 +29,10 @@ function escapeHtml(s) {
 function getSession(req) {
   const token = parseCookies(req.headers.cookie).gi_webmail;
   if (!token) return null;
-  const session = sessions.get(token);
+  const session = webmailSessions.get(token);
   if (!session) return null;
   if (Date.now() - session.createdAt > SESSION_TTL) {
-    sessions.delete(token);
+    webmailSessions.delete(token);
     return null;
   }
   return { token, ...session };
@@ -65,7 +65,7 @@ html,body{min-height:100%}
 body{font-family:'Archivo',sans-serif;background:var(--black);color:var(--white)}
 .frame{max-width:820px;margin:0 auto;padding:clamp(20px,4vw,48px)}
 .top{display:flex;justify-content:space-between;align-items:center;font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gray);margin-bottom:clamp(24px,4vw,48px);border-bottom:1px solid var(--line);padding-bottom:16px}
-.top a{color:var(--gray);text-decoration:none}
+.top a{color:var(--gray);text-decoration:none; margin-left:20px;}
 .top a:hover{color:var(--white)}
 .top .logo{height:18px;width:auto;display:block}
 h1{font-family:'Archivo Black',sans-serif;font-size:1.6rem;margin-bottom:20px}
@@ -94,7 +94,10 @@ button:hover,.btn:hover{opacity:.85}
 </head>
 <body>
 <div class="frame">
-<div class="top"><img class="logo" src="https://gregiteen.xyz/gi-logo-transparent-dark.png" alt="greg.iteen">${title !== 'Sign in' ? '<a href="/logout">Sign out</a>' : ''}</div>
+<div class="top">
+  <img class="logo" src="https://gregiteen.xyz/gi-logo-transparent-dark.png" alt="greg.iteen">
+  ${title !== 'Sign in' ? '<div><a href="/">Inbox</a><a href="/crm">CRM & Settings</a><a href="/logout">Sign out</a></div>' : ''}
+</div>
 ${flash ? `<div class="flash">${escapeHtml(flash)}</div>` : ''}
 ${body}
 </div>
@@ -236,6 +239,36 @@ export async function handleWebmail(req, res, urlPath) {
       return sendHtml(res, 200, inboxPage(messages));
     } catch (e) {
       return sendHtml(res, 502, shell({ title: 'Error', body: `<h1>Couldn't reach the mail server</h1><p class="meta">${escapeHtml(e.message)}</p>` }));
+    }
+  }
+
+  if (urlPath === '/crm' && req.method === 'GET') {
+    try {
+      const fs = await import('node:fs/promises');
+      const path = await import('node:path');
+      const __dirname = new URL('.', import.meta.url).pathname;
+      const html = await fs.readFile(path.join(__dirname, '..', '..', 'static', 'crm-app.html'), 'utf8');
+      
+      // Inject the webmail navigation bar into the top of the CRM app
+      const navHtml = `<div style="max-width:820px; margin:0 auto; padding:20px 4vw 0;">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.15em;text-transform:uppercase;color:rgba(245,245,243,.55);border-bottom:1px solid rgba(245,245,243,.28);padding-bottom:16px;margin-bottom:20px;">
+          <img style="height:18px;width:auto;display:block" src="https://gregiteen.xyz/gi-logo-transparent-dark.png" alt="greg.iteen">
+          <div>
+            <a href="/" style="color:rgba(245,245,243,.55);text-decoration:none;margin-left:20px;">Inbox</a>
+            <a href="/crm" style="color:#fff;text-decoration:none;margin-left:20px;">CRM & Settings</a>
+            <a href="/logout" style="color:rgba(245,245,243,.55);text-decoration:none;margin-left:20px;">Sign out</a>
+          </div>
+        </div>
+      </div>`;
+      
+      // Remove the old admin title and insert our nav bar
+      let modifiedHtml = html.replace(/<title>Greg Iteen — Admin<\/title>/, '<title>Greg Iteen — CRM</title>');
+      modifiedHtml = modifiedHtml.replace(/<div class="frame">/, `${navHtml}\n<div class="frame" style="padding-top:0;">`);
+      modifiedHtml = modifiedHtml.replace(/<header class="top">[\s\S]*?<\/header>/, '');
+      
+      return sendHtml(res, 200, modifiedHtml);
+    } catch (e) {
+      return sendHtml(res, 502, shell({ title: 'Error', body: `<h1>Error loading CRM</h1><p class="meta">${escapeHtml(e.message)}</p>` }));
     }
   }
 

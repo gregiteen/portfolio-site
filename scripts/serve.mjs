@@ -39,7 +39,7 @@ function emailTextToHtml(text) {
 }
 
 import { parseProposalOutput } from './lib/proposal-output.mjs';
-import { handleWebmail } from './lib/webmail-ui.mjs';
+import { handleWebmail, webmailSessions } from './lib/webmail-ui.mjs';
 import {
   initRuntimeStore,
   listVisitors,
@@ -1021,6 +1021,14 @@ function isAdmin(req) {
   if (token) {
     const session = authTokens.get(token);
     if (session && (session.email === mailOwner || session.email === process.env.ADMIN_EMAIL)) {
+      return true;
+    }
+  }
+  
+  const webToken = cookies.gi_webmail;
+  if (webToken) {
+    const session = webmailSessions.get(webToken);
+    if (session && (session.email === mailOwner || session.email === process.env.ADMIN_EMAIL || session.email === 'sales@gregiteen.xyz')) {
       return true;
     }
   }
@@ -2255,11 +2263,11 @@ ${'═'.repeat(60)}`;
   }
 
 // ── Admin: Protect admin page ──
-  if (urlPath === '/admin.html' && !isAdmin(req)) {
-    res.writeHead(403, { 'content-type': 'text/plain' });
-    res.end('Forbidden');
-    return;
+  if (urlPath === '/crm-app.html') {
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    return res.end('Not found');
   }
+
 
   // ── Admin API ──
   if (urlPath.startsWith('/api/admin/')) {
