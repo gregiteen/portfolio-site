@@ -266,32 +266,30 @@ function startGeneration(prompt) {
     drainQueue();
   });
   child.on('close', (code) => {
-    genJob.finishedAt = Date.now();
     if (code === 0) {
+      // compile-theme owns planning, screenshot review, bounded repair, and
+      // atomic publication. Never mutate an approved design with the legacy
+      // source-only improver after that release decision.
       genJob.status = 'done';
-      genJob.phase = 'Theme compiled';
+      genJob.phase = 'Theme reviewed and published';
+      genJob.finishedAt = Date.now();
+      if (genSlug) console.log(`[Generator] Approved design: ${genSlug}`);
       console.log(`[Generator] Done in ${Math.round((genJob.finishedAt - genJob.startedAt) / 1000)}s.`);
       appendRun({ run_id: runId, prompt, status: 'done', startedAt: genJob.startedAt, finishedAt: genJob.finishedAt }).catch((e) => {
         console.error('[Runtime] Failed to persist generation completion:', e.message);
       });
-      rebuild('generated theme'); // watcher usually catches it, but be certain
-
-      // The generator now performs a full Pro source review and visual asset
-      // review before it writes a public skin. Do not let the legacy async
-      // improver overwrite that released result with a lower-assurance model
-      // pass after visitors can see it.
-      if (genSlug) {
-        console.log(`[Improve] "${genSlug}" was fully reviewed before publication; post-public auto-improve is disabled.`);
-      }
+      rebuild('generated theme');
+      drainQueue();
     } else {
       genJob.status = 'error';
+      genJob.finishedAt = Date.now();
       genJob.error = (stderrTail.trim().split('\n').pop() || `generator exited with code ${code}`).slice(0, 300);
       console.error(`[Generator] Failed:`, genJob.error);
       appendRun({ run_id: runId, prompt, status: 'failed', startedAt: genJob.startedAt, finishedAt: genJob.finishedAt, error: genJob.error }).catch((e) => {
         console.error('[Runtime] Failed to persist generation failure:', e.message);
       });
+      drainQueue();
     }
-    drainQueue();
   });
 }
 
@@ -2494,6 +2492,7 @@ OUTPUT JSON: { "company_name": "...", "industry": "...", "estimated_size": "..."
   let file = normalize(join(root, resolved));
   if (file !== root && !file.startsWith(root + sep)) { res.writeHead(403).end(); return; }
   try {
+    if (statSync(file).isDirectory()) file = join(file, 'index.html');
     const body = await readFile(file);
     res.writeHead(200, { 'content-type': types[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-cache' }).end(body);
   } catch {
@@ -2505,11 +2504,14 @@ OUTPUT JSON: { "company_name": "...", "industry": "...", "estimated_size": "..."
   }
 }).listen(port, () => console.log(`portfolio-site → http://localhost:${port}`));
 
-// ─── Daily improvement cron ──────────────────────────────────────────────────
-// Run improve-theme.mjs on ALL designs once per day at 3:00 AM local time.
+// ─── Legacy daily improvement cron ───────────────────────────────────────────
+// Source-only improvement cannot satisfy the rendered release contract. Keep
+// it opt-in for explicit experiments; approved designs are immutable by
+// default until improve-theme is routed through the same staging gate.
 let lastImproveDay = -1;
 
 function checkImproveCron() {
+  if (process.env.ENABLE_LEGACY_THEME_IMPROVER !== '1') return;
   const now = new Date();
   const today = now.getDate();
   const hour = now.getHours();
@@ -2539,7 +2541,9 @@ function checkImproveCron() {
 
 // Check every 5 minutes
 setInterval(checkImproveCron, 5 * 60 * 1000);
-console.log('[Cron] Daily improvement cron scheduled (3:00 AM)');
+console.log(process.env.ENABLE_LEGACY_THEME_IMPROVER === '1'
+  ? '[Cron] Legacy daily theme improvement enabled (3:00 AM)'
+  : '[Cron] Legacy theme improvement disabled; generated designs remain release-gated');
 
 // Drip state is persisted as an absolute next_send_at timestamp, so this can
 // run on boot and at a short cadence without losing or duplicating a sequence

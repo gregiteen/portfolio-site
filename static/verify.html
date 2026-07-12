@@ -199,12 +199,23 @@ document.getElementById('emailDisplay').textContent=email;
 
 // ── Code input logic ──
 const inputs=document.querySelectorAll('.code-input');
+
+function getCode(){return Array.from(inputs).map(i=>i.value).join('')}
+
+function checkAutoSubmit() {
+  if(getCode().length === 6) {
+    const btn = document.getElementById('verifyBtn');
+    if(!btn.disabled) btn.click();
+  }
+}
+
 inputs.forEach((inp,i)=>{
   inp.addEventListener('input',e=>{
     const v=e.target.value.replace(/\D/g,'');
     e.target.value=v.slice(-1);
     if(v&&i<5)inputs[i+1].focus();
     e.target.classList.toggle('filled',!!v);
+    checkAutoSubmit();
   });
   inp.addEventListener('keydown',e=>{
     if(e.key==='Backspace'&&!e.target.value&&i>0){inputs[i-1].focus();inputs[i-1].value='';inputs[i-1].classList.remove('filled')}
@@ -214,10 +225,9 @@ inputs.forEach((inp,i)=>{
     const paste=(e.clipboardData.getData('text')||'').replace(/\D/g,'').slice(0,6);
     paste.split('').forEach((ch,j)=>{if(inputs[j]){inputs[j].value=ch;inputs[j].classList.add('filled')}});
     if(paste.length>0)inputs[Math.min(paste.length,5)].focus();
+    checkAutoSubmit();
   });
 });
-
-function getCode(){return Array.from(inputs).map(i=>i.value).join('')}
 
 // Button label helper — DOM methods only, no innerHTML.
 function setBtn(btn,label,busy){

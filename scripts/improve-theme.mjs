@@ -20,7 +20,9 @@ import {
   validateThemePayload,
   serializeThemeDoc,
 } from './lib/theme.mjs';
-import { CSS_EXEMPLARS, LAYOUT_EXEMPLARS } from './lib/design-exemplars.mjs';
+import { CSS_MECHANICS, LAYOUT_EXEMPLARS } from './lib/design-exemplars.mjs';
+
+const CSS_EXEMPLARS = Object.values(CSS_MECHANICS).join('\n\n');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const designsDir = join(__dirname, '..', 'designs');

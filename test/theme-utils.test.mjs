@@ -13,6 +13,7 @@ import {
   validateThemePayload,
   extractJson,
   enforceBrandAssetContract,
+  analyzeThemeClassBindings,
 } from '../scripts/lib/theme.mjs';
 
 test('parseNestedMap recovers theme tokens the canonical parser drops', () => {
@@ -115,6 +116,46 @@ test('validateThemePayload rejects malformed HTML and unknown placeholders', () 
   assert.ok(errors.some((error) => error.includes('unmatched or misnested')));
 });
 
+test('validateThemePayload enforces raw URL and preformatted HTML placement', () => {
+  const bad = validateThemePayload({
+    name: 'X',
+    css: 'body { background: #101010; color: #eee; margin: 0; padding: 0; } a { color: #fff; }',
+    layouts: {
+      design_item: '<article><a href="{{URL}}">{{NAME}}</a><span>{{PREVIEW}}</span></article>',
+      project_detail: '<article><a href="{{PROJECT_LINK}}">{{NAME}}</a>{{CONTENT}}</article>',
+    },
+  });
+  assert.ok(bad.errors.some((error) => error.includes('{{PREVIEW}}') && error.includes('src')));
+  assert.ok(bad.errors.some((error) => error.includes('{{PROJECT_LINK}}') && error.includes('preformatted HTML')));
+
+  const good = validateThemePayload({
+    name: 'X',
+    css: 'body { background: #101010; color: #eee; margin: 0; padding: 0; } a { color: #fff; }',
+    layouts: {
+      design_item: '<article><a href="{{URL}}">{{NAME}}</a><img src="{{PREVIEW}}" alt=""></article>',
+    },
+  });
+  assert.ok(!good.errors.some((error) => error.includes('raw URL')));
+});
+
+test('validateThemePayload rejects generated dialog and popover navigation', () => {
+  const { errors } = validateThemePayload({
+    name: 'X',
+    css: 'body { background: #101010; color: #eee; margin: 0; padding: 0; } a { color: #fff; }',
+    layouts: { shell: '<dialog popover="auto">{{NAV_LINKS}}</dialog><main>{{CONTENT}}</main>' },
+  });
+  assert.ok(errors.some((error) => error.includes('dialog/popover')));
+});
+
+test('validateThemePayload enforces each constitution root class', () => {
+  const { errors } = validateThemePayload({
+    name: 'X',
+    css: '.actual-root { background: #101010; color: #eee; margin: 0; padding: 0; }',
+    layouts: { home: '<section class="actual-root">{{FEATURED_PROJECTS}}</section>' },
+  }, { requiredLayoutClasses: { home: 'planned-root' } });
+  assert.ok(errors.some((error) => error.includes('planned-root')));
+});
+
 test('validateThemePayload release mode requires complete layout coverage and a hero asset', () => {
   const { errors } = validateThemePayload({
     name: 'X',
@@ -123,6 +164,31 @@ test('validateThemePayload release mode requires complete layout coverage and a 
   }, { requireAllLayouts: true, requireHero: true });
   assert.ok(errors.some((error) => error.includes('missing required layout "shell"')));
   assert.ok(errors.some((error) => error.includes('assets/hero.jpg')));
+});
+
+test('release class binding rejects layout classes that CSS never defines', () => {
+  const bindings = analyzeThemeClassBindings({
+    css: '.site-shell { display: block; } .badge, .btn, .src, .backlink, .md-img { color: inherit; }',
+    layouts: { shell: '<div class="site-shell invented-shell">{{CONTENT}}</div>' },
+  });
+  assert.deepEqual(bindings.missingByLayout, { shell: ['invented-shell'] });
+
+  const { errors } = validateThemePayload({
+    name: 'Bound',
+    css: '.site-shell { background: url(assets/hero.jpg); } .badge, .btn, .src, .backlink, .md-img { color: inherit; }',
+    layouts: { shell: '<div class="site-shell invented-shell">{{CONTENT}}</div>' },
+  }, { requireClassBindings: true });
+  assert.ok(errors.some((error) => error.includes('invented-shell')));
+});
+
+test('release class binding requires CSS for build-injected content classes', () => {
+  const { errors } = validateThemePayload({
+    name: 'Bound',
+    css: '.site-shell { background: url(assets/hero.jpg); }',
+    layouts: { shell: '<div class="site-shell">{{CONTENT}}</div>' },
+  }, { requireClassBindings: true });
+  assert.ok(errors.some((error) => error.includes('badge')));
+  assert.ok(errors.some((error) => error.includes('md-img')));
 });
 
 test('enforceBrandAssetContract keeps the generated logo and bounds brand marks', () => {

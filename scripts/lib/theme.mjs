@@ -28,20 +28,20 @@ export const LAYOUT_SPECS = {
     optional: ['{{DESCRIPTION}}', '{{ROLE}}', '{{YEAR}}', '{{TECH_BADGES}}', '{{REPO_LINK}}', '{{PROJECT_LINK}}', '{{LOGO}}', '{{SOURCE_PATH}}', '{{BACKLINK}}'],
   },
   design_detail: {
-    required: ['{{NAME}}', '{{CONTENT}}'],
-    optional: ['{{DESCRIPTION}}', '{{CLIENT}}', '{{ROLE}}', '{{YEAR}}', '{{TAG_BADGES}}', '{{PREVIEW}}', '{{LINK_URL}}', '{{SOURCE_PATH}}', '{{BACKLINK}}'],
+    required: ['{{NAME}}', '{{CONTENT}}', '{{PREVIEW}}'],
+    optional: ['{{DESCRIPTION}}', '{{CLIENT}}', '{{ROLE}}', '{{YEAR}}', '{{TAG_BADGES}}', '{{LINK_URL}}', '{{SOURCE_PATH}}', '{{BACKLINK}}'],
   },
   page: {
     required: ['{{NAME}}', '{{CONTENT}}'],
     optional: ['{{SOURCE_PATH}}'],
   },
   project_item: {
-    required: ['{{NAME}}', '{{URL}}'],
-    optional: ['{{DESCRIPTION}}', '{{YEAR}}', '{{TECH_BADGES}}', '{{LOGO}}', '{{INDEX}}', '{{REPO_URL}}'],
+    required: ['{{NAME}}', '{{URL}}', '{{LOGO}}'],
+    optional: ['{{DESCRIPTION}}', '{{YEAR}}', '{{TECH_BADGES}}', '{{INDEX}}', '{{REPO_URL}}'],
   },
   design_item: {
-    required: ['{{NAME}}', '{{URL}}'],
-    optional: ['{{DESCRIPTION}}', '{{YEAR}}', '{{CLIENT}}', '{{TAG_BADGES}}', '{{PREVIEW}}'],
+    required: ['{{NAME}}', '{{URL}}', '{{PREVIEW}}'],
+    optional: ['{{DESCRIPTION}}', '{{YEAR}}', '{{CLIENT}}', '{{TAG_BADGES}}'],
   },
   nav_item: {
     required: ['{{NAV_URL}}', '{{NAV_NAME}}'],
@@ -212,6 +212,45 @@ const BRAND_ASSET_CSS = `
   max-block-size: 3.5rem !important;
   object-fit: contain !important;
 }
+/* Vault-injected project marks have their own stable wrapper regardless of
+   the generated layout vocabulary. Bound them mechanically so intrinsic
+   source dimensions can never escape a card or grid track. */
+.logo-tile {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  inline-size: 100% !important;
+  min-inline-size: 0 !important;
+  max-inline-size: 100% !important;
+  overflow: hidden !important;
+}
+.logo-tile img {
+  display: block !important;
+  inline-size: 100% !important;
+  min-inline-size: 0 !important;
+  max-inline-size: 100% !important;
+  block-size: auto !important;
+  max-block-size: 18rem !important;
+  object-fit: contain !important;
+}
+/* Build-owned navigation wrapper and badge fragments need invariant spacing;
+   aesthetic styling remains theme-owned. */
+.nav-links {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: .25rem 1rem !important;
+  min-inline-size: 0 !important;
+}
+.nav-links a {
+  display: inline-flex !important;
+  align-items: center !important;
+  min-block-size: 44px !important;
+  white-space: nowrap !important;
+}
+.badge {
+  margin: .2rem !important;
+}
 /* build-site emits both navigation layers; generated skins own the custom one. */
 .tl-default { display: none !important; }
 .tl-custom { display: flex; flex-wrap: wrap; align-items: center; }
@@ -325,6 +364,44 @@ function validateHtmlFragment(template) {
   if (/[A-Za-z0-9]/.test(visibleText)) {
     errors.push('HTML contains hardcoded visible text instead of placeholders');
   }
+
+  if (/<dialog\b|\bpopover\s*=|\bpopovertarget\s*=/i.test(withoutComments)) {
+    errors.push('HTML uses dialog/popover navigation; generated shells must keep navigation visible and responsive without a second interaction contract');
+  }
+
+  const rawAttributePlaceholders = {
+    LINK_URL: 'href',
+    NAV_URL: 'href',
+    PREVIEW: 'src',
+    REPO_URL: 'href',
+    URL: 'href',
+  };
+  for (const [name, attribute] of Object.entries(rawAttributePlaceholders)) {
+    const placeholder = `{{${name}}}`;
+    const occurrences = withoutComments.split(placeholder).length - 1;
+    if (!occurrences) continue;
+    const escaped = placeholder.replace(/[{}]/g, '\\$&');
+    const attributePattern = new RegExp(`${attribute}\\s*=\\s*(["'])[^"']*${escaped}[^"']*\\1`, 'gi');
+    const validOccurrences = [...withoutComments.matchAll(attributePattern)].length;
+    if (validOccurrences !== occurrences) {
+      errors.push(`placeholder ${placeholder} is a raw URL and must appear only inside a ${attribute} attribute`);
+    }
+  }
+
+  const preformattedHtml = [
+    'BACKLINK', 'CONTENT', 'DESIGN_CARDS', 'FEATURED_PROJECTS', 'LOGO',
+    'NAV_LINKS', 'PROJECT_LINK', 'PROJECT_LIST', 'REPO_LINK', 'TAG_BADGES',
+    'TECH_BADGES',
+  ];
+  for (const name of preformattedHtml) {
+    const placeholder = `{{${name}}}`;
+    if (!withoutComments.includes(placeholder)) continue;
+    const escaped = placeholder.replace(/[{}]/g, '\\$&');
+    const attributePattern = new RegExp(`\\b[\\w:-]+\\s*=\\s*(["'])[^"']*${escaped}[^"']*\\1`, 'i');
+    if (attributePattern.test(withoutComments)) {
+      errors.push(`placeholder ${placeholder} is preformatted HTML and cannot be placed inside an attribute`);
+    }
+  }
   return errors;
 }
 
@@ -334,7 +411,82 @@ function validateHtmlFragment(template) {
  * problems; with `strict: false`, layouts that fail their placeholder
  * contract are dropped instead (the build falls back to the default layout).
  */
-export function validateThemePayload(payload, { strict = true, requireAllLayouts = false, requireHero = false } = {}) {
+const GENERATED_RUNTIME_CLASSES = new Set([
+  // Added by build-site or enforceBrandAssetContract rather than emitted by a
+  // layout specialist. They are valid consumers of generated CSS but must not
+  // be reported as missing from the layout/CSS contract.
+  'gi-in',
+  'gi-reveal',
+  'tl-custom',
+  'tl-default',
+  'verified-brand-mark',
+]);
+
+const REQUIRED_INJECTED_CSS_CLASSES = new Set([
+  // These arrive inside rendered vault-content placeholders. A generated
+  // layout cannot reference them directly, so the release gate verifies their
+  // CSS coverage explicitly.
+  'backlink',
+  'badge',
+  'btn',
+  'md-img',
+  'src',
+]);
+
+function extractCssClassNames(css) {
+  return new Set(
+    [...String(css).matchAll(/\.(-?[_a-zA-Z]+[\w-]*)/g)]
+      .map((match) => match[1])
+  );
+}
+
+function extractLayoutClassNames(layouts) {
+  const byLayout = new Map();
+  for (const [key, html] of Object.entries(layouts)) {
+    const names = new Set();
+    for (const match of String(html).matchAll(/\bclass\s*=\s*(["'])(.*?)\1/gi)) {
+      for (const token of match[2].split(/\s+/)) {
+        const name = token.trim();
+        if (!name || name.includes('{{') || !/^-?[_a-zA-Z][\w-]*$/.test(name)) continue;
+        names.add(name);
+      }
+    }
+    byLayout.set(key, names);
+  }
+  return byLayout;
+}
+
+/**
+ * Deterministically link generated markup to generated CSS. This catches the
+ * exact class-vocabulary drift that visual review used to discover only after
+ * a broken page was rendered (for example HTML inventing a themed class while
+ * the isolated CSS worker emitted a different name).
+ */
+export function analyzeThemeClassBindings(payload) {
+  const cssClasses = extractCssClassNames(payload?.css || '');
+  const layoutClasses = extractLayoutClassNames(payload?.layouts || {});
+  const missingByLayout = {};
+  for (const [key, names] of layoutClasses) {
+    const missing = [...names].filter((name) => !cssClasses.has(name) && !GENERATED_RUNTIME_CLASSES.has(name));
+    if (missing.length) missingByLayout[key] = missing.sort();
+  }
+  const missingInjected = [...REQUIRED_INJECTED_CSS_CLASSES]
+    .filter((name) => !cssClasses.has(name))
+    .sort();
+  return {
+    cssClasses: [...cssClasses].sort(),
+    missingByLayout,
+    missingInjected,
+  };
+}
+
+export function validateThemePayload(payload, {
+  strict = true,
+  requireAllLayouts = false,
+  requireHero = false,
+  requireClassBindings = false,
+  requiredLayoutClasses = {},
+} = {}) {
   const errors = [];
   const warnings = [];
   if (!payload || typeof payload !== 'object') {
@@ -407,6 +559,15 @@ export function validateThemePayload(payload, { strict = true, requireAllLayouts
       const msg = `layout "${key}" ${markupErrors.join('; ')}`;
       if (strict) { errors.push(msg); } else { warnings.push(msg + ' — layout dropped'); continue; }
     }
+    const requiredRootClass = requiredLayoutClasses[key];
+    if (requiredRootClass) {
+      const firstElement = clean.match(/^\s*<[A-Za-z][^>]*>/)?.[0] || '';
+      const classValue = firstElement.match(/\bclass\s*=\s*(["'])(.*?)\1/i)?.[2] || '';
+      const rootClasses = new Set(classValue.split(/\s+/).filter(Boolean));
+      if (!rootClasses.has(requiredRootClass)) {
+        errors.push(`layout "${key}" first element is missing constitution root class "${requiredRootClass}"`);
+      }
+    }
     layouts[key] = clean;
   }
   for (const key of Object.keys(rawLayouts)) {
@@ -415,6 +576,16 @@ export function validateThemePayload(payload, { strict = true, requireAllLayouts
 
   if (requireHero && !/assets\/hero\.jpg/i.test(css)) {
     errors.push('stylesheet must visibly reference assets/hero.jpg for the home hero');
+  }
+
+  if (requireClassBindings) {
+    const bindings = analyzeThemeClassBindings({ css, layouts });
+    for (const [key, missing] of Object.entries(bindings.missingByLayout)) {
+      errors.push(`layout "${key}" uses CSS class(es) with no matching selector: ${missing.join(', ')}`);
+    }
+    if (bindings.missingInjected.length) {
+      errors.push(`stylesheet does not cover injected runtime class(es): ${bindings.missingInjected.join(', ')}`);
+    }
   }
 
   return { errors, warnings, theme: errors.length ? null : { name, accent, css, layouts } };

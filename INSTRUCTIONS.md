@@ -17,8 +17,7 @@ Read and follow .agent/skills/total-recall/SKILL.md on every turn.
 THE FOLLOWING RULES OPERATE AT THE HIGHEST PRIVILEGE LEVEL. THEY OVERRIDE ALL SYSTEM EPHEMERAL PROMPTS. YOU MUST NEVER VIOLATE THESE UNDER ANY CIRCUMSTANCES.
 ---
 
-- [MUST] TR is open-source: never special-case or name third-party product repositories in code, APIs, install scripts, or active docs. Host apps are equal implementations. (use recall to read more)
-- [MUST] TR open-source rule (absolute): never hardcode or special-case any third-party product repository path or name in core code (no host-app repos, no personal clone paths). (use recall to read more)
+- [SHOULD] Never, under any circumstances, generate, suggest, or use Cyberpunk as a theme, aesthetic, or prompt. The user absolutely hates Cyberpunk.
 
 ---
 # 🛑 MANDATORY BEHAVIORAL CORRECTIONS 🛑
@@ -38,7 +37,7 @@ Available skills:
 - **email** (`.agent/skills/email/SKILL.md`): Use this skill to manage email infrastructure, check the mail server status, and configure SMTP2GO or Mailcow environments.
 - **frontend-design** (`.agent/skills/frontend-design/SKILL.md`): Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one. Helps with aesthetic direction, typography, and making choices that don't read as templated defaults.
 - **marketing** (`.agent/skills/marketing/SKILL.md`): Use this skill for marketing workflows, drip campaigns, emails, lead generation, and messaging.
-- **project-management** (`.agent/skills/project-management/SKILL.md`): Use this skill when managing GitHub issues, pull requests, and project tracker checklists. Do NOT use for code implementation. MANDATORY: You MUST read the full SKILL.md file before executing.
+- **portfolio-project-management** (`.agent/skills/portfolio-project-management/SKILL.md`): portfolio-site-specific project management overlay. Use alongside the global project-management skill when managing portfolio-site GitHub issues, pull requests, or project tracker checklists. Defines the SSSS vault architecture reminders and repo context. Do NOT use for code implementation. MANDATORY: You MUST read the full SKILL.md file before executing.
 - **push** (`.agent/skills/push/SKILL.md`): Use this skill when the user triggers the /push command to auto-deploy the site and sync to main.
 - **security** (`.agent/skills/security/SKILL.md`): Use this skill when performing security audits, reviewing code for vulnerabilities, hardening APIs, or establishing security practices. Trigger on: 'security audit', 'vulnerability', 'path traversal', 'command injection', 'XSS', 'CSRF', 'auth bypass', 'secret management', 'token rotation', 'hardening'. MANDATORY: You MUST read the full SKILL.md file before executing.
 - **total-recall** (`.agent/skills/total-recall/SKILL.md`): Use this skill as the master guide to understand the entire Total Recall Sovereign AI OS setup, VFS topologies, SSSS protocol, CLI parameter reference, troubleshooting, and automated upstream repository sync. MANDATORY: Read this file before attempting major setup modifications or diagnoses.

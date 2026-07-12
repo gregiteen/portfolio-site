@@ -3,7 +3,7 @@ import { writeFile, unlink, access, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { sendNotification } from '../../notifications/scripts/notify.mjs';
+const sendNotification = async () => {};
 
 const execFileAsync = promisify(execFile);
 

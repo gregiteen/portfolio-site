@@ -19,11 +19,11 @@
 // Usage (standalone): node scripts/render-audit.mjs <slug>
 //   Prints the audit verdict as JSON; exits 1 if not approved.
 
-import { dirname } from 'node:path';
+import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { writeFile } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { createServer } from 'node:http';
 import https from 'node:https';
 import { LAYOUT_SPECS, extractJson } from './lib/theme.mjs';
 
@@ -35,6 +35,10 @@ const RENDER_AUDIT_SCHEMA = {
   type: 'OBJECT',
   properties: {
     approved: { type: 'BOOLEAN' },
+    score: { type: 'INTEGER' },
+    prompt_fidelity: { type: 'INTEGER' },
+    distinctiveness: { type: 'INTEGER' },
+    cohesion: { type: 'INTEGER' },
     issues: {
       type: 'ARRAY',
       items: {
@@ -48,7 +52,7 @@ const RENDER_AUDIT_SCHEMA = {
       },
     },
   },
-  required: ['approved', 'issues'],
+  required: ['approved', 'score', 'prompt_fidelity', 'distinctiveness', 'cohesion', 'issues'],
 };
 
 function geminiVision(parts) {
@@ -109,6 +113,50 @@ async function screenshotPage(browser, url, viewport) {
   }
 }
 
+const CONTENT_TYPES = {
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.js': 'text/javascript; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.woff2': 'font/woff2',
+};
+
+async function startStaticReviewServer(siteRoot) {
+  const root = resolve(siteRoot);
+  const server = createServer(async (req, res) => {
+    try {
+      const requestUrl = new URL(req.url || '/', 'http://127.0.0.1');
+      let filePath = resolve(root, `.${decodeURIComponent(requestUrl.pathname)}`);
+      if (filePath !== root && !filePath.startsWith(`${root}${sep}`)) {
+        res.writeHead(403).end('Forbidden');
+        return;
+      }
+      const info = await stat(filePath);
+      if (info.isDirectory()) filePath = join(filePath, 'index.html');
+      const body = await readFile(filePath);
+      res.writeHead(200, {
+        'Cache-Control': 'no-store',
+        'Content-Type': CONTENT_TYPES[extname(filePath).toLowerCase()] || 'application/octet-stream',
+      });
+      res.end(body);
+    } catch {
+      res.writeHead(404).end('Not found');
+    }
+  });
+  await new Promise((resolveListen, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolveListen);
+  });
+  const address = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    close: () => new Promise((resolveClose) => server.close(resolveClose)),
+  };
+}
+
 /**
  * Screenshot the built pages of a design at desktop + mobile widths and have
  * the vision model audit the actual rendering. Returns
@@ -116,7 +164,12 @@ async function screenshotPage(browser, url, viewport) {
  * "css" or a layout key — the same repair vocabulary as the source review.
  * Throws if the browser, server, or API is unavailable (callers fail closed).
  */
-export async function renderAudit(slug, { baseUrl = DEFAULT_BASE_URL } = {}) {
+export async function renderAudit(slug, {
+  baseUrl = DEFAULT_BASE_URL,
+  siteRoot = null,
+  brief = '',
+  designPlan = '',
+} = {}) {
   let chromium;
   try {
     ({ chromium } = await import('playwright'));
@@ -124,6 +177,8 @@ export async function renderAudit(slug, { baseUrl = DEFAULT_BASE_URL } = {}) {
     throw new Error('playwright is not installed — run: npm install playwright && npx playwright install --with-deps chromium');
   }
 
+  const staticServer = siteRoot ? await startStaticReviewServer(siteRoot) : null;
+  if (staticServer) baseUrl = staticServer.baseUrl;
   const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   const shots = [];
   try {
@@ -134,12 +189,14 @@ export async function renderAudit(slug, { baseUrl = DEFAULT_BASE_URL } = {}) {
       ['home mobile 390px', `${baseUrl}/designs/${slug}/index.html`, { width: 390, height: 844 }],
       ['projects desktop 1440px', `${baseUrl}/designs/${slug}/projects.html`, { width: 1440, height: 900 }],
       ['designs desktop 1440px', `${baseUrl}/designs/${slug}/designs.html`, { width: 1440, height: 900 }],
+      ['contact desktop 1440px', `${baseUrl}/designs/${slug}/contact.html`, { width: 1440, height: 900 }],
     ];
     for (const [label, url, viewport] of targets) {
       shots.push([label, await screenshotPage(browser, url, viewport)]);
     }
   } finally {
     await browser.close();
+    if (staticServer) await staticServer.close();
   }
 
   // Persist the evidence: a fail-closed rejection deletes the design, so the
@@ -151,7 +208,14 @@ export async function renderAudit(slug, { baseUrl = DEFAULT_BASE_URL } = {}) {
 
   const layoutKeys = Object.keys(LAYOUT_SPECS).join(', ');
   const parts = [{
-    text: `You are the rendered-page release inspector for an AI-generated portfolio skin. Below are full-page screenshots of the ACTUAL rendered site. Judge the pixels, not intent.
+    text: `You are the rendered-page release inspector for an AI-generated portfolio skin. Below are full-page screenshots of the ACTUAL rendered site. Judge the pixels, not intent or source-code promises.
+
+USER BRIEF: ${brief || '(not supplied)'}
+ART DIRECTION PLAN: ${designPlan || '(not supplied)'}
+
+Score the complete result 1-10 on prompt fidelity, distinctiveness, cohesion, hierarchy, typography, composition, image integration, and production polish. A technically valid but basic/template-like design MUST score below 8. Reject if the same hierarchy and layout could serve an unrelated prompt after merely changing colors or images. When the brief names a recognizable subject, that subject must be unmistakable in the hero and supporting imagery without sacrificing Greg's human likeness in the contact portrait.
+
+Set approved=true ONLY when score >= 8, prompt_fidelity >= 8, distinctiveness >= 8, cohesion >= 8, and there are no blocking issues.
 
 Classify every defect you find with a severity:
 
@@ -162,16 +226,18 @@ Classify every defect you find with a severity:
 - broken or missing images, raw placeholder artifacts, visible template tokens like {{NAME}}
 - enormous empty dead zones, or a layout that reads as broken rather than designed
 - on the mobile screenshot: anything cut off, crushed, or requiring horizontal scrolling
+- the design is generic, visually basic, or fails to visibly embody the user's actual brief
+- generated imagery is disconnected from the composition or the contact portrait loses the subject's credible likeness
 
 "minor" — polish defects worth fixing but shippable: slightly tight or uneven spacing, small alignment nits, a stray border or artifact that does not obscure content, imperfect visual rhythm.
 
-Set approved=true when there are NO blocking issues — even if you list minor ones. Do not inflate a minor nit to blocking; do not downgrade genuine breakage to minor.
+Do not inflate a small spacing nit to blocking; do not downgrade generic composition, prompt failure, or genuine breakage to minor.
 
 When rejecting, each issue's target MUST be exactly "css" or one of: ${layoutKeys}. Describe each defect concretely enough that a repair model that CANNOT see the screenshots can fix it (name the element, the page, and what is visually wrong).
 
 Target routing: spacing, sizing, color, contrast, overlap, and overflow defects are almost always STYLESHEET problems — target "css" for those (e.g. tags/chips/metadata running together without separation, text colliding, containers overflowing). Target a layout only when the DOM structure itself is wrong (missing section, wrong nesting, element in the wrong place).
 
-OUTPUT: exactly one JSON object: { "approved": true, "issues": [] }`,
+OUTPUT: exactly one JSON object: { "approved": true, "score": 9, "prompt_fidelity": 9, "distinctiveness": 9, "cohesion": 9, "issues": [] }`,
   }];
   for (const [label, buf] of shots) {
     parts.push({ text: `Screenshot: ${label}` }, { inlineData: { mimeType: 'image/jpeg', data: buf.toString('base64') } });

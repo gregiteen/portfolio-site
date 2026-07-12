@@ -11,7 +11,7 @@
     "build": "node scripts/build-site.mjs",
     "rate-card:pdf": "node scripts/generate-rate-card-pdf.mjs",
     "dev": "node scripts/build-site.mjs && node scripts/serve.mjs",
-    "test": "node --test",
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "export": "ssss export vault --profile sale --registry vault-registry --out dist/bundle.ucw.json",
     "validate": "ssss conformance --engine"
   },
@@ -21,7 +21,8 @@
     "mailparser": "^3.9.14",
     "nodemailer": "^9.0.3",
     "pdfkit": "^0.19.1",
-    "playwright": "^1.61.1"
+    "playwright": "^1.61.1",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",

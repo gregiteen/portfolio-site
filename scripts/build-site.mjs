@@ -5,22 +5,34 @@
 // parser. Output goes to dist/site/.
 import { readdir, readFile, writeFile, mkdir, rm, cp, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { join, dirname, relative } from 'node:path';
+import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // @ts-ignore
 import { parseDocument } from '@ssss/cli/frontmatter';
 import { extractSections, fillTemplate } from './lib/theme.mjs';
 
 let targetDesign = null;
+let targetDesignName = 'Greg Iteen';
 const designArgIdx = process.argv.indexOf('--design');
 if (designArgIdx >= 0 && designArgIdx + 1 < process.argv.length) {
   targetDesign = process.argv[designArgIdx + 1];
 }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const valueAfter = (flag) => {
+  const index = process.argv.indexOf(flag);
+  return index >= 0 && index + 1 < process.argv.length ? process.argv[index + 1] : null;
+};
+const designSourceArg = valueAfter('--design-source');
+const outputArg = valueAfter('--out-dir');
+const designSourceDir = targetDesign
+  ? resolve(designSourceArg || join(root, 'designs', targetDesign))
+  : null;
 const pagesDir = join(root, 'vault', 'pages');
 const assetsDir = join(root, 'assets');
-const outDir = targetDesign ? join(root, 'dist', 'site', 'designs', targetDesign) : join(root, 'dist', 'site');
+const outDir = outputArg
+  ? resolve(outputArg)
+  : (targetDesign ? join(root, 'dist', 'site', 'designs', targetDesign) : join(root, 'dist', 'site'));
 
 async function collectMarkdown(dir) {
   const out = [];
@@ -619,7 +631,7 @@ const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com">
 
 // Each generated design ships its own favicon (compile-theme generates it);
 // fall back to the global mark for the main site and pre-favicon designs.
-const FAVICON = targetDesign && existsSync(join(root, 'designs', targetDesign, 'assets', 'favicon.png'))
+const FAVICON = targetDesign && existsSync(join(designSourceDir, 'assets', 'favicon.png'))
   ? `<link rel="icon" type="image/png" href="/designs/${targetDesign}/assets/favicon.png">`
   : `<link rel="icon" type="image/png" href="/assets/favicon.png">`;
 
@@ -680,11 +692,18 @@ const FLIPPER_SCRIPT_TEMPLATE = `<script>
   const nextUrl = nextBase + subPath;
 
   const flipperHtml = \`
-    <div id="ai-design-flipper" style="position:fixed; top:0; left:0; right:0; height:44px; background:#111; color:#eee; display:flex; align-items:center; justify-content:center; z-index:99999; font-family:monospace; font-size: 13px; border-bottom:1px solid #333; view-transition-name: design-flipper;">
-      <a href="\${prevUrl}" style="color:#aaa; text-decoration:none; padding:10px 20px;">&larr; Prev Design</a>
-      <span style="margin:0 20px; font-weight:bold; color:#fff;">\${designs[currentIndex].name}</span>
-      <a href="\${nextUrl}" style="color:#aaa; text-decoration:none; padding:10px 20px;">Next Design &rarr;</a>
+    <div id="ai-design-flipper">
+      <a class="ai-flipper-link ai-flipper-prev" href="\${prevUrl}">&larr; Prev Design</a>
+      <span class="ai-flipper-name">\${designs[currentIndex].name}</span>
+      <a class="ai-flipper-link ai-flipper-next" href="\${nextUrl}">Next Design &rarr;</a>
     </div>
+    <style>
+      #ai-design-flipper{position:fixed;top:0;left:0;right:0;min-height:44px;padding:0 92px 0 8px;background:#111;color:#eee;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:4px;z-index:99999;font-family:monospace;font-size:12px;border-bottom:1px solid #333;view-transition-name:design-flipper;box-sizing:border-box}
+      .ai-flipper-link{display:flex;align-items:center;min-width:0;min-height:44px;padding:0 8px;color:#aaa;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box}
+      .ai-flipper-prev{justify-content:flex-end}.ai-flipper-next{justify-content:flex-start}
+      .ai-flipper-name{max-width:38vw;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      @media(max-width:520px){#ai-design-flipper{grid-template-columns:minmax(0,1fr) minmax(0,1fr);font-size:10px}.ai-flipper-name{display:none}.ai-flipper-prev{justify-content:flex-start}.ai-flipper-next{justify-content:center}}
+    </style>
   \`;
 
   const attachFlipperEvents = () => {
@@ -859,7 +878,7 @@ function layout({ title, description, nav, content, activeSlug, sourcePath }) {
   // The custom skin is scoped to [data-theme="custom"], so shipping it on
   // every page is safe: other themes are untouched and flipping is instant.
   const stylesheet = targetDesign
-    ? [scopedCustomCss].filter(Boolean).join('\n')
+    ? [STYLE, scopedCustomCss].filter(Boolean).join('\n')
     : [themeCss, STYLE, scopedCustomCss].filter(Boolean).join('\n');
 
   const headContent = `<!doctype html>
@@ -1017,7 +1036,8 @@ ${TRANSITIONS}
       CONTENT: content,
       NAV_LINKS: navHtml,
       THEME_PILLS: themePillsHtml,
-      SOURCE_PATH: escapeHtml(sourcePath)
+      SOURCE_PATH: escapeHtml(sourcePath),
+      NAME: escapeHtml(targetDesignName)
     });
 
     const headInjection = `\n${LIVE_RELOAD_SCRIPT}\n${FONTS}\n${FAVICON}\n${TRANSITIONS}\n<style>${stylesheet}</style>\n</head>`;
@@ -1145,8 +1165,8 @@ ${content}
 `;
   }
   if (targetDesign) {
-    finalHtml = finalHtml.replace(/href="\//g, `href="/designs/${targetDesign}/`);
-    finalHtml = finalHtml.replace(/src="\//g, `src="/designs/${targetDesign}/`);
+    finalHtml = finalHtml.replace(/href="\/(?!api\/)/g, `href="/designs/${targetDesign}/`);
+    finalHtml = finalHtml.replace(/src="\/(?!api\/)/g, `src="/designs/${targetDesign}/`);
   }
   return finalHtml;
 }
@@ -1166,7 +1186,7 @@ function logoTile(p) {
 let portraitOverride = null;
 if (targetDesign) {
   try {
-    await stat(join(root, 'designs', targetDesign, 'assets', 'portrait.jpg'));
+    await stat(join(designSourceDir, 'assets', 'portrait.jpg'));
     portraitOverride = 'assets/portrait.jpg';
   } catch { /* no per-design portrait — keep the shared default */ }
 }
@@ -1196,8 +1216,9 @@ const themeCssBlocks = [];
 // + layout templates from the generated designs/<slug>/DESIGN.md.
 if (targetDesign) {
   try {
-    const designMdRaw = await readFile(join(root, 'designs', targetDesign, 'DESIGN.md'), 'utf8');
+    const designMdRaw = await readFile(join(designSourceDir, 'DESIGN.md'), 'utf8');
     const doc = parseDocument(designMdRaw);
+    if (doc.data && doc.data.name) targetDesignName = doc.data.name;
     const sections = extractSections(doc.body);
     if (sections.css) {
       scopedCustomCss = sections.css; // Un-scoped for standalone site
@@ -1266,7 +1287,7 @@ const nav = [
   ...sections.filter((p) => p.data.slug !== 'home'),
 ];
 
-await rm(outDir, { recursive: true, force: true });
+await rm(outDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 await mkdir(outDir, { recursive: true });
 await cp(assetsDir, join(outDir, 'assets'), { recursive: true });
 
@@ -1276,7 +1297,7 @@ if (targetDesign && scopedCustomCss) {
 }
 if (targetDesign) {
   try {
-    await cp(join(root, 'designs', targetDesign, 'assets'), join(outDir, 'assets'), { recursive: true });
+    await cp(join(designSourceDir, 'assets'), join(outDir, 'assets'), { recursive: true });
   } catch {}
 }
 
