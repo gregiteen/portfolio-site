@@ -195,7 +195,7 @@ watch(vaultDir, { recursive: true }, (eventType, filename) => {
 });
 
 // ─── Theme generation job (queued, async, polled via /generate-status) ────────
-const genJob = { status: 'idle', phase: '', prompt: '', error: null, startedAt: null, finishedAt: null, runId: null, slug: null };
+const genJob = { status: 'idle', phase: '', prompt: '', email: null, error: null, startedAt: null, finishedAt: null, runId: null, slug: null };
 
 // Mirror of compile-theme.mjs's styleName derivation — lets the waiting page
 // peek at the in-progress design's generated assets as they are written.
@@ -205,25 +205,26 @@ function slugForPrompt(prompt) {
 const genQueue = [];
 
 /** Start now if idle, otherwise queue — nothing gets silently dropped. */
-function requestGeneration(prompt) {
+function requestGeneration(prompt, email = null) {
   if (genJob.status === 'running') {
-    genQueue.push(prompt);
-    console.log(`[Generator] Queued "${prompt}" (${genQueue.length} waiting)`);
+    genQueue.push({ prompt, email });
+    console.log(`[Generator] Queued "${prompt}" for ${email} (${genQueue.length} waiting)`);
     return;
   }
-  startGeneration(prompt);
+  startGeneration(prompt, email);
 }
 
 function drainQueue() {
   const next = genQueue.shift();
-  if (next) startGeneration(next);
+  if (next) startGeneration(next.prompt, next.email);
 }
 
-function startGeneration(prompt) {
+function startGeneration(prompt, email = null) {
   const runId = randomBytes(8).toString('hex');
   genJob.status = 'running';
   genJob.phase = 'Starting generator…';
   genJob.prompt = prompt;
+  genJob.email = email;
   genJob.error = null;
   genJob.startedAt = Date.now();
   genJob.finishedAt = null;
@@ -275,6 +276,11 @@ function startGeneration(prompt) {
       genJob.finishedAt = Date.now();
       if (genSlug) console.log(`[Generator] Approved design: ${genSlug}`);
       console.log(`[Generator] Done in ${Math.round((genJob.finishedAt - genJob.startedAt) / 1000)}s.`);
+      if (genJob.email) {
+        sendGenerationCompleteEmail(genJob.email, genSlug || genJob.slug, genJob.prompt).catch(err => {
+          console.error('[Mail] Failed to send completion email:', err.message);
+        });
+      }
       appendRun({ run_id: runId, prompt, status: 'done', startedAt: genJob.startedAt, finishedAt: genJob.finishedAt }).catch((e) => {
         console.error('[Runtime] Failed to persist generation completion:', e.message);
       });
@@ -539,6 +545,29 @@ async function sendConfirmationEmail(email, style, optIn) {
     text: `Hey — Greg here. Thanks for stopping by.\n\nYou asked for "${style}", so the site rebuilt itself around that — every visitor gets their own edition.\n\nA few things I've been building:\n- UltraChat — AI-powered communication platform (https://ultrachat.app)\n- Total Recall — memory OS for AI agents\n- SSSS — the open standard this site runs on\n- Festech.live — live event technology (https://festech.live)\n\nYour edition: ${SITE_URL}\n\nWant to build something together? Just reply — this lands straight in my inbox.\n\n— Greg`,
   });
   console.log(`[Mail] Confirmation sent to ${email}`);
+}
+
+async function sendGenerationCompleteEmail(email, slug, style) {
+  if (!email) return;
+  const mailFrom = process.env.MAIL_FROM || 'admin@gregiteen.xyz';
+  const url = `${SITE_URL}/designs/${slug}/index.html`;
+  
+  const html = emailShell({
+    eyebrow: 'Greg Iteen — Portfolio · Generated',
+    headline: "It's done.",
+    bodyHtml: `
+      <p style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.8;color:#c9c9c7;margin:0 0 16px;">The generator just finished building your custom <em>${style}</em> edition.</p>
+      <a href="${url}" style="display:block;background:#f5f5f3;color:#0a0a0a;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-weight:900;font-size:13px;letter-spacing:2px;text-transform:uppercase;text-decoration:none;text-align:center;padding:18px;margin:28px 0 0;">View it live →</a>
+    `,
+  });
+
+  await smtpTransport.sendMail({
+    from: mailFrom,
+    to: email,
+    subject: `Your ${style} edition is complete`,
+    html,
+    text: `Your custom "${style}" design has finished generating.\n\nView it live here: ${url}\n\n— Greg`,
+  });
 }
 
 // ─── Visitor Logging & Notification ──────────────────────────────────────────
@@ -1263,7 +1292,7 @@ createServer(async (req, res) => {
       // Start (or queue) theme generation in background — never dropped
       const cleanStyle = style.trim().slice(0, 500);
       console.log(`[Generator] Requested for prompt: "${cleanStyle}"`);
-      requestGeneration(cleanStyle);
+      requestGeneration(cleanStyle, email.toLowerCase());
 
       return sendJson(res, 200, { success: true });
     } catch (/** @type {any} */ err) {
