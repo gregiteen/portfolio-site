@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { createTransport } from 'nodemailer';
 import https from 'node:https';
+import Stripe from 'stripe';
 // Robust model-output JSON parser: strips ```json fences + repairs trailing
 // commas, then throws on total failure (callers wrap in try/catch → fallback).
 // Bare JSON.parse fails on fenced output, which the models emit constantly.
@@ -70,6 +71,8 @@ import {
 import { startCalendarPoller } from './lib/calendar.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 // Load .env from the repo root (gitignored; see .env.example). Node 20.12+.
 try { process.loadEnvFile(join(__dirname, '..', '.env')); } catch { /* no .env — rely on real env */ }
@@ -795,7 +798,7 @@ async function generateDelimitedProposal(apiKey, prompt, { requireChanges = fals
   try {
     return parseProposalOutput(first, { requireChanges });
   } catch {
-    const repaired = await geminiCall(apiKey, `Reformat the following proposal response without changing its meaning. Output only this exact delimiter contract, with plain text outside JSON:\n\nSUBJECT: one-line subject\n---PROPOSAL---\n<div class="proposal-html">\nfull HTML proposal\n</div>\n---CLIENT_EMAIL---\nclient email${requireChanges ? '\n---CHANGES---\nbrief change summary' : ''}\n---END---\n\nSOURCE:\n${first}`, { json: false });
+    const repaired = await geminiCall(apiKey, `Reformat the following proposal response without changing its meaning. Output only this exact delimiter contract, with plain text outside JSON:\n\nSUBJECT: one-line subject\n---PROPOSAL---\n<div class="proposal-html">\nfull HTML proposal\n</div>\n---CLIENT_EMAIL---\nclient email\n---PRICE_CENTS---\ninteger price in USD cents${requireChanges ? '\n---CHANGES---\nbrief change summary' : ''}\n---END---\n\nSOURCE:\n${first}`, { json: false });
     return parseProposalOutput(repaired, { requireChanges });
   }
 }
@@ -940,7 +943,7 @@ async function reviseProposal(proposalId, thread, replyText) {
   if (!GOOGLE_API_KEY) throw new Error('No API key for revision');
   thread.revisions++;
   thread.status = 'revising';
-  const revisionPrompt = `You are revising a project proposal based on feedback from the author (Greg Iteen).\n\nCURRENT PROPOSAL:\n${thread.proposal.proposal_text}\n\nCURRENT CLIENT EMAIL DRAFT:\n${thread.proposal.client_email_draft}\n\nGREG'S FEEDBACK:\n${replyText}\n\nApply Greg's feedback precisely. Do not add anything he didn't ask for. Do not remove anything he didn't mention. If he gives specific wording, use it verbatim.\n\nReturn plain text using exactly this delimiter contract. Do NOT return JSON and do not wrap the response in a code fence:\nSUBJECT: updated one-line subject\n---PROPOSAL---\n<div class="proposal-html">\nfull revised HTML proposal\n</div>\n---CLIENT_EMAIL---\nrevised client email\n---CHANGES---\nbrief factual summary of changes\n---END---`;
+  const revisionPrompt = `You are revising a project proposal based on feedback from the author (Greg Iteen).\n\nCURRENT PROPOSAL:\n${thread.proposal.proposal_text}\n\nCURRENT CLIENT EMAIL DRAFT:\n${thread.proposal.client_email_draft}\n\nGREG'S FEEDBACK:\n${replyText}\n\nApply Greg's feedback precisely. Do not add anything he didn't ask for. Do not remove anything he didn't mention. If he gives specific wording, use it verbatim.\n\nReturn plain text using exactly this delimiter contract. Do NOT return JSON and do not wrap the response in a code fence:\nSUBJECT: updated one-line subject\n---PROPOSAL---\n<div class="proposal-html">\nfull revised HTML proposal\n</div>\n---CLIENT_EMAIL---\nrevised client email\n---PRICE_CENTS---\ninteger price in USD cents\n---CHANGES---\nbrief factual summary of changes\n---END---`;
   const revision = await generateDelimitedProposal(GOOGLE_API_KEY, revisionPrompt, { requireChanges: true });
   thread.revision_history = [
     ...(Array.isArray(thread.revision_history) ? thread.revision_history : []),
@@ -1155,6 +1158,52 @@ createServer(async (req, res) => {
     res.writeHead(found ? 200 : 404, { 'content-type': 'text/html; charset=utf-8' });
     res.end(html);
     return;
+  }
+
+  // ── API: Stripe Checkout Session for Proposals ──
+  if (urlPath === '/api/create-checkout-session' && req.method === 'POST') {
+    if (!stripe) {
+      return sendJson(res, 500, { error: 'Stripe is not configured on the server.' });
+    }
+    try {
+      const { proposalId, successUrl, cancelUrl } = await readBody(req);
+      if (!proposalId) return sendJson(res, 400, { error: 'Proposal ID is required' });
+
+      const thread = proposalThreads.get(proposalId);
+      if (!thread) return sendJson(res, 404, { error: 'Proposal not found' });
+
+      const priceCents = thread.proposal?.price_cents;
+      if (!priceCents || isNaN(priceCents) || priceCents <= 0) {
+        return sendJson(res, 400, { error: 'This proposal does not have a valid structured price.' });
+      }
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price_data: {
+              currency: 'usd',
+              product_data: {
+                name: thread.proposal.subject_line || 'Project Proposal',
+                description: \`Payment for proposal \${proposalId}\`,
+              },
+              unit_amount: priceCents,
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        success_url: successUrl || \`\${SITE_URL}/proposal/\${proposalId}?payment=success\`,
+        cancel_url: cancelUrl || \`\${SITE_URL}/proposal/\${proposalId}?payment=cancel\`,
+        customer_email: thread.clientEmail,
+        metadata: { proposalId },
+      });
+
+      return sendJson(res, 200, { sessionId: session.id, url: session.url });
+    } catch (err) {
+      console.error('[Stripe] Checkout creation failed:', err instanceof Error ? err.message : String(err));
+      return sendJson(res, 500, { error: 'Failed to create checkout session' });
+    }
   }
 
   // ── API: Logout ──
@@ -1883,7 +1932,7 @@ BEHAVIORAL RULES:
 - Be professional, warm, but authoritative. You are an expert consultant, not an order-taker.
 - Ask one or two focused questions at a time. Do not overwhelm them.
 - When they give vague answers, gently push for specifics.
-- Set process expectations: "After we align on the high-level needs, I will summarize the vision for you. Once you confirm, I will generate a formal proposal for you to review and sign."
+- Set process expectations: "After we align on the high-level needs, I will summarize the vision for you. Once you confirm, I will draft a formal proposal and send it to Greg for his review and approval. Greg will then email it to you directly. If you'd like to discuss the proposal with him, you'll also be able to pick a time on his calendar."
 - When you have enough information (usually after 4-8 exchanges) AND have aligned on budget/scope feasibility, you MUST present a synthesized vision back to the customer in chat to confirm you understand perfectly.
 - Once they confirm the vision, respond with a JSON assessment.
 
@@ -2088,6 +2137,8 @@ the full proposal in rich HTML
 </div>
 ---CLIENT_EMAIL---
 a brief, warm email to the client that accompanies the proposal
+---PRICE_CENTS---
+the total integer price in USD cents (e.g. 1500000 for $15,000)
 ---END---`;
 
       let proposalDraft = {};

@@ -51,6 +51,8 @@ Build the thing.
 Hi Acme,
 
 Attached is the proposal.
+---PRICE_CENTS---
+1500000
 ---END---`);
   assert.equal(parsed.subject_line, 'Proposal for Acme');
   assert.match(parsed.proposal_text, /# Scope/);
@@ -64,6 +66,8 @@ test('revision parser requires and preserves a change summary', () => {
 Updated scope
 ---CLIENT_EMAIL---
 Updated note
+---PRICE_CENTS---
+1600000
 ---CHANGES---
 Added the requested milestone.
 ---END---`, { requireChanges: true });

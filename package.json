@@ -22,10 +22,11 @@
     "nodemailer": "^9.0.3",
     "pdfkit": "^0.19.1",
     "playwright": "^1.61.1",
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.3",
+    "stripe": "^22.3.1"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",
-    "total-recall-brain": "latest"
+    "total-recall-brain": "^3.13.1"
   }
 }

@@ -1,0 +1,62 @@
+[
+  {
+    "id": "responsive-global-chrome",
+    "symptom": "Header, navigation, design controls, or account actions collide or wrap into unreadable clusters at narrow widths.",
+    "detector": "Render global chrome at 390px and 768px; fail on overlap, horizontal scrolling, clipped controls, or touch targets below 44px.",
+    "repair": "Use mobile-first wrapping or an intentional compact navigation mode, explicit gaps, bounded brand dimensions, and min-width media queries for expansion."
+  },
+  {
+    "id": "unbound-class-vocabulary",
+    "symptom": "Markup references classes with no matching stylesheet selector, leaving important regions unstyled or invisible.",
+    "detector": "Link every static class token in generated layouts to at least one generated CSS selector before rendering.",
+    "repair": "Use only the locked design constitution class registry; repair the smallest mismatched layout or selector rather than inventing a new vocabulary."
+  },
+  {
+    "id": "content-and-grid-overflow",
+    "symptom": "Cards, media, metadata, or long content escape their grid tracks or viewport.",
+    "detector": "Render list and detail pages at all release widths and fail on document-level horizontal overflow or elements outside their containers.",
+    "repair": "Use minmax(0, 1fr), min-width: 0, bounded media, overflow-wrap, and component-scoped overflow rules."
+  },
+  {
+    "id": "missing-content-or-dead-zones",
+    "symptom": "A page loses its main content or produces unexplained empty regions that read as broken rather than intentional.",
+    "detector": "Verify every required placeholder renders visible content and compare section bounding boxes against the viewport height.",
+    "repair": "Keep global chrome exclusively in the shell, keep injected content in a normal full-width flow container, and remove accidental viewport-height or grid-placement constraints from fragments."
+  },
+  {
+    "id": "injected-content-uncovered",
+    "symptom": "Build-injected badges, links, Markdown images, or controls render with default browser styling or destructive intrinsic dimensions.",
+    "detector": "Require stylesheet coverage for every injected runtime class and verify logo, preview, portrait, and badge dimensions independently.",
+    "repair": "Style injected classes explicitly and scope media rules to their component instead of applying broad descendant image rules."
+  },
+  {
+    "id": "duplicate-or-stray-structure",
+    "symptom": "Navigation, metadata, numbering, or decorative fragments render twice or float without a meaningful parent.",
+    "detector": "Inspect the assembled DOM for repeated global chrome and render list pages for detached absolute-positioned artifacts.",
+    "repair": "Give each structural concern one owner, keep decorative elements inside positioned parents, and remove unsupported sequence markers."
+  },
+  {
+    "id": "syntax-or-placeholder-leakage",
+    "symptom": "Raw template tokens, braces, malformed tags, or unformatted values become visible to visitors.",
+    "detector": "Reject unknown placeholders, unbalanced HTML/CSS, visible template delimiters, and raw machine-formatted dates before publication.",
+    "repair": "Repair the producing fragment only and rerun deterministic validation before visual review."
+  },
+  {
+    "id": "contrast-and-image-legibility",
+    "symptom": "Text, badges, or controls become unreadable against imagery or low-contrast surfaces.",
+    "detector": "Check computed contrast and visually inspect text placed over generated images at every release width.",
+    "repair": "Apply an intentional scrim, solid reading surface, or repositioning; never rely on the generated image having a conveniently empty region."
+  },
+  {
+    "id": "generic-composition",
+    "symptom": "The result is technically valid but reads as a reusable template with a recolored palette.",
+    "detector": "Reject designs whose hierarchy, grid topology, hero thesis, and signature interaction could be reused unchanged for an unrelated prompt.",
+    "repair": "Return to the subject-specific design constitution and strengthen one justified compositional risk instead of adding decorative effects."
+  },
+  {
+    "id": "multi-column-text-collision",
+    "symptom": "Hero text or block text is incorrectly broken into interleaved columns, causing sentences to jumble together horizontally and rendering the content completely unreadable.",
+    "detector": "Check if column-count or column-width is applied to containers holding block-level elements like h1, p, or blockquote without proper break-inside rules.",
+    "repair": "Remove column-count from typography containers. Use standard flexbox or grid layouts with max-width on text to ensure strict linear reading order and prevent horizontal collision."
+  }
+]
