@@ -112,14 +112,33 @@ function loginPage(flash) {
     body: `<h1>Sign in</h1>
 <form method="POST" action="/login">
   <label>Email</label>
-  <input type="email" name="email" required autofocus placeholder="sales@gregiteen.xyz">
+  <input type="email" id="login-email" name="email" required autofocus placeholder="sales@gregiteen.xyz">
   <label style="display:flex; justify-content:space-between; align-items:baseline;">
     <span>Password</span>
-    <a href="https://gregiteen.xyz/forgot.html" style="font-size:0.85em; color:var(--gray); text-decoration:none;">Forgot password?</a>
+    <a href="#" onclick="requestPasswordReset(event)" style="font-size:0.85em; color:var(--gray); text-decoration:none;">Forgot password?</a>
   </label>
   <input type="password" name="password" required>
   <button type="submit">Sign in</button>
-</form>`,
+</form>
+<script>
+  async function requestPasswordReset(e) {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value;
+    if (!email) return alert('Please enter your email address first.');
+    try {
+      const res = await fetch('/api/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if (res.ok) alert('Success! A reset link has been sent to the backup email.');
+      else alert('Failed: ' + (data.error || 'Unknown error'));
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+</script>`,
   });
 }
 

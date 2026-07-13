@@ -1070,7 +1070,7 @@ createServer(async (req, res) => {
   // ── Standalone webmail app (mail.gregiteen.xyz) — own auth, own router.
   // Kept separate from Mailcow's own UI, which is hard-wired to a single
   // hostname for CORS/session purposes and can't be aliased. ──
-  if ((req.headers.host || '').split(':')[0] === 'mail.gregiteen.xyz') {
+  if ((req.headers.host || '').split(':')[0] === 'mail.gregiteen.xyz' && !urlPath.startsWith('/api/')) {
     return handleWebmail(req, res, urlPath);
   }
 
