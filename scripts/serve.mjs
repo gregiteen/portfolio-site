@@ -991,7 +991,7 @@ function readBody(req) {
 
 /** Paths that bypass the auth check */
 function isPublicPath(urlPath) {
-  if (urlPath === '/splash.html' || urlPath === '/verify.html' || urlPath === '/consult.html') return true;
+  if (urlPath === '/splash.html' || urlPath === '/verify.html' || urlPath === '/consult.html' || urlPath === '/forgot.html' || urlPath === '/reset.html') return true;
   if (urlPath.startsWith('/api/')) return true;
   if (urlPath.startsWith('/assets/')) return true;
   if (urlPath.startsWith('/gi-logo')) return true; // brand marks — used on pre-auth pages
