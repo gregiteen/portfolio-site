@@ -2,19 +2,19 @@
 type: "visitor_profile"
 title: "Visitor profile: gregiteen@gmail.com"
 description: "Runtime visitor profile for gregiteen.xyz."
-timestamp: "2026-07-12T11:44:57.826Z"
+timestamp: "2026-07-12T22:24:57.589Z"
 email: "gregiteen@gmail.com"
 first_seen: "2026-07-07T07:39:04.658Z"
-last_seen: "2026-07-12T11:44:57.826Z"
-visits: 20
-style_prompt: "ARABIA"
+last_seen: "2026-07-12T22:24:57.589Z"
+visits: 24
+style_prompt: "MAD MAX"
 opt_in: true
-generation_count: 16
+generation_count: 20
 status: "Lead"
 timeline: "Waiting-page intake at 2026-07-11T04:22:53.003Z: {\"reason\":\"custom-project\",\"timeline\":\"this-quarter\",\"project\":\"Automated Sales support and proposals\"},Waiting-page intake at 2026-07-11T04:29:04.418Z: {\"reason\":\"ultrachat-setup\",\"timeline\":\"asap\",\"project\":\"Crm\"}"
 enrichment:
   email: "gregiteen@gmail.com"
-  style: "ARABIA"
+  style: "MAD MAX"
   optIn: true
   ip: "71.205.253.218"
   userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
@@ -46,7 +46,7 @@ drip:
   ],
   "enrichment": {
     "email": "gregiteen@gmail.com",
-    "style": "ARABIA",
+    "style": "MAD MAX",
     "optIn": true,
     "ip": "71.205.253.218",
     "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
@@ -77,7 +77,7 @@ drip:
 ```json
 {
   "email": "gregiteen@gmail.com",
-  "style": "ARABIA",
+  "style": "MAD MAX",
   "optIn": true,
   "ip": "71.205.253.218",
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
