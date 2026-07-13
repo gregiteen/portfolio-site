@@ -1412,7 +1412,7 @@ createServer(async (req, res) => {
         return sendJson(res, 400, { success: false, error: 'Invalid or unknown webmail address.' });
       }
       
-      const resetToken = crypto.randomBytes(32).toString('hex');
+      const resetToken = randomBytes(32).toString('hex');
       passwordResets.set(resetToken, { email, expires: Date.now() + 15 * 60 * 1000 });
       
       const resetUrl = `${SITE_URL}/reset.html?token=${resetToken}`;
