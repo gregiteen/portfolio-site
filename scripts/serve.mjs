@@ -1453,7 +1453,7 @@ createServer(async (req, res) => {
       
       // We must run doveadm on the docker container to generate the password hash.
       // And then run a mysql query to update the mailbox table in mailcow.
-      const execSync = require('node:child_process').execSync;
+      const { execSync } = await import('node:child_process');
       
       // 1. Generate Mailcow SSHA512 hash using dovecot container
       const hashCmd = `docker exec mailcowdockerized-dovecot-mailcow-1 doveadm pw -s SHA512-CRYPT -p '${password.replace(/'/g, "'\\''")}'`;
