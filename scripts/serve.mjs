@@ -1134,9 +1134,32 @@ createServer(async (req, res) => {
 </head>
 <body>
   ${thread.proposal.proposal_text}
-  <div style="margin-top: 40px; text-align: center;">
-    <a class="cta" href="/sign/${proposalId}">Proceed to Signing &rarr;</a>
+  <div style="margin-top: 40px; text-align: center; display: flex; gap: 16px; justify-content: center;">
+    ${thread.proposal.price_cents > 0 ? `
+      <button class="cta" onclick="payProposal('${proposalId}')" style="cursor: pointer; border: none;">Pay $${(thread.proposal.price_cents / 100).toLocaleString()} &amp; Sign &rarr;</button>
+    ` : `
+      <a class="cta" href="/sign/${proposalId}">Proceed to Signing &rarr;</a>
+    `}
   </div>
+  <script>
+    async function payProposal(id) {
+      try {
+        const res = await fetch('/api/create-checkout-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ proposalId: id })
+        });
+        const data = await res.json();
+        if (data.url) {
+          window.location.href = data.url;
+        } else {
+          alert(data.error || 'Failed to start checkout');
+        }
+      } catch (err) {
+        alert('Failed to connect to checkout service.');
+      }
+    }
+  </script>
 </body>
 </html>`;
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -1185,7 +1208,7 @@ createServer(async (req, res) => {
               currency: 'usd',
               product_data: {
                 name: thread.proposal.subject_line || 'Project Proposal',
-                description: \`Payment for proposal \${proposalId}\`,
+                description: `Payment for proposal ${proposalId}`,
               },
               unit_amount: priceCents,
             },
@@ -1193,8 +1216,8 @@ createServer(async (req, res) => {
           },
         ],
         mode: 'payment',
-        success_url: successUrl || \`\${SITE_URL}/proposal/\${proposalId}?payment=success\`,
-        cancel_url: cancelUrl || \`\${SITE_URL}/proposal/\${proposalId}?payment=cancel\`,
+        success_url: successUrl || `${SITE_URL}/proposal/${proposalId}?payment=success`,
+        cancel_url: cancelUrl || `${SITE_URL}/proposal/${proposalId}?payment=cancel`,
         customer_email: thread.clientEmail,
         metadata: { proposalId },
       });
@@ -1395,20 +1418,22 @@ createServer(async (req, res) => {
       const resetUrl = `${SITE_URL}/reset.html?token=${resetToken}`;
       const mailOwner = process.env.MAIL_OWNER;
       
-      const result = await sendEmailSMTP2GO(
-        mailOwner,
-        'Password Reset Request for Webmail',
-        `A password reset was requested for ${email}.\n\nClick the link below to securely reset the password (expires in 15 minutes):\n${resetUrl}\n\nIf this wasn't you, ignore this email.`,
-        `<div style="font-family:sans-serif;color:#111;">
+      await smtpTransport.sendMail({
+        from: mailFrom,
+        to: mailOwner,
+        subject: 'Password Reset Request for Webmail',
+        text: `A password reset was requested for ${email}.\n\nClick the link below to securely reset the password (expires in 15 minutes):\n${resetUrl}\n\nIf this wasn't you, ignore this email.`,
+        html: `<div style="font-family:sans-serif;color:#111;">
           <h2>Webmail Password Reset</h2>
           <p>A password reset was requested for <strong>${email}</strong>.</p>
           <p><a href="${resetUrl}" style="background:#0a0a0a;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;margin-top:10px;">Reset Password</a></p>
           <p style="margin-top:20px;font-size:0.85em;color:#666;">This link expires in 15 minutes.</p>
         </div>`
-      );
+      });
       
       return sendJson(res, 200, { success: true });
     } catch (err) {
+      console.error('[Forgot Password Error]', err);
       return sendJson(res, 500, { success: false, error: 'Failed to request reset.' });
     }
   }
