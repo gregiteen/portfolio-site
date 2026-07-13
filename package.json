@@ -16,7 +16,7 @@
     "validate": "ssss conformance --engine"
   },
   "dependencies": {
-    "@ssss/cli": "github:gregiteen/ssss#v0.7.0",
+    "@ssss/cli": "github:gregiteen/ssss#31e1245",
     "imapflow": "^1.4.6",
     "mailparser": "^3.9.14",
     "nodemailer": "^9.0.3",
@@ -27,6 +27,6 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.0",
-    "total-recall-brain": "^3.13.1"
+    "total-recall-brain": "^3.13.2"
   }
 }
