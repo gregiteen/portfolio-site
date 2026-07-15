@@ -27,11 +27,11 @@ enrichment:
 pending_notification: null
 drip:
   campaign: "default-nurture"
-  step: 1
+  step: 2
   status: "active"
-  next_send_at: "2026-07-14T18:52:55.405Z"
+  next_send_at: "2026-07-21T18:53:42.551Z"
   enrolled_at: "2026-07-10T18:52:30.976Z"
-  last_sent_at: "2026-07-11T18:52:55.405Z"
+  last_sent_at: "2026-07-14T18:53:42.551Z"
   pause_reason: null
 ---
 # Visitor Profile
@@ -60,11 +60,11 @@ drip:
   "pending_notification": null,
   "drip": {
     "campaign": "default-nurture",
-    "step": 1,
+    "step": 2,
     "status": "active",
-    "next_send_at": "2026-07-14T18:52:55.405Z",
+    "next_send_at": "2026-07-21T18:53:42.551Z",
     "enrolled_at": "2026-07-10T18:52:30.976Z",
-    "last_sent_at": "2026-07-11T18:52:55.405Z",
+    "last_sent_at": "2026-07-14T18:53:42.551Z",
     "pause_reason": null
   }
 }
