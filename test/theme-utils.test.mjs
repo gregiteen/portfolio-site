@@ -10,11 +10,41 @@ import {
   serializeThemeDoc,
   scopeCss,
   fillTemplate,
+  hoistCssImports,
   validateThemePayload,
   extractJson,
   enforceBrandAssetContract,
   analyzeThemeClassBindings,
 } from '../scripts/lib/theme.mjs';
+
+test('hoistCssImports moves a Google Fonts @import (semicolons in URL) above earlier rules', () => {
+  const fontsImport = '@import url("https://fonts.googleapis.com/css2?family=Unbounded:wght@400;700&family=Manrope:wght@400;600&display=swap");';
+  const css = `body { color: red; }\n${fontsImport}\n.card { margin: 0; }`;
+  const hoisted = hoistCssImports(css);
+  assert.ok(hoisted.startsWith(fontsImport), 'full @import statement must be first');
+  assert.equal(hoisted.match(/@import/g).length, 1, 'import must not be duplicated or split');
+  assert.match(hoisted, /body \{ color: red; \}/);
+  assert.match(hoisted, /\.card \{ margin: 0; \}/);
+});
+
+test('hoistCssImports leaves import-free CSS untouched', () => {
+  const css = 'body { color: red; }';
+  assert.equal(hoistCssImports(css), css);
+});
+
+test('validateThemePayload requireFontImport rejects a stylesheet with no Google Fonts import', () => {
+  const layouts = { shell: '<div class="frame">{{CONTENT}}</div>' };
+  const noFonts = validateThemePayload(
+    { name: 'x', accent: '#123456', css: 'body { font-family: Impact; } '.repeat(10), layouts },
+    { requireFontImport: true }
+  );
+  assert.ok(noFonts.errors.some((e) => e.includes('fonts.googleapis.com')), 'must flag missing font import');
+  const withFonts = validateThemePayload(
+    { name: 'x', accent: '#123456', css: '@import url("https://fonts.googleapis.com/css2?family=Sora&display=swap");\nbody { font-family: Sora; } '.repeat(1) + '.pad { margin: 0 auto; padding: 2rem; }', layouts },
+    { requireFontImport: true }
+  );
+  assert.ok(!withFonts.errors.some((e) => e.includes('fonts.googleapis.com')));
+});
 
 test('parseNestedMap recovers theme tokens the canonical parser drops', () => {
   const raw = [

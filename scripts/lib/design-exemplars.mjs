@@ -8,15 +8,15 @@ tokens:
     text: '#F4F4F0'
     accent: '#FF3300'
   typography:
-    display: '"PP Neue Montreal", "Helvetica Neue", sans-serif'
-    body: '"JetBrains Mono", monospace'
+    display: '"Unbounded", sans-serif'   # exists on fonts.google.com — mandatory property of any family you choose
+    body: '"Manrope", sans-serif'
   spacing:
     section_y: 'clamp(80px, 10vw, 160px)'
     grid_gap: '1px'
   layout:
     max_width: '100vw'
 \`\`\`
-**Example 2: Valid YAML Layout Architecture (SYNTAX ONLY - DO NOT COPY STYLE)**
+**Example 2: Valid YAML Layout Architecture (SYNTAX ONLY - DO NOT COPY STYLE. Your brief demands DIFFERENT font families than either example — pick faces from fonts.google.com that no other brief would choose.)**
 OUTPUT:
 \`\`\`yaml
 tokens:
@@ -25,8 +25,8 @@ tokens:
     text: '#1C1C1A'
     accent: '#5A554A'
   typography:
-    display: '"Ogg", "Playfair Display", serif'
-    body: '"Inter", sans-serif'
+    display: '"Instrument Serif", serif'  # exists on fonts.google.com
+    body: '"Outfit", sans-serif'
   spacing:
     section_y: 'clamp(120px, 15vw, 240px)'
     grid_gap: 'clamp(20px, 4vw, 40px)'

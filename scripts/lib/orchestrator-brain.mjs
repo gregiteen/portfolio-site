@@ -45,6 +45,7 @@ Link animation progress directly to the scrollbar's physical pixel offset, compl
 - **Color**: Use OKLCH for perceptually uniform colors that guarantee WCAG 2.2 4.5:1 contrast ratios. \`--brand: oklch(75% 0.15 250);\`
 
 ## 5. KINETIC TYPOGRAPHY & VARIABLE FONTS
+- **Loading Contract**: identity fonts come from fonts.google.com via one \`@import url("https://fonts.googleapis.com/css2?family=...&display=swap")\` at the top of the stylesheet (the build hoists it into a valid position). System faces (Impact, Arial, Helvetica, system-ui) are never an identity font.
 - **Variable Interpolation**: Animate axes smoothly on hover. \`font-variation-settings: 'wght' 900, 'wdth' 110;\`
 - **Algorithmic Balancing**: \`text-wrap: balance;\` for headings (max 4 lines), \`text-wrap: pretty;\` for body copy.
 
@@ -57,7 +58,7 @@ Eliminate z-index wars. The browser handles the stacking context natively via th
 
 ## 7. PHYSICALITY, TETHERING & MX
 - **Native Anchor Positioning**: \`position-anchor: --trigger; top: anchor(bottom);\` completely replaces Popper.js.
-- **Tactile Brutalism**: Use SVG noise filters (\`<feTurbulence>\`) encoded directly in CSS as Data URIs for zero HTTP requests. Use physical, unblurred drop shadows.
+- **Tactile Texture**: Use SVG noise filters (\`<feTurbulence>\`) encoded directly in CSS as Data URIs for zero HTTP requests — grain overlays, paper texture, and material depth that keep flat color fields from reading as flat templates.
 - **Semantic MX (Machine Experience)**: Enforce strict \`<main>\`, \`<article>\`, and \`<nav>\` architectures so AI agents can index the site perfectly.
 
 ## 8. GENERATIVE ASSETS (Nano Banana 2 Lite / gemini-3.1-flash-lite-image)

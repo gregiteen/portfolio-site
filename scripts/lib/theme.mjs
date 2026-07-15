@@ -168,6 +168,28 @@ export function scopeCss(css, scope = '[data-theme="custom"]') {
   return out.join('\n');
 }
 
+/**
+ * Move every @import (and @charset) statement to the top of a stylesheet.
+ * Generated theme CSS is concatenated AFTER the default site CSS inside one
+ * <style> tag; per the CSS spec an @import that follows any other rule is
+ * invalid and silently ignored — which is exactly how every generated theme's
+ * Google Fonts failed to load and pages fell back to default/system fonts.
+ */
+export function hoistCssImports(css) {
+  const imports = [];
+  // Google Fonts css2 URLs contain semicolons inside quoted strings
+  // (e.g. wght@400;700), so the statement terminator must be matched only
+  // outside the quoted URL: quoted-string | url(...) first, then [^;]* ;.
+  const rest = String(css).replace(/@import\s+(?:url\(\s*(?:"[^"]*"|'[^']*'|[^)"']*)\s*\)|"[^"]*"|'[^']*')[^;]*;|@charset\s+"[^"]*";/g, (stmt) => {
+    imports.push(stmt.trim());
+    return '';
+  });
+  if (!imports.length) return css;
+  // @charset (if any) must precede @import; keep relative order otherwise.
+  imports.sort((a, b) => Number(b.startsWith('@charset')) - Number(a.startsWith('@charset')));
+  return `${[...new Set(imports)].join('\n')}\n${rest}`;
+}
+
 /** Fill {{PLACEHOLDER}} slots. Unknown slots become '' so junk never renders. */
 export function fillTemplate(template, vars) {
   return template.replace(/\{\{([A-Z0-9_]+)\}\}/g, (_, key) =>
@@ -485,6 +507,7 @@ export function validateThemePayload(payload, {
   requireAllLayouts = false,
   requireHero = false,
   requireClassBindings = false,
+  requireFontImport = false,
   requiredLayoutClasses = {},
 } = {}) {
   const errors = [];
@@ -576,6 +599,13 @@ export function validateThemePayload(payload, {
 
   if (requireHero && !/assets\/hero\.jpg/i.test(css)) {
     errors.push('stylesheet must visibly reference assets/hero.jpg for the home hero');
+  }
+
+  // Fonts are the strongest identity carrier of a generated theme. Without a
+  // Google Fonts @import the page renders in fallback/system faces and every
+  // theme converges on the same dated look regardless of its constitution.
+  if (requireFontImport && !/@import\s+url\(\s*["']?https:\/\/fonts\.googleapis\.com/i.test(css)) {
+    errors.push('stylesheet must begin with @import url("https://fonts.googleapis.com/css2?...") loading the constitution\'s identity fonts — without it the theme renders in fallback fonts');
   }
 
   if (requireClassBindings) {

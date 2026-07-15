@@ -9,7 +9,7 @@ import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // @ts-ignore
 import { parseDocument } from '@ssss/cli/frontmatter';
-import { extractSections, fillTemplate } from './lib/theme.mjs';
+import { extractSections, fillTemplate, hoistCssImports } from './lib/theme.mjs';
 
 let targetDesign = null;
 let targetDesignName = 'Greg Iteen';
@@ -877,9 +877,11 @@ function layout({ title, description, nav, content, activeSlug, sourcePath }) {
 
   // The custom skin is scoped to [data-theme="custom"], so shipping it on
   // every page is safe: other themes are untouched and flipping is instant.
-  const stylesheet = targetDesign
+  // hoistCssImports: theme @import statements (Google Fonts) must reach the
+  // top of the combined <style> or the browser drops them silently.
+  const stylesheet = hoistCssImports(targetDesign
     ? [STYLE, scopedCustomCss].filter(Boolean).join('\n')
-    : [themeCss, STYLE, scopedCustomCss].filter(Boolean).join('\n');
+    : [themeCss, STYLE, scopedCustomCss].filter(Boolean).join('\n'));
 
   const headContent = `<!doctype html>
 <html lang="en">
@@ -1215,25 +1217,39 @@ const themeCssBlocks = [];
 // Individual AI-skin build (node build-site.mjs --design <slug>): pull scoped CSS
 // + layout templates from the generated designs/<slug>/DESIGN.md.
 if (targetDesign) {
-  try {
-    const designMdRaw = await readFile(join(designSourceDir, 'DESIGN.md'), 'utf8');
-    const doc = parseDocument(designMdRaw);
-    if (doc.data && doc.data.name) targetDesignName = doc.data.name;
-    const sections = extractSections(doc.body);
-    if (sections.css) {
-      scopedCustomCss = sections.css; // Un-scoped for standalone site
-      customLayouts = {};
-      for (const [key, content] of Object.entries(sections)) {
-        if (key.startsWith('layout:')) customLayouts[key.slice('layout:'.length)] = content;
-      }
-    }
-  } catch (e) {
-    console.warn(`[Warn] Could not parse DESIGN.md for ${targetDesign}: ${String(e)}`);
+  // Fail closed: a design build without its generated theme would silently
+  // ship an unthemed clone of the default site labeled as the design (this
+  // happened live — batman/turtles rendered as plain default pages after
+  // their DESIGN.md sources were deleted). A missing/invalid theme source is
+  // a build error, never a fallback.
+  const designMdRaw = await readFile(join(designSourceDir, 'DESIGN.md'), 'utf8').catch((e) => {
+    throw new Error(`design "${targetDesign}" has no readable theme source at ${join(designSourceDir, 'DESIGN.md')}: ${String(e)}`);
+  });
+  const doc = parseDocument(designMdRaw);
+  if (doc.data && doc.data.name) targetDesignName = doc.data.name;
+  const sections = extractSections(doc.body);
+  if (!sections.css || !sections.css.trim()) {
+    throw new Error(`design "${targetDesign}" DESIGN.md contains no "## section:css" block — refusing to build an unthemed clone`);
+  }
+  scopedCustomCss = sections.css; // Un-scoped for standalone site
+  customLayouts = {};
+  for (const [key, content] of Object.entries(sections)) {
+    if (key.startsWith('layout:')) customLayouts[key.slice('layout:'.length)] = content;
   }
 }
 
+// A registered skin is only real if its generated theme source still exists.
+// Skins whose designs/<slug>/DESIGN.md is gone are excluded from the flipper
+// and the auto-build loop (instead of being silently rebuilt as default
+// clones), with a loud warning so the drift is visible in every build log.
 const aiDesigns = pages
   .filter((p) => p.data.x_kind === 'theme-skin')
+  .filter((p) => {
+    const slug = p.data.slug.replace(/^(design|skin)-/, '');
+    if (existsSync(join(root, 'designs', slug, 'DESIGN.md'))) return true;
+    console.warn(`[Warn] Skin "${p.data.slug}" is registered but designs/${slug}/DESIGN.md is missing — excluded from flipper and design builds. Regenerate it or remove vault/pages/skins/${slug}.md.`);
+    return false;
+  })
   .sort((a, b) => (b.data.x_year ?? 0) - (a.data.x_year ?? 0) || a.data.name.localeCompare(b.data.name));
 
 const flipperData = aiDesigns.map(d => ({ name: d.data.name, url: d.data.x_link }));
@@ -1293,7 +1309,7 @@ await cp(assetsDir, join(outDir, 'assets'), { recursive: true });
 
 // Always emit theme.css if a target design is being built
 if (targetDesign && scopedCustomCss) {
-  await writeFile(join(outDir, 'theme.css'), scopedCustomCss);
+  await writeFile(join(outDir, 'theme.css'), hoistCssImports(scopedCustomCss));
 }
 if (targetDesign) {
   try {

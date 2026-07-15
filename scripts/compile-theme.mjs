@@ -508,6 +508,7 @@ The constitution is a production contract, not inspirational prose:
 - Include the injected runtime classes badge, src, backlink, btn, and md-img in classVocabulary with owner css.
 - layoutBlueprints must define the root class, DOM regions, hierarchy, and composition for EVERY layout in the placeholder contract. Only shell owns global chrome.
 - Every layoutBlueprint must expose one rootClass from classVocabulary; downstream validation requires that exact class on the fragment's first element.
+- tokens.typography must name EXACT font families that exist on fonts.google.com — one distinctive display face plus one refined body face, loadable together via a single @import. Typography is the strongest identity carrier: NEVER use Impact, Arial, Helvetica, Times, Verdana, or system-ui as identity fonts, and NEVER the site's default trio (Fraunces, Archivo, IBM Plex Mono). Different briefs must land on different families — treat a font pairing another theme could plausibly pick as a failure.
 - Mobile is the base architecture; expansion uses min-width breakpoints.
 - Do not design dialog, popover, drawer, or hidden-menu navigation. Navigation stays visible, wraps cleanly on mobile, and expands at min-width breakpoints.
 - The home blueprint must apply exactly one named hero class that the stylesheet will give background-image: url(assets/hero.jpg).
@@ -621,6 +622,7 @@ You are the sole CSS owner. Implement the ENTIRE stylesheet for this locked Desi
 ${styleSpec}
 
 RULES:
+- The stylesheet MUST BEGIN with exactly one @import url("https://fonts.googleapis.com/css2?family=...&display=swap") that loads the constitution's exact typography families (with the weights/axes you use), then expose them as custom properties (e.g. --font-display, --font-body) consumed everywhere. The build pipeline hoists @import to a spec-valid position, so it WILL load — never fall back to Impact/Arial/system-ui/default-site fonts as the identity face.
 - Define every class in classVocabulary within one coherent cascade. Do not invent selectors outside the constitution except pseudo states, keyframes, and required runtime states.
 - Organize the stylesheet: tokens; reset/base content; shell/layout; reusable components; page families; motion; min-width responsive expansion.
 - The home hero visibly uses background-image: url(assets/hero.jpg). Explicitly style .badge, .src, .backlink, .btn, .md-img, .gi-reveal, and .gi-reveal.gi-in.
@@ -695,6 +697,7 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
       requireAllLayouts: true,
       requireHero: true,
       requireClassBindings: true,
+      requireFontImport: true,
       requiredLayoutClasses,
     });
     if (!verdict.theme) {
@@ -719,6 +722,7 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
         requireAllLayouts: true,
         requireHero: true,
         requireClassBindings: true,
+        requireFontImport: true,
         requiredLayoutClasses,
       });
       
@@ -754,6 +758,7 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
         requireAllLayouts: true,
         requireHero: true,
         requireClassBindings: true,
+        requireFontImport: true,
         requiredLayoutClasses,
       });
       if (verdict.theme) return;
@@ -849,9 +854,9 @@ OUTPUT: exactly one JSON object: { "html": "complete repaired ${target} fragment
       requireAllLayouts: true,
       requireHero: true,
       requireClassBindings: true,
+      requireFontImport: true,
       requiredLayoutClasses,
     });
-    if (finalVerdict.theme) return;
     if (finalVerdict.theme) return;
     console.warn(`[Review Override] Release gate rejected theme: ${finalVerdict.errors.join('; ')} — shipping anyway per policy.`);
     try {

@@ -27,6 +27,12 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.0",
-    "total-recall-brain": "^3.13.1"
+    "better-sqlite3": "^12.11.1",
+    "total-recall-brain": "github:gregiteen/total-recall#3259bb99b091a359ed5aba1fdd2c5a12379bfa9f"
+  },
+  "overrides": {
+    "total-recall-brain": {
+      "@ssss/cli": "github:gregiteen/ssss#31e1245af1f02abe17d5655b0ee33ed464d25b70"
+    }
   }
 }
