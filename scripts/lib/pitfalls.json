@@ -58,5 +58,17 @@
     "symptom": "Hero text or block text is incorrectly broken into interleaved columns, causing sentences to jumble together horizontally and rendering the content completely unreadable.",
     "detector": "Check if column-count or column-width is applied to containers holding block-level elements like h1, p, or blockquote without proper break-inside rules.",
     "repair": "Remove column-count from typography containers. Use standard flexbox or grid layouts with max-width on text to ensure strict linear reading order and prevent horizontal collision."
+  },
+  {
+    "id": "overlay-kills-clicks",
+    "symptom": "Every link/button on the design is unclickable because a decorative overlay class (pointer-events:none, position:fixed, noise/grain) was applied to a content container or the shell root \u2014 pointer-events inherits to all descendants.",
+    "detector": "A class combining pointer-events:none with inset:0/position:fixed appears on an element that contains {{CONTENT}}, navigation, or any interactive markup.",
+    "repair": "Move the overlay class to its own empty sibling element (e.g. <div class=\"grain\"></div>); content containers never carry pointer-events:none."
+  },
+  {
+    "id": "hero-fouc-invisible-text",
+    "symptom": "Hero text is invisible on first paint: light text is colored for a dark background-image, but the image (often ~1MB) has not downloaded yet, so the text renders light-on-light.",
+    "detector": "A rule sets background-image without also setting a background-color of similar luminance to the image, while child text uses a color chosen against the image.",
+    "repair": "Declare background-color alongside every background-image (matching the image's darkness) so text contrast holds before the image loads."
   }
 ]

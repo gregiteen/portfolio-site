@@ -629,6 +629,8 @@ RULES:
 - Mobile 390px is the base. Never use max-width media queries for core structure. Prevent overflow with min-width:0 and minmax(0,1fr) where relevant.
 - Typography and spatial rhythm carry the identity. Implement the director's signature gesture as one orchestrated moment, not scattered effects.
 - Keep text legible when generated imagery is visually busy.
+- Every container with a background-image MUST also declare a background-color of similar darkness — text must stay readable before the image finishes downloading.
+- pointer-events: none belongs ONLY on empty decorative overlay elements (grain, vignette). Never apply such a class to any container that holds content or navigation — pointer-events inherits and kills every link inside.
 
 SELECTED MECHANIC REFERENCES (quality only; do not copy blindly):
 ${customExemplars}

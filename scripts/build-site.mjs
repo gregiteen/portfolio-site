@@ -9,7 +9,7 @@ import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // @ts-ignore
 import { parseDocument } from '@ssss/cli/frontmatter';
-import { extractSections, fillTemplate, hoistCssImports } from './lib/theme.mjs';
+import { extractSections, fillTemplate, hoistCssImports, INTERACTION_CSS } from './lib/theme.mjs';
 
 let targetDesign = null;
 let targetDesignName = 'Greg Iteen';
@@ -888,9 +888,10 @@ function layout({ title, description, nav, content, activeSlug, sourcePath }) {
   // every page is safe: other themes are untouched and flipping is instant.
   // hoistCssImports: theme @import statements (Google Fonts) must reach the
   // top of the combined <style> or the browser drops them silently.
+  // INTERACTION_CSS last: build-owned invariants outrank any theme rule.
   const stylesheet = hoistCssImports(targetDesign
-    ? [STYLE, scopedCustomCss].filter(Boolean).join('\n')
-    : [themeCss, STYLE, scopedCustomCss].filter(Boolean).join('\n'));
+    ? [STYLE, scopedCustomCss, INTERACTION_CSS].filter(Boolean).join('\n')
+    : [themeCss, STYLE, scopedCustomCss, INTERACTION_CSS].filter(Boolean).join('\n'));
 
   const headContent = `<!doctype html>
 <html lang="en">
@@ -1010,6 +1011,12 @@ ${TRANSITIONS}
     var seen = 0;
     els.forEach(function(el){
       if (el.closest('.gi-reveal') && el.closest('.gi-reveal') !== el) return; // no nested reveals
+      // Never hide content the visitor can already see: above-the-fold
+      // sections (the hero especially) paint immediately. Hiding them behind
+      // an IO round-trip + 0.7s transition made first paint read as a blank
+      // page — worst on slow connections where the hero image is still
+      // downloading. Scroll-in reveals below the fold keep the motion.
+      if (el.getBoundingClientRect().top < innerHeight) return;
       el.classList.add('gi-reveal');
       el.style.setProperty('--gi-stagger', ((seen++ % 6) * 0.08) + 's');
     });

@@ -278,6 +278,21 @@ const BRAND_ASSET_CSS = `
 .tl-custom { display: flex; flex-wrap: wrap; align-items: center; }
 `;
 
+/* Release invariant: no generated theme may make navigation or actions
+   unclickable. Seen live: a shell put a decorative pointer-events:none
+   overlay class on the page ROOT, and every link on every page of that
+   design silently died (pointer-events inherits). Decorative overlays keep
+   working — they contain no interactive elements. */
+export const INTERACTION_CSS = `
+/* release invariant: interaction */
+a[href], button, [role="button"], input, select, textarea, summary, label {
+  pointer-events: auto !important;
+}
+/* The build-owned CNA banner intentionally pairs opacity:0 with
+   pointer-events:none while hidden — keep its link unclickable until shown. */
+.cna-banner:not(.visible) .cna-link { pointer-events: none !important; }
+`;
+
 /* Motion runtime contract: build-site injects a script that tags content
    sections with .gi-reveal and flips .gi-in as they scroll into view. Themes
    may override the transition; this default guarantees every generated site
