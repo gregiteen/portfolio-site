@@ -508,6 +508,7 @@ export function validateThemePayload(payload, {
   requireHero = false,
   requireClassBindings = false,
   requireFontImport = false,
+  requireBrandLogo = false,
   requiredLayoutClasses = {},
 } = {}) {
   const errors = [];
@@ -599,6 +600,14 @@ export function validateThemePayload(payload, {
 
   if (requireHero && !/assets\/hero\.jpg/i.test(css)) {
     errors.push('stylesheet must visibly reference assets/hero.jpg for the home hero');
+  }
+
+  // The shell must carry the brand mark: designs shipped live with no logo
+  // anywhere because nothing enforced the "assets/logo.png in the shell"
+  // instruction. build-site backfills a generic bounded logo when absent,
+  // but a native, theme-styled placement is the release standard.
+  if (requireBrandLogo && layouts.shell && !/assets\/logo\.png/i.test(layouts.shell)) {
+    errors.push('layout "shell" must display the brand logo: include <img src="assets/logo.png"> (typically as a home link in the header/nav)');
   }
 
   // Fonts are the strongest identity carrier of a generated theme. Without a

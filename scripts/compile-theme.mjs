@@ -698,6 +698,7 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
       requireHero: true,
       requireClassBindings: true,
       requireFontImport: true,
+      requireBrandLogo: true,
       requiredLayoutClasses,
     });
     if (!verdict.theme) {
@@ -723,6 +724,7 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
         requireHero: true,
         requireClassBindings: true,
         requireFontImport: true,
+      requireBrandLogo: true,
         requiredLayoutClasses,
       });
       
@@ -759,6 +761,7 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
         requireHero: true,
         requireClassBindings: true,
         requireFontImport: true,
+      requireBrandLogo: true,
         requiredLayoutClasses,
       });
       if (verdict.theme) return;
@@ -855,6 +858,7 @@ OUTPUT: exactly one JSON object: { "html": "complete repaired ${target} fragment
       requireHero: true,
       requireClassBindings: true,
       requireFontImport: true,
+      requireBrandLogo: true,
       requiredLayoutClasses,
     });
     if (finalVerdict.theme) return;

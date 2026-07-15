@@ -629,11 +629,12 @@ const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400..700;1,400..700&family=Archivo:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">`;
 
-// Each generated design ships its own favicon (compile-theme generates it);
-// fall back to the global mark for the main site and pre-favicon designs.
-const FAVICON = targetDesign && existsSync(join(designSourceDir, 'assets', 'favicon.png'))
-  ? `<link rel="icon" type="image/png" href="/designs/${targetDesign}/assets/favicon.png">`
-  : `<link rel="icon" type="image/png" href="/assets/favicon.png">`;
+// Each generated design ships its own favicon (compile-theme copies it into
+// the design's assets/, which overwrites the global mark in outDir/assets).
+// Root-relative on purpose: design builds rewrite href="/..." to
+// href="/designs/<slug>/...", so a pre-prefixed path was double-prefixed
+// (/designs/x/designs/x/assets/favicon.png → 404 → default browser icon).
+const FAVICON = `<link rel="icon" type="image/png" href="/assets/favicon.png">`;
 
 // Cross-page fades + 3D design-morph (View Transition API; no-op where unsupported).
 const TRANSITIONS = `<style>
@@ -871,9 +872,17 @@ function layout({ title, description, nav, content, activeSlug, sourcePath }) {
 
   const defaultLinks = navLinksHtml(nav, activeSlug, null);
   const customNavTpl = customLayouts.nav_item;
+  // Generated shells are told to place assets/logo.png but some ship without
+  // it. Build-owned backfill: when the custom shell has no brand logo, put a
+  // bounded logo-as-home-link at the head of the injected nav. Inline styles
+  // are deliberate — this fragment must render sanely under any theme's CSS.
+  const shellHasBrandLogo = customLayouts.shell
+    ? /assets\/logo\.png|gi-logo/i.test(customLayouts.shell)
+    : true;
+  const brandHomeLink = shellHasBrandLogo ? '' : `<a class="brand-home" href="/index.html" style="display:inline-flex;align-items:center;min-height:44px"><img src="/assets/logo.png" alt="Greg Iteen — home" style="display:block;height:3rem;width:auto;max-width:44vw;object-fit:contain"></a>\n        `;
   const navHtml = customNavTpl
-    ? `<div class="nav-links tl-default">\n        ${defaultLinks}\n      </div>\n      <div class="nav-links tl-custom">\n        ${navLinksHtml(nav, activeSlug, customNavTpl)}\n      </div>`
-    : `<div class="nav-links">\n        ${defaultLinks}\n      </div>`;
+    ? `<div class="nav-links tl-default">\n        ${defaultLinks}\n      </div>\n      <div class="nav-links tl-custom">\n        ${brandHomeLink}${navLinksHtml(nav, activeSlug, customNavTpl)}\n      </div>`
+    : `<div class="nav-links">\n        ${brandHomeLink}${defaultLinks}\n      </div>`;
 
   // The custom skin is scoped to [data-theme="custom"], so shipping it on
   // every page is safe: other themes are untouched and flipping is instant.
@@ -1298,6 +1307,7 @@ const designs = pages
   .sort((a, b) => (b.data.x_year ?? 0) - (a.data.x_year ?? 0) || a.data.name.localeCompare(b.data.name));
 
 const nav = [
+  { data: { slug: 'home', name: 'home', sandbox_entry: 'index.html' } },
   { data: { slug: '_projects', name: 'projects', sandbox_entry: 'projects.html' } },
   { data: { slug: '_designs', name: 'designs', sandbox_entry: 'designs.html' } },
   ...sections.filter((p) => p.data.slug !== 'home'),
