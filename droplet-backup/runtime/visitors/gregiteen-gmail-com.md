@@ -2,28 +2,28 @@
 type: "visitor_profile"
 title: "Visitor profile: gregiteen@gmail.com"
 description: "Runtime visitor profile for gregiteen.xyz."
-timestamp: "2026-07-12T22:24:57.589Z"
+timestamp: "2026-07-15T08:39:35.951Z"
 email: "gregiteen@gmail.com"
 first_seen: "2026-07-07T07:39:04.658Z"
-last_seen: "2026-07-12T22:24:57.589Z"
-visits: 24
-style_prompt: "MAD MAX"
+last_seen: "2026-07-15T08:39:35.951Z"
+visits: 25
+style_prompt: "Paris in spring"
 opt_in: true
-generation_count: 20
+generation_count: 21
 status: "Lead"
 timeline: "Waiting-page intake at 2026-07-11T04:22:53.003Z: {\"reason\":\"custom-project\",\"timeline\":\"this-quarter\",\"project\":\"Automated Sales support and proposals\"},Waiting-page intake at 2026-07-11T04:29:04.418Z: {\"reason\":\"ultrachat-setup\",\"timeline\":\"asap\",\"project\":\"Crm\"}"
 enrichment:
   email: "gregiteen@gmail.com"
-  style: "MAD MAX"
+  style: "Paris in spring"
   optIn: true
   ip: "71.205.253.218"
-  userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
-  screen: "1440x900"
+  userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/150.0.7871.113 Mobile/15E148 Safari/604.1"
+  screen: "414x896"
   timezone: "America/Denver"
   language: "en-US"
   referrer: "https://gregiteen.xyz/splash.html"
-  touch: false
-  platform: "MacIntel"
+  touch: true
+  platform: "iPhone"
 pending_notification: null
 drip:
   campaign: "default-nurture"
@@ -46,16 +46,16 @@ drip:
   ],
   "enrichment": {
     "email": "gregiteen@gmail.com",
-    "style": "MAD MAX",
+    "style": "Paris in spring",
     "optIn": true,
     "ip": "71.205.253.218",
-    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
-    "screen": "1440x900",
+    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/150.0.7871.113 Mobile/15E148 Safari/604.1",
+    "screen": "414x896",
     "timezone": "America/Denver",
     "language": "en-US",
     "referrer": "https://gregiteen.xyz/splash.html",
-    "touch": false,
-    "platform": "MacIntel"
+    "touch": true,
+    "platform": "iPhone"
   },
   "pending_notification": null,
   "drip": {
@@ -77,16 +77,16 @@ drip:
 ```json
 {
   "email": "gregiteen@gmail.com",
-  "style": "MAD MAX",
+  "style": "Paris in spring",
   "optIn": true,
   "ip": "71.205.253.218",
-  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
-  "screen": "1440x900",
+  "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/150.0.7871.113 Mobile/15E148 Safari/604.1",
+  "screen": "414x896",
   "timezone": "America/Denver",
   "language": "en-US",
   "referrer": "https://gregiteen.xyz/splash.html",
-  "touch": false,
-  "platform": "MacIntel"
+  "touch": true,
+  "platform": "iPhone"
 }
 ```
 
