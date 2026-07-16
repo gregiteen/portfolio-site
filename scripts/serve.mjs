@@ -183,7 +183,7 @@ const DEFAULT_BANNER_OFFERS = [
   { id: 'free-support-30', text: '30 days of post-launch support and fixes included free with every project.', cta: 'Get your proposal →' },
   { id: 'price-lock', text: 'The price on your proposal is the price you pay — fixed, guaranteed, no overruns.', cta: 'Request your proposal →' },
 ];
-const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon' };
+const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.pdf': 'application/pdf' };
 
 let buildVersion = Date.now();
 
