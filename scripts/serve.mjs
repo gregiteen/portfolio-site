@@ -995,6 +995,9 @@ function isPublicPath(urlPath) {
   if (urlPath.startsWith('/api/')) return true;
   if (urlPath.startsWith('/assets/')) return true;
   if (urlPath.startsWith('/gi-logo')) return true; // brand marks — used on pre-auth pages
+  // Browsers, bookmarks, and search crawlers request /favicon.ico directly;
+  // redirecting it to the splash page made the site appear to have no favicon.
+  if (urlPath === '/favicon.ico') return true;
   if (urlPath.startsWith('/sign/')) return true;
   if (urlPath.startsWith('/designs/')) return true;
   // Dev/generation endpoints are API-like; asset previews feed the waiting
@@ -2752,6 +2755,9 @@ OUTPUT JSON: { "company_name": "...", "industry": "...", "estimated_size": "..."
 
   // ── Static file serving ──
   let resolved = urlPath === '/' ? 'index.html' : urlPath;
+  // No .ico exists; serve the brand PNG at the conventional path (modern
+  // browsers accept PNG bytes here — the content-type header is what counts).
+  if (resolved === '/favicon.ico') resolved = '/assets/favicon.png';
   // Directory URLs (trailing slash) → index.html
   if (resolved.endsWith('/')) resolved += 'index.html';
   let file = normalize(join(root, resolved));
