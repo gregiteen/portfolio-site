@@ -35,8 +35,22 @@ function emailTextToHtml(text) {
     if (line.match(/^(<h|<ul|<li|<hr|<\/ul)/)) return line;
     return line + '<br>';
   }).join('\n');
-  
-  return `<div style="font-family: sans-serif; line-height: 1.6; color: #222;">${html}</div>`;
+
+  // Letterhead-style wrapper so every outbound email carries the brand —
+  // absolute image URLs because email clients have no origin to resolve
+  // against. Table layout for broad email-client compatibility.
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f3;padding:24px 0;">
+<tr><td align="center">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border:1px solid #e5e5e2;">
+<tr><td style="padding:24px 32px 16px;border-bottom:1px solid #eeeeee;">
+  <img src="https://gregiteen.xyz/gi-logo-transparent.png" alt="greg.iteen" height="24" style="height:24px;width:auto;display:block;">
+</td></tr>
+<tr><td style="padding:24px 32px;font-family:Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#222222;">${html}</td></tr>
+<tr><td style="padding:16px 32px 24px;border-top:1px solid #eeeeee;font-family:Helvetica,Arial,sans-serif;font-size:11px;color:#999999;">
+  <a href="https://gregiteen.xyz" style="color:#999999;text-decoration:none;">gregiteen.xyz</a> &nbsp;·&nbsp; sales@gregiteen.xyz &nbsp;·&nbsp; e-signatures by <img src="https://gregiteen.xyz/signedgi-logo.png" alt="SignedGI" height="14" style="height:14px;width:auto;vertical-align:-3px;">
+</td></tr>
+</table>
+</td></tr></table>`;
 }
 
 import { parseProposalOutput } from './lib/proposal-output.mjs';
@@ -400,7 +414,7 @@ startDocumensoPoller(proposalThreads, upsertProposal, async (proposalId, label) 
     from: mailFrom,
     to: mailOwner,
     subject: `Proposal ${label}: ${proposalId}`,
-    text: `Documenso reported that proposal ${proposalId} was ${label}.`,
+    text: `SignedGI reported that proposal ${proposalId} was ${label}.`,
   });
 });
 
@@ -823,7 +837,7 @@ function renderSignPage({ found, clientName, subject, signingUrl }) {
     ? `<p>${clientName ? escapeHtml(clientName) + ',' : 'Hi,'} your proposal${subject ? ` — <em>${escapeHtml(subject)}</em>` : ''} — is ready for review and signature.</p>
        <a class="cta" href="${signingUrl}" target="_top" rel="noopener">Review &amp; Sign Document →</a>
        <a class="cta secondary" href="/book-meeting.html" target="_top" rel="noopener">Request Meeting 🗓️</a>
-       <p class="fine">You'll be taken to a secure signing page. No account required.</p>`
+       <p class="fine">You'll be taken to a secure SignedGI signing page. No account required.</p>`
     : `<p>This signing link has expired or is no longer valid.</p>
        <p class="fine">If you're expecting a proposal, reply to the original email from Greg and a fresh link will be sent.</p>`;
   return `<!DOCTYPE html>
@@ -852,9 +866,11 @@ main p em{color:var(--white);font-style:normal}
 .cta.secondary{background:var(--white);color:var(--black)}
 .cta:hover{opacity:.85}
 .fine{font-size:.8rem;color:var(--gray)}
-footer{font-family:'IBM Plex Mono',monospace;font-size:.65rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gray);border-top:1px solid var(--line);padding-top:20px;margin-top:clamp(32px,6vw,72px)}
+footer{font-family:'IBM Plex Mono',monospace;font-size:.65rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gray);border-top:1px solid var(--line);padding-top:20px;margin-top:clamp(32px,6vw,72px);display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
 footer a{color:var(--gray);text-decoration:none}
 footer a:hover{color:var(--white)}
+.powered{display:flex;align-items:center;gap:10px}
+.powered img{height:22px;width:auto;opacity:.9}
 </style>
 </head>
 <body>
@@ -864,7 +880,7 @@ footer a:hover{color:var(--white)}
 <h1>${heading}</h1>
 ${body}
 </main>
-<footer><a href="https://gregiteen.xyz">gregiteen.xyz</a></footer>
+<footer><a href="https://gregiteen.xyz">gregiteen.xyz</a><span class="powered">Powered by <img src="/signedgi-logo-dark.png" alt="SignedGI"></span></footer>
 </body>
 </html>`;
 }
@@ -904,7 +920,7 @@ async function sendProposalToClient(proposalId, thread) {
 
   const wrapperSigningUrl = signingUrl ? `${SITE_URL}/sign/${proposalId}` : null;
   const signingBlock = wrapperSigningUrl
-    ? `\n\nReview & sign: ${wrapperSigningUrl}\n`
+    ? `\n\nReview & sign securely with SignedGI (no account required): ${wrapperSigningUrl}\n`
     : `\n\n(A signable copy will follow separately — for now, please review the attached PDF.)\n`;
 
   const webUrl = `${SITE_URL}/proposal/${proposalId}`;
@@ -922,7 +938,7 @@ async function sendProposalToClient(proposalId, thread) {
     from: mailFrom,
     to: mailOwner,
     subject: `✓ Proposal sent to ${thread.clientEmail}`,
-    text: `Proposal ${proposalId} has been sent to ${thread.clientEmail}.\nYou were CC'd on the email.\n${signingUrl ? `Documenso signing link: ${signingUrl}` : 'Documenso not configured (DOCUMENSO_BASE_URL/DOCUMENSO_API_KEY unset) — sent as a plain PDF, no signature link.'}`,
+    text: `Proposal ${proposalId} has been sent to ${thread.clientEmail}.\nYou were CC'd on the email.\n${signingUrl ? `SignedGI signing link: ${signingUrl}` : 'SignedGI e-sign not configured (DOCUMENSO_BASE_URL/DOCUMENSO_API_KEY unset) — sent as a plain PDF, no signature link.'}`,
   });
   thread.status = 'sent';
   thread.decidedAt = new Date().toISOString();
@@ -999,6 +1015,7 @@ function isPublicPath(urlPath) {
   if (urlPath.startsWith('/api/')) return true;
   if (urlPath.startsWith('/assets/')) return true;
   if (urlPath.startsWith('/gi-logo')) return true; // brand marks — used on pre-auth pages
+  if (urlPath.startsWith('/signedgi-')) return true; // SignedGI e-sign brand marks
   // Browsers, bookmarks, and search crawlers request /favicon.ico directly;
   // redirecting it to the splash page made the site appear to have no favicon.
   if (urlPath === '/favicon.ico') return true;
@@ -1171,7 +1188,7 @@ createServer(async (req, res) => {
     ` : `
       <a class="cta" href="/sign/${proposalId}">Review &amp; Sign &rarr;</a>
     `}
-    <span class="fine">Secure e-signature via sign.gregiteen.xyz — no account required.</span>
+    <span class="fine">Secure e-signature by <img src="/signedgi-logo.png" alt="SignedGI" style="height:16px;vertical-align:-3px"> — no account required.</span>
   </div>
   <footer><a href="https://gregiteen.xyz">gregiteen.xyz</a><span>sales@gregiteen.xyz</span></footer>
   <script>
@@ -1343,7 +1360,7 @@ createServer(async (req, res) => {
           from: mailFrom,
           to: mailOwner,
           subject: `Proposal ${label}: ${proposalId}`,
-          text: `Documenso reported that proposal ${proposalId} was ${label}.`,
+          text: `SignedGI reported that proposal ${proposalId} was ${label}.`,
         });
       }
       console.log(`[Documenso] ${proposalId} -> ${signingStatus}`);
