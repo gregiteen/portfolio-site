@@ -16,7 +16,7 @@ import Stripe from 'stripe';
 // commas, then throws on total failure (callers wrap in try/catch → fallback).
 // Bare JSON.parse fails on fenced output, which the models emit constantly.
 import { extractJson } from './lib/theme.mjs';
-import { buildLetterheadPdf } from './lib/letterhead.mjs';
+import { buildLetterheadPdf, SIGNATURE_FIELD } from './lib/letterhead.mjs';
 import { createSigningRequest, signingStatusForEvent, verifyWebhookSecret, startDocumensoPoller } from './lib/documenso.mjs';
 import { advanceDripState, createUnsubscribeToken, enrollInCampaign, renderDripTemplate, verifyUnsubscribeToken } from './lib/drip.mjs';
 
@@ -110,6 +110,9 @@ needed.
 Positioning: aggressive, not cheap. These rates should read as a specialist,
 not a commodity freelancer — priced to filter for serious engagements while
 still winning good-fit smaller work.
+
+Tagline: Independent full-stack & AI engineering. Transparent price bands by
+service category — every engagement gets a detailed, fixed-scope proposal.
 
 ## Baseline
 
@@ -891,6 +894,7 @@ async function sendProposalToClient(proposalId, thread) {
       clientName: thread.enrichment?.company_name,
       subject: clientSubject,
       proposalId,
+      field: SIGNATURE_FIELD,
     });
     signingUrl = signing?.signingUrl || null;
     signingDocumentId = signing?.submissionId ? String(signing.submissionId) : null;
@@ -998,7 +1002,12 @@ function isPublicPath(urlPath) {
   // Browsers, bookmarks, and search crawlers request /favicon.ico directly;
   // redirecting it to the splash page made the site appear to have no favicon.
   if (urlPath === '/favicon.ico') return true;
+  // Public marketing collateral — linked from proposals and outbound email.
+  if (urlPath === '/rate-card.pdf') return true;
   if (urlPath.startsWith('/sign/')) return true;
+  // Clients reach their proposal via the emailed link — it must not bounce
+  // to the splash/login wall. Same unguessable-id access model as /sign/.
+  if (urlPath.startsWith('/proposal/')) return true;
   if (urlPath.startsWith('/designs/')) return true;
   // Dev/generation endpoints are API-like; asset previews feed the waiting
   // page, which is also shown mid-verification.
@@ -1123,27 +1132,48 @@ createServer(async (req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(thread.proposal.subject_line || 'Proposal')}</title>
+<title>${escapeHtml(thread.proposal.subject_line || 'Proposal')} — Greg Iteen</title>
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" href="/assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 900px; margin: 0 auto; padding: 40px; background: #f9f9f9; }
-  .proposal-html { background: #fff; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-  h1, h2, h3 { color: #111; margin-top: 1.5em; }
+  *,*::before,*::after { box-sizing: border-box; }
+  body { font-family: 'Archivo', 'Helvetica Neue', Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 900px; margin: 0 auto; padding: clamp(20px, 4vw, 40px); background: #f5f5f3; }
+  .brand-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
+  .brand-bar img { height: 26px; width: auto; display: block; }
+  .brand-bar .ref { font-family: 'IBM Plex Mono', monospace; font-size: .68rem; letter-spacing: .18em; text-transform: uppercase; color: #888; }
+  .proposal-html { background: #fff; padding: clamp(24px, 5vw, 48px); border: 1px solid #e5e5e2; }
+  h1, h2, h3 { color: #111; margin-top: 1.5em; line-height: 1.2; }
   table { width: 100%; border-collapse: collapse; margin-top: 20px; }
   th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
   th { background-color: #f5f5f5; }
   a { color: #ff6a00; text-decoration: none; }
-  .cta { display: inline-block; background: #ff6a00; color: #fff; padding: 12px 24px; text-decoration: none; font-weight: bold; border-radius: 4px; margin-top: 30px; }
+  .actions { margin-top: 40px; text-align: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .cta { display: inline-block; background: #ff6a00; color: #fff; font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: .85rem; letter-spacing: .05em; padding: 16px 28px; text-decoration: none; transition: opacity .2s; }
+  .cta:hover { opacity: .85; }
+  .actions .fine { flex-basis: 100%; font-size: .78rem; color: #999; margin-top: 4px; }
+  footer { font-family: 'IBM Plex Mono', monospace; font-size: .65rem; letter-spacing: .15em; text-transform: uppercase; color: #999; border-top: 1px solid #e0e0dd; padding-top: 18px; margin-top: 36px; display: flex; justify-content: space-between; gap: 12px; }
+  footer a { color: #999; }
+  footer a:hover { color: #333; }
 </style>
 </head>
 <body>
+  <div class="brand-bar">
+    <a href="https://gregiteen.xyz"><img src="/gi-logo-transparent.png" alt="Greg Iteen"></a>
+    <span class="ref">Proposal · Ref #${escapeHtml(proposalId)}</span>
+  </div>
   ${thread.proposal.proposal_text}
-  <div style="margin-top: 40px; text-align: center; display: flex; gap: 16px; justify-content: center;">
+  <div class="actions">
     ${thread.proposal.price_cents > 0 ? `
       <button class="cta" onclick="payProposal('${proposalId}')" style="cursor: pointer; border: none;">Pay $${(thread.proposal.price_cents / 100).toLocaleString()} &amp; Sign &rarr;</button>
     ` : `
-      <a class="cta" href="/sign/${proposalId}">Proceed to Signing &rarr;</a>
+      <a class="cta" href="/sign/${proposalId}">Review &amp; Sign &rarr;</a>
     `}
+    <span class="fine">Secure e-signature via sign.gregiteen.xyz — no account required.</span>
   </div>
+  <footer><a href="https://gregiteen.xyz">gregiteen.xyz</a><span>sales@gregiteen.xyz</span></footer>
   <script>
     async function payProposal(id) {
       try {

@@ -10,18 +10,20 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import PDFDocument from 'pdfkit';
+import { drawLetterheadHeader } from './lib/letterhead.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 const RATE_CARD_PATH = join(root, 'vault', 'runtime', 'config', 'rate-card.md');
 const OUT_PATH = join(root, 'static', 'rate-card.pdf');
 
-const CONTACT_LINE = 'sales@gregiteen.xyz   ·   gregiteen.xyz   ·   github.com/gregiteen';
-
 function parseRateCard(raw) {
   const body = raw.replace(/^---[\s\S]*?---\s*/, ''); // strip YAML frontmatter
 
-  const positioning = /Positioning:\s*([^\n]+(?:\n(?!\n)[^\n]+)*)/.exec(body)?.[1]
+  // Only the explicitly client-facing `Tagline:` line is printed. The
+  // `Positioning:` note is internal pricing strategy and must never appear
+  // on the PDF a client downloads.
+  const tagline = /Tagline:\s*([^\n]+(?:\n(?!\n)[^\n]+)*)/u.exec(body)?.[1]
     ?.replace(/\n/g, ' ').trim() || '';
 
   const hourly = /\*\*Hourly rate:\*\*\s*([^\n(]+)\s*(?:\(([^)]*)\))?/.exec(body);
@@ -37,18 +39,11 @@ function parseRateCard(raw) {
   }
 
   return {
-    positioning,
+    tagline,
     hourly: { amount: hourly?.[1]?.trim() || '', note: hourly?.[2]?.trim() || '' },
     retainer: { amount: retainer?.[1]?.trim() || '', note: retainer?.[2]?.trim() || '' },
     rows,
   };
-}
-
-function drawWordmark(doc) {
-  doc.font('Courier-Bold').fontSize(22).fillColor('#111111').text('greg', 60, 56, { continued: true });
-  doc.fillColor('#ff6a00').text('.', { continued: true });
-  doc.fillColor('#111111').text('iteen');
-  doc.font('Courier').fontSize(9).fillColor('#555555').text(CONTACT_LINE, 60, doc.y + 2);
 }
 
 function drawFooter(doc, pageNum, pageCount) {
@@ -62,7 +57,7 @@ function drawFooter(doc, pageNum, pageCount) {
 
 async function build() {
   const raw = await readFile(RATE_CARD_PATH, 'utf8');
-  const { positioning, hourly, retainer, rows } = parseRateCard(raw);
+  const { tagline, hourly, retainer, rows } = parseRateCard(raw);
 
   const doc = new PDFDocument({ size: 'LETTER', margins: { top: 56, bottom: 56, left: 60, right: 60 }, bufferPages: true });
   const chunks = [];
@@ -72,17 +67,14 @@ async function build() {
     doc.on('error', reject);
   });
 
-  drawWordmark(doc);
-  doc.moveDown(0.8);
-  doc.moveTo(60, doc.y).lineTo(552, doc.y).strokeColor('#dddddd').lineWidth(1).stroke();
-  doc.moveDown(1);
+  drawLetterheadHeader(doc);
 
-  doc.font('Helvetica-Bold').fontSize(20).fillColor('#111111').text('Rate Card');
+  doc.font('Helvetica-Bold').fontSize(20).fillColor('#111111').text('Rate Card', 60, doc.y);
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   doc.font('Helvetica').fontSize(9).fillColor('#888888').text(`Effective ${dateStr}`);
   doc.moveDown(0.8);
-  if (positioning) {
-    doc.font('Helvetica-Oblique').fontSize(10.5).fillColor('#444444').text(positioning, { align: 'left' });
+  if (tagline) {
+    doc.font('Helvetica-Oblique').fontSize(10.5).fillColor('#444444').text(tagline, 60, doc.y, { width: 492, align: 'left' });
     doc.moveDown(1);
   }
 
@@ -102,17 +94,20 @@ async function build() {
   doc.moveTo(60, doc.y).lineTo(552, doc.y).strokeColor('#dddddd').lineWidth(1).stroke();
   doc.moveDown(1);
 
-  // Price bands table
-  doc.font('Helvetica-Bold').fontSize(13).fillColor('#111111').text('Price bands by service category');
+  // Price bands table — x=60 passed explicitly; pdfkit otherwise continues at
+  // whatever x the previous absolute-positioned write left behind.
+  doc.font('Helvetica-Bold').fontSize(13).fillColor('#111111').text('Price bands by service category', 60, doc.y);
   doc.moveDown(0.6);
 
   const colX = { category: 60, range: 220, notes: 320 };
   const colW = { category: 150, range: 90, notes: 232 };
 
+  const headY = doc.y;
   doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#888888');
-  doc.text('CATEGORY', colX.category, doc.y, { width: colW.category, characterSpacing: 0.3 });
-  doc.text('RANGE', colX.range, doc.y - doc.currentLineHeight(), { width: colW.range, characterSpacing: 0.3 });
-  doc.text('NOTES', colX.notes, doc.y - doc.currentLineHeight(), { width: colW.notes, characterSpacing: 0.3 });
+  doc.text('CATEGORY', colX.category, headY, { width: colW.category, characterSpacing: 0.3 });
+  doc.text('RANGE', colX.range, headY, { width: colW.range, characterSpacing: 0.3 });
+  doc.text('NOTES', colX.notes, headY, { width: colW.notes, characterSpacing: 0.3 });
+  doc.y = headY + doc.currentLineHeight();
   doc.moveDown(0.5);
   doc.moveTo(60, doc.y).lineTo(552, doc.y).strokeColor('#dddddd').lineWidth(0.75).stroke();
   doc.moveDown(0.5);

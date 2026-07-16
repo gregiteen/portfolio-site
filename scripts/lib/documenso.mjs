@@ -45,7 +45,7 @@ export function signingStatusForEvent(event) {
   return null;
 }
 
-export async function createSigningRequest({ pdfBuffer, filename, clientEmail, clientName, subject, proposalId }) {
+export async function createSigningRequest({ pdfBuffer, filename, clientEmail, clientName, subject, proposalId, field }) {
   const baseUrl = process.env.DOCUMENSO_BASE_URL || '';
   const apiKey = process.env.DOCUMENSO_API_KEY || '';
   if (!baseUrl || !apiKey) {
@@ -85,14 +85,17 @@ export async function createSigningRequest({ pdfBuffer, filename, clientEmail, c
   const fieldRes = await fetch(new URL(`/api/v1/documents/${documentId}/fields`, baseUrl), {
     method: 'POST',
     headers,
+    // Coordinates are percentages of the page. Callers pass the letterhead's
+    // SIGNATURE_FIELD so the box lands on the drawn signature line; the
+    // fallback matches the legacy floating placement.
     body: JSON.stringify({
       recipientId,
       type: FIELD_TYPE,
-      pageNumber: 1,
-      pageX: 20,
-      pageY: 20,
-      pageWidth: 30,
-      pageHeight: 8,
+      pageNumber: field?.pageNumber ?? 1,
+      pageX: field?.pageX ?? 20,
+      pageY: field?.pageY ?? 20,
+      pageWidth: field?.pageWidth ?? 30,
+      pageHeight: field?.pageHeight ?? 8,
     }),
   });
   if (!fieldRes.ok) {
