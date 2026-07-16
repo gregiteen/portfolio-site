@@ -2,7 +2,7 @@
 type: "banner_event_log"
 title: "Banner Events"
 description: "Append-only log of CNA banner impressions/clicks for A/B analysis."
-timestamp: "2026-07-16T02:12:47.228Z"
+timestamp: "2026-07-16T18:10:04.474Z"
 ---
 # Banner Events
 
@@ -113,4 +113,5 @@ timestamp: "2026-07-16T02:12:47.228Z"
 - 2026-07-16T02:10:24.566Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
 - 2026-07-16T02:10:27.697Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
 - 2026-07-16T02:12:47.228Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-16T18:10:04.474Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
 
