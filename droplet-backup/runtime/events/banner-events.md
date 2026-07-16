@@ -2,7 +2,7 @@
 type: "banner_event_log"
 title: "Banner Events"
 description: "Append-only log of CNA banner impressions/clicks for A/B analysis."
-timestamp: "2026-07-15T17:41:50.044Z"
+timestamp: "2026-07-15T23:36:55.466Z"
 ---
 # Banner Events
 
@@ -87,4 +87,27 @@ timestamp: "2026-07-15T17:41:50.044Z"
 - 2026-07-13T21:16:41.760Z event=shown variant=price-lock trigger=dwell email=gregiteen@gmail.com
 - 2026-07-15T08:56:59.422Z event=shown variant=price-lock trigger=dwell email=gregiteen@gmail.com
 - 2026-07-15T17:41:50.044Z event=shown variant=price-lock trigger=dwell email=gregiteen@gmail.com
+- 2026-07-15T23:02:05.667Z event=shown variant=free-support-30 trigger=dwell email=anon
+- 2026-07-15T23:02:31.508Z event=shown variant=free-support-30 trigger=dwell email=anon
+- 2026-07-15T23:05:37.124Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-15T23:06:01.498Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-15T23:08:39.281Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-15T23:09:37.850Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-15T23:10:36.543Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-15T23:16:08.520Z event=shown variant=free-support-30 trigger=dwell email=anon
+- 2026-07-15T23:17:24.516Z event=shown variant=free-support-30 trigger=dwell email=anon
+- 2026-07-15T23:24:53.146Z event=shown variant=free-support-30 trigger=dwell email=anon
+- 2026-07-15T23:28:10.410Z event=shown variant=free-support-30 trigger=dwell email=anon
+- 2026-07-15T23:30:08.204Z event=shown variant=free-support-30 trigger=dwell email=anon
+- 2026-07-15T23:30:11.037Z event=shown variant=free-support-30 trigger=dwell email=anon
+- 2026-07-15T23:30:17.529Z event=shown variant=free-support-30 trigger=dwell email=anon
+- 2026-07-15T23:30:21.629Z event=shown variant=free-support-30 trigger=dwell email=anon
+- 2026-07-15T23:30:27.594Z event=shown variant=free-support-30 trigger=dwell email=anon
+- 2026-07-15T23:30:31.078Z event=shown variant=free-support-30 trigger=dwell email=anon
+- 2026-07-15T23:30:36.691Z event=shown variant=free-support-30 trigger=dwell email=anon
+- 2026-07-15T23:30:41.873Z event=shown variant=free-support-30 trigger=dwell email=anon
+- 2026-07-15T23:30:43.735Z event=shown variant=free-support-30 trigger=dwell email=anon
+- 2026-07-15T23:30:46.392Z event=shown variant=free-support-30 trigger=dwell email=anon
+- 2026-07-15T23:30:56.487Z event=shown variant=free-support-30 trigger=dwell email=anon
+- 2026-07-15T23:36:55.466Z event=shown variant=free-support-30 trigger=dwell email=anon
 

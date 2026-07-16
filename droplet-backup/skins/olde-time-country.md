@@ -1,10 +1,10 @@
 ---
 type: page
 slug: "skin-olde-time-country"
-name: "Mercantile Ledger AI"
-title: "Mercantile Ledger AI — Generated Skin"
+name: "Mercantile Ledger"
+title: "Mercantile Ledger — Generated Skin"
 description: "AI-generated skin: \"OLDE TIME COUNTRY\""
-timestamp: "2026-07-12T22:02:16.772Z"
+timestamp: "2026-07-15T22:51:55.078Z"
 sandbox_entry: "designs/olde-time-country/index.html"
 x_kind: "theme-skin"
 x_year: "2026"
@@ -13,186 +13,186 @@ x_logo: "/designs/olde-time-country/gi-logo-transparent-dark.png"
 x_link: "/designs/olde-time-country/index.html"
 ---
 
-Design Constitution: Mercantile Ledger AI. Typography: Primary display is 'Playfair Display' or a similar high-contrast vintage serif, scaled massively for the hero thesis. Body copy and technical data utilize 'JetBrains Mono' to ground the antique aesthetic in the reality of software engineering. Color Palette: Built strictly on OKLCH. Backgrounds are an aged parchment tone oklch(92% 0.02 90), text is a faded iron-gall ink oklch(25% 0.02 260), and the accent is a muted oxblood oklch(40% 0.1 20). Layout Strategy: The ledger. Every container is bounded by 1px solid borders resembling ruled paper. We use CSS Grid heavily, allowing nested elements to align perfectly across parent tracks using subgrid. Motion: Subdued and physical. Cards fade up and borders 'draw' themselves in via scroll-driven animations, anchored entirely on the compositor thread. There is no bouncy, elastic movement; only the heavy, deliberate placement of archived materials.
+A high-end technical portfolio themed as an 1890s general store ledger. The design is highly structured, relying on strict CSS grids with visible 1px borders to mimic ruled paper. Copy is dry, precise, and authoritative. NO emojis, NO buzzwords. We treat the digital products as physical inventory cataloged in a historical archive. The aesthetic relies on tactile materiality achieved through CSS SVG noise filters and vintage typography.
 
 ## Locked Design Constitution
 
 ```json
 {
-  "name": "Mercantile Ledger AI",
-  "accent": "oklch(35% 0.05 45)",
-  "signatureGesture": "Ledger Entry Reveal: As the user scrolls, new projects and designs are revealed using a view() timeline that animates their opacity and applies a subtle sepia filter transition, simulating the uncovering of a historical document from an archive.",
-  "mobileStrategy": "The multi-column ledger collapses into a continuous vertical scroll, reminiscent of an adding-machine tape. Borders remain prominent to distinguish individual entries, and touch targets are expanded to 44px minimum by padding out the 'cells' of the ledger rather than scaling up text.",
-  "imageTreatment": "All imagery is processed with a high-contrast, sepia-toned filter and overlaid with a subtle CSS-generated SVG static grain to emulate 19th-century tintypes or woodcut engravings.",
+  "name": "Mercantile Ledger",
+  "accent": "Tobacco Red",
+  "signatureGesture": "Scroll-driven 'ink stamp' reveals. As the user scrolls, badges, dates, and project metadata are animated via animation-timeline: view(), scaling down and fading in abruptly as if being stamped onto the ledger page by a heavy mercantile stamp.",
+  "mobileStrategy": "Mobile-first single-column ledger rows. Content is stacked vertically with continuous horizontal borders. Interactive touch targets are artificially inflated to 44px using padding within the ledger cells. Navigation wraps naturally without hiding behind a hamburger menu.",
+  "imageTreatment": "Cabinet Card aesthetic. Images are constrained within stiff, border-heavy containers with a slight sepia filter (sepia(0.4) contrast(1.1)) and a faint inner shadow to mimic aged, thick cardboard photographs.",
   "tokens": {
-    "colors": "bg: oklch(94% 0.015 85); text: oklch(20% 0.01 250); accent: oklch(35% 0.08 30); border: oklch(50% 0.02 250); surface: oklch(90% 0.02 85)",
-    "typography": "display: 'Playfair Display', serif; body: 'JetBrains Mono', monospace; scale: 1.15; weight-display: 700; weight-body: 400",
-    "spacing": "base: 1rem; ledger-padding: clamp(1rem, 3vw, 2rem); section-gap: clamp(4rem, 8vw, 8rem); border-width: 1px",
-    "shape": "radius-none: 0px; radius-subtle: 2px; ledger-border: 1px solid var(--border)",
-    "motion": "easing-heavy: cubic-bezier(0.2, 0, 0, 1); duration-slow: 600ms; transition-opacity: opacity 400ms ease-in-out"
+    "colors": "--bg: oklch(92% 0.02 85); --text: oklch(25% 0.02 85); --accent: oklch(45% 0.15 30); --line: oklch(80% 0.02 85); --glass: oklch(92% 0.02 85 / 0.8);",
+    "typography": "--font-display: 'Vast Shadow', serif; --font-body: 'Cutive Mono', monospace; font-synthesis: none; text-rendering: optimizeLegibility;",
+    "spacing": "--gap-sm: 0.5rem; --gap-md: 1.5rem; --gap-lg: 3rem; --tap-target: 44px;",
+    "shape": "--radius: 4px; --border: 1px solid var(--line); --border-thick: 3px solid var(--text);",
+    "motion": "--easing: cubic-bezier(0.25, 1, 0.5, 1); --stamp-duration: 0.3s;"
   },
   "classVocabulary": [
     {
-      "name": "ledger-shell",
+      "name": "app-shell",
       "owner": "shell",
-      "purpose": "Root container establishing the vintage document canvas and SVG grain"
+      "purpose": "Main layout wrapper and texture provider"
     },
     {
-      "name": "ledger-header",
+      "name": "ledger-nav",
       "owner": "shell",
-      "purpose": "Global navigation wrapper styled as a mercantile invoice header"
+      "purpose": "Global navigation constrained by ruled lines"
     },
     {
-      "name": "nav-list",
-      "owner": "shell",
-      "purpose": "Unordered list wrapping navigation items"
-    },
-    {
-      "name": "nav-item",
-      "owner": "nav_item",
-      "purpose": "Individual navigation link with 44px tap target"
-    },
-    {
-      "name": "home-hero",
+      "name": "ledger-hero",
       "owner": "home",
-      "purpose": "Massive typography and vintage landscape hero section"
+      "purpose": "Home page hero section with cabinet card background"
     },
     {
-      "name": "home-grid",
+      "name": "inventory-grid",
       "owner": "home",
-      "purpose": "Bento grid for featured archival projects"
+      "purpose": "Bento grid for featured projects"
     },
     {
-      "name": "projects-archive",
+      "name": "archive-index",
       "owner": "projects_index",
-      "purpose": "Index container for all engineering works"
+      "purpose": "Root layout for the projects archive"
     },
     {
-      "name": "project-row",
-      "owner": "project_item",
-      "purpose": "Individual project entry in the ledger"
-    },
-    {
-      "name": "project-title",
-      "owner": "project_item",
-      "purpose": "Serif heading for the project name"
-    },
-    {
-      "name": "project-meta",
-      "owner": "project_item",
-      "purpose": "Monospace technical details for the project"
-    },
-    {
-      "name": "designs-catalog",
+      "name": "visual-index",
       "owner": "designs_index",
-      "purpose": "Masonry grid for visual and architectural works"
+      "purpose": "Root layout for the design archive"
     },
     {
-      "name": "design-card",
-      "owner": "design_item",
-      "purpose": "Container for a single design preview"
-    },
-    {
-      "name": "design-preview",
-      "owner": "design_item",
-      "purpose": "Sepia-toned image thumbnail"
-    },
-    {
-      "name": "detail-canvas",
+      "name": "dossier-root",
       "owner": "project_detail",
-      "purpose": "Main content wrapper for full project readouts"
+      "purpose": "Root layout for detailed project dossiers"
     },
     {
-      "name": "detail-header",
-      "owner": "project_detail",
-      "purpose": "Title and metadata lockup for the project detail"
-    },
-    {
-      "name": "detail-body",
-      "owner": "project_detail",
-      "purpose": "Monospace rich text container for engineering prose"
-    },
-    {
-      "name": "design-detail-canvas",
+      "name": "blueprint-root",
       "owner": "design_detail",
-      "purpose": "Wrapper for high-resolution visual work"
+      "purpose": "Root layout for detailed design blueprints"
     },
     {
-      "name": "design-detail-hero",
-      "owner": "design_detail",
-      "purpose": "Full bleed container for the primary design artifact"
-    },
-    {
-      "name": "page-canvas",
+      "name": "document-root",
       "owner": "page",
-      "purpose": "Standard text page container for about or contact"
+      "purpose": "Root layout for standard text pages"
+    },
+    {
+      "name": "ledger-entry",
+      "owner": "project_item",
+      "purpose": "Individual project list item resembling a ledger row"
+    },
+    {
+      "name": "cabinet-card",
+      "owner": "design_item",
+      "purpose": "Individual design list item resembling a vintage photo"
+    },
+    {
+      "name": "nav-link",
+      "owner": "nav_item",
+      "purpose": "Navigation anchor with 44px touch target"
     },
     {
       "name": "badge",
       "owner": "css",
-      "purpose": "Small technical indicator tag"
+      "purpose": "Injected metadata tag styled like an ink stamp"
     },
     {
       "name": "src",
       "owner": "css",
-      "purpose": "Source code link or reference"
+      "purpose": "Injected image source class"
     },
     {
       "name": "backlink",
       "owner": "css",
-      "purpose": "Navigation link returning to previous ledger index"
+      "purpose": "Injected return link styled as a ledger reference"
     },
     {
       "name": "btn",
       "owner": "css",
-      "purpose": "Primary interaction target styled as a vintage stamp or seal"
+      "purpose": "Injected button styled as a mercantile label"
     },
     {
       "name": "md-img",
       "owner": "css",
-      "purpose": "Injected markdown image with sepia styling"
+      "purpose": "Injected markdown image with sepia treatment"
+    },
+    {
+      "name": "typewriter-text",
+      "owner": "css",
+      "purpose": "Monospace typography utility"
+    },
+    {
+      "name": "ruled-container",
+      "owner": "css",
+      "purpose": "Container with strict borders and subgrid alignment"
+    },
+    {
+      "name": "stamp-reveal",
+      "owner": "css",
+      "purpose": "Scroll-driven animation utility class"
+    },
+    {
+      "name": "hero-title",
+      "owner": "css",
+      "purpose": "Display typography for main headings"
+    },
+    {
+      "name": "meta-data",
+      "owner": "css",
+      "purpose": "Small technical text for dates and roles"
+    },
+    {
+      "name": "ink-block",
+      "owner": "css",
+      "purpose": "High contrast inverted block for emphasis"
+    },
+    {
+      "name": "dust-overlay",
+      "owner": "css",
+      "purpose": "SVG noise filter utility"
     }
   ],
   "layoutBlueprints": {
     "shell": {
-      "rootClass": "ledger-shell",
-      "composition": "A full-viewport flex column with a fixed top border. The ledger-header sits at the top, containing a wordmark and the nav-list. Main content area fills the remaining space. An SVG grain filter is applied to the pseudo-element of the ledger-shell to texture the entire application."
+      "rootClass": "app-shell",
+      "composition": "A full-viewport container with a fixed SVG noise overlay. The ledger-nav spans the top edge with a thick bottom border, housing flex-wrapped nav-links. The main content area sits below, constrained by a max-width and centered."
     },
     "home": {
-      "rootClass": "home-hero",
-      "composition": "A striking two-part layout. The top half features massive, tightly kerned serif typography overlaying a faded 19th-century landscape image. The bottom half transitions into the home-grid, a 3-column subgrid displaying featured project-row items."
+      "rootClass": "ledger-hero",
+      "composition": "A massive header region featuring the background-image hero asset, heavily tinted with a dark scrim to ensure text legibility. Contains a hero-title and typewriter-text introduction. Followed by the inventory-grid utilizing native CSS grid-lanes to display featured project-items."
     },
     "projects_index": {
-      "rootClass": "projects-archive",
-      "composition": "A strict vertical stack. Each child is a project-row with heavy top and bottom borders, acting like an itemized list in an old general store catalog. Metadata aligns to right-hand columns on desktop."
+      "rootClass": "archive-index",
+      "composition": "A stacked, single-column list of ledger-entry elements. Each entry acts as a subgrid row, aligning the title, date, and badges precisely across vertical ruled lines."
     },
     "designs_index": {
-      "rootClass": "designs-catalog",
-      "composition": "A native CSS masonry layout of design-card items. Each card has a thick ruled border and contains a design-preview image, scaled and filtered to look like a vintage archive."
+      "rootClass": "visual-index",
+      "composition": "A native masonry or bento grid of cabinet-card items. Thick borders separate the items, and images use the md-img class for vintage filtering."
     },
     "project_detail": {
-      "rootClass": "detail-canvas",
-      "composition": "A single-column reading experience centered on the page. The detail-header displays the title in massive serif font, followed by a metadata block. The detail-body contains the project description with strict monospace formatting and sepia-toned md-img elements."
+      "rootClass": "dossier-root",
+      "composition": "Opens with an ink-block header containing the project title and meta-data badges. The main body uses a ruled-container with max-width text-wrap: pretty constraints for readable typewriter-text paragraphs."
     },
     "design_detail": {
-      "rootClass": "design-detail-canvas",
-      "composition": "A wide, immersive layout. The design-detail-hero takes up the majority of the viewport, styled with heavy frame borders, followed by a smaller text description area below."
+      "rootClass": "blueprint-root",
+      "composition": "A large immersive view of the design asset using md-img, followed by a strict two-column grid (on desktop) detailing the specifications and context in typewriter-text."
     },
     "page": {
-      "rootClass": "page-canvas",
-      "composition": "A centered, narrow reading column for text-heavy pages, utilizing the body monospace typography for a raw, typed-document feel."
+      "rootClass": "document-root",
+      "composition": "A simple, centralized ruled-container for standard markdown content like the About or Contact pages, mimicking a typed letter on general store stationery."
     },
     "project_item": {
-      "rootClass": "project-row",
-      "composition": "A horizontal flex container (or grid on desktop) containing the project-title and project-meta. It has 44px minimum height and uses :has() to darken the background subtly when hovered or focused."
+      "rootClass": "ledger-entry",
+      "composition": "A horizontal flex or subgrid row containing the project title, a stamp-reveal badge, and a brief typewriter-text description. Borders divide each row."
     },
     "design_item": {
-      "rootClass": "design-card",
-      "composition": "A vertical card holding the design-preview image and a small caption area. Uses native starting-style for smooth scale-in animations when entering the viewport."
+      "rootClass": "cabinet-card",
+      "composition": "A vertically stacked card with a thick border, containing a constrained md-img and a small meta-data caption bar below it."
     },
     "nav_item": {
-      "rootClass": "nav-item",
-      "composition": "A simple anchor link with generous padding to ensure a 44px tap target, styled with uppercase monospace text and a subtle underline on hover."
+      "rootClass": "nav-link",
+      "composition": "A simple anchor element with explicit 44px minimum height padding and typewriter-text styling. Displays a kinetic hover effect that underlines the text with a thick tobacco-red line."
     }
   }
 }
