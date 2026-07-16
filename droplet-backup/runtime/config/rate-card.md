@@ -14,6 +14,9 @@ Positioning: aggressive, not cheap. These rates should read as a specialist,
 not a commodity freelancer — priced to filter for serious engagements while
 still winning good-fit smaller work.
 
+Tagline: Independent full-stack & AI engineering. Transparent price bands by
+service category — every engagement gets a detailed, fixed-scope proposal.
+
 ## Baseline
 
 - **Hourly rate:** $150/hr (ad-hoc, scoping, small revisions)
