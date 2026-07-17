@@ -286,7 +286,7 @@ function geminiApiCall(model, bodyObj) {
   });
 }
 
-async function geminiText(userPrompt, schema = null, maxOutputTokens = 65536, thinkingBudget = null, model = 'gemini-3.5-flash', allowNoThinkingRetry = true) {
+async function geminiText(userPrompt, schema = null, maxOutputTokens = 65536, thinkingBudget = null, model = (process.env.DEFAULT_MODEL || 'gemini-3.5-flash'), allowNoThinkingRetry = true) {
   // maxOutputTokens bounds thinking + output. It is per-call: specialist slots
   // use a bounded ceiling so a flaky response cannot hold the parallel build.
   const generationConfig = { responseMimeType: 'application/json', maxOutputTokens };
@@ -485,7 +485,7 @@ ABSOLUTE SYSTEM RULE - STRICT AESTHETIC PROHIBITIONS:
 
 Execute this creative vision using the high-end mechanics from the Technical Toolkit. You are the Orchestrator; explicitly dictate WHICH mechanics will execute this creative springboard flawlessly.`;
 
-  async function callAgent(p, schema = null, maxOutputTokens = 16384, thinkingBudget = null, model = 'gemini-3.5-flash', allowNoThinkingRetry = true) {
+  async function callAgent(p, schema = null, maxOutputTokens = 16384, thinkingBudget = null, model = (process.env.DEFAULT_MODEL || 'gemini-3.5-flash'), allowNoThinkingRetry = true) {
     if (GOOGLE_API_KEY) {
       try {
         const raw = await geminiText(p, schema, maxOutputTokens, thinkingBudget, model, allowNoThinkingRetry);
@@ -520,7 +520,7 @@ The constitution is a production contract, not inspirational prose:
 - The home blueprint must apply exactly one named hero class that the stylesheet will give background-image: url(assets/hero.jpg).
 - The selected composition must contain one justified visual risk that makes it impossible to mistake for an unrelated prompt, while keeping the actual portfolio content legible.
 
-Return exactly the DIRECTOR_SCHEMA JSON object.`, DIRECTOR_SCHEMA, 32768, 8192, 'gemini-3.1-pro-preview', false);
+Return exactly the DIRECTOR_SCHEMA JSON object.`, DIRECTOR_SCHEMA, 32768, 8192, (process.env.DEFAULT_MODEL || 'gemini-3.1-pro'), false);
 
   const planObj = extractJson(rawDirector);
   const plan = planObj.plan || 'No plan provided.';
@@ -641,7 +641,7 @@ RULES:
 SELECTED MECHANIC REFERENCES (quality only; do not copy blindly):
 ${customExemplars}
 
-OUTPUT: exactly one JSON object: { "css": "the complete stylesheet" }`, CSS_SECTION_SCHEMA, 32768, 8192, 'gemini-3.1-pro-preview', false)
+OUTPUT: exactly one JSON object: { "css": "the complete stylesheet" }`, CSS_SECTION_SCHEMA, 32768, 8192, (process.env.DEFAULT_MODEL || 'gemini-3.1-pro'), false)
     .then((raw) => ({ kind: 'css', css: extractJson(raw).css }))
     .catch((error) => ({ kind: 'css', error: String(error) }));
 
@@ -675,7 +675,7 @@ HIGH-END LAYOUT EXEMPLARS (Study these to understand the quality bar):
 ${LAYOUT_EXEMPLARS}
 
 OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
-    return callAgent(prompt, ONE_LAYOUT_SCHEMA, 16384, 4096, 'gemini-3.1-pro-preview', false)
+    return callAgent(prompt, ONE_LAYOUT_SCHEMA, 16384, 4096, (process.env.DEFAULT_MODEL || 'gemini-3.1-pro'), false)
       .then((raw) => ({ kind: 'layout', key, html: extractJson(raw).html }))
       .catch((error) => ({ kind: 'layout', key, error: String(error) }));
   });
@@ -799,7 +799,7 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
             required: ["id", "symptom", "detector", "repair"]
           }
         };
-        const rawLearn = await geminiApiCall('gemini-3.5-flash', {
+        const rawLearn = await geminiApiCall((process.env.DEFAULT_MODEL || 'gemini-3.5-flash'), {
           contents: [{ parts: [{ text: `You are a meta-learning system managing the global pitfalls database for a UI generator.\n\nCURRENT PITFALLS:\n${currentPitfalls}\n\nThe generator just made the following HTML/CSS structural mistakes (missing placeholders, bad tags):\n${verdict.errors.join('\n')}\n\nREWRITE the entire pitfalls array. Incorporate a new rule for these failures, or modify an existing rule if it overlaps. Consolidate and rewrite the entire array to keep it concise, comprehensive, and perfectly accurate. Output the full JSON array.` }] }],
           generationConfig: { responseMimeType: 'application/json', responseSchema: LEARNING_SCHEMA }
         });
@@ -827,7 +827,7 @@ ${styleSpec}
 CURRENT COMPLETE CSS:
 ${candidate.css}
 
-OUTPUT: exactly one JSON object: { "css": "complete repaired CSS" }`, CSS_SECTION_SCHEMA, 32768, 4096, 'gemini-3.5-flash');
+OUTPUT: exactly one JSON object: { "css": "complete repaired CSS" }`, CSS_SECTION_SCHEMA, 32768, 4096, (process.env.DEFAULT_MODEL || 'gemini-3.5-flash'));
         return { target, value: extractJson(raw).css };
       }
       const spec = LAYOUT_SPECS[target];
@@ -844,7 +844,7 @@ ${styleSpec}
 CURRENT "${target}" HTML:
 ${candidate.layouts[target] || '(missing)'}
 
-OUTPUT: exactly one JSON object: { "html": "complete repaired ${target} fragment" }`, ONE_LAYOUT_SCHEMA, 16384, 4096, 'gemini-3.5-flash');
+OUTPUT: exactly one JSON object: { "html": "complete repaired ${target} fragment" }`, ONE_LAYOUT_SCHEMA, 16384, 4096, (process.env.DEFAULT_MODEL || 'gemini-3.5-flash'));
       return { target, value: extractJson(raw).html };
       }));
 
@@ -883,7 +883,7 @@ OUTPUT: exactly one JSON object: { "html": "complete repaired ${target} fragment
           required: ["id", "symptom", "detector", "repair"]
         }
       };
-      const rawLearn = await geminiApiCall('gemini-3.5-flash', {
+      const rawLearn = await geminiApiCall((process.env.DEFAULT_MODEL || 'gemini-3.5-flash'), {
         contents: [{ parts: [{ text: `You are a meta-learning system managing the global pitfalls database for a UI generator.\n\nCURRENT PITFALLS:\n${currentPitfalls}\n\nThe generator just failed the structural release gate with the following HTML layout issues:\n${finalVerdict.errors.join('\n')}\n\nREWRITE the entire pitfalls array. Incorporate a new rule for these failures, or modify an existing rule if it overlaps. Consolidate and rewrite the entire array to keep it concise, comprehensive, and perfectly accurate. Output the full JSON array.` }] }],
         generationConfig: { responseMimeType: 'application/json', responseSchema: LEARNING_SCHEMA }
       });
@@ -917,7 +917,7 @@ ${styleSpec}
 FULL SOURCE PACKAGE:
 ${source}
 
-OUTPUT: exactly one JSON object: { "approved": true, "score": 8, "blocking_issues": [] }`, RELEASE_REVIEW_SCHEMA, 32768, 8192, 'gemini-3.1-pro-preview', false);
+OUTPUT: exactly one JSON object: { "approved": true, "score": 8, "blocking_issues": [] }`, RELEASE_REVIEW_SCHEMA, 32768, 8192, (process.env.DEFAULT_MODEL || 'gemini-3.1-pro'), false);
     const audit = extractJson(raw);
     if (!Array.isArray(audit.blocking_issues)) audit.blocking_issues = [];
     console.log(`  → Release review (${label}): ${audit.score}/10 — ${audit.approved ? 'approved' : 'repair required'}`);
@@ -957,7 +957,7 @@ OUTPUT: exactly one JSON object: { "approved": true, "issues": [] }`,
       }
       visualAuditParts.push({ text: `Image: ${label}` }, { inlineData: { mimeType, data: data.toString('base64') } });
     }
-    const visualParts = await geminiApiCall('gemini-3.1-pro-preview', {
+    const visualParts = await geminiApiCall((process.env.DEFAULT_MODEL || 'gemini-3.1-pro'), {
       contents: [{ parts: visualAuditParts }],
       generationConfig: {
         responseMimeType: 'application/json',
@@ -1120,7 +1120,7 @@ ${blocks}
               required: ["id", "symptom", "detector", "repair"]
             }
           };
-          const rawLearn = await geminiApiCall('gemini-3.5-flash', {
+          const rawLearn = await geminiApiCall((process.env.DEFAULT_MODEL || 'gemini-3.5-flash'), {
             contents: [{ parts: [{ text: `You are a meta-learning system managing the global pitfalls database for a UI generator.\n\nCURRENT PITFALLS:\n${currentPitfalls}\n\nThe generator just failed the review board with the following blocking issues:\n${renderBlocking.map(i => i.issue).join('\n')}\n\nREWRITE the entire pitfalls array. Incorporate a new rule for these failures, or modify an existing rule if it overlaps. Consolidate and rewrite the entire array to keep it concise, comprehensive, and perfectly accurate. Output the full JSON array.` }] }],
             generationConfig: { responseMimeType: 'application/json', responseSchema: LEARNING_SCHEMA }
           });
@@ -1165,14 +1165,14 @@ ${blocks}
         };
         let parts;
         try {
-          parts = await geminiApiCall('gemini-3.5-flash', request);
+          parts = await geminiApiCall((process.env.DEFAULT_MODEL || 'gemini-3.5-flash'), request);
         } catch (err) {
           // The screenshot payload is what makes these calls slow enough to
           // time out — a same-payload retry has been observed to time out
           // twice in a row and kill the build. Retry BLIND (text only):
           // a less-informed repair beats a dead generation.
           console.warn(`  ⚠ Vision repair failed (${String(err).slice(0, 100)}); retrying without screenshots…`);
-          parts = await geminiApiCall('gemini-3.5-flash', {
+          parts = await geminiApiCall((process.env.DEFAULT_MODEL || 'gemini-3.5-flash'), {
             ...request,
             contents: [{ parts: [request.contents[0].parts[0]] }],
             generationConfig: {

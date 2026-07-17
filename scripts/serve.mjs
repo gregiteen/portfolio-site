@@ -280,10 +280,22 @@ function startGeneration(prompt, email = null, retry = null) {
   let stderrTail = '';
   let genSlug = null; // captured from compile-theme's "→ designs/<slug>" line
   let settled = false;
-  const retryGeneration = (reason) => {
+  const fail = (reason) => {
     if (settled) return;
     settled = true;
     const detail = String(reason).slice(0, 300);
+
+    if (attempt >= 3) {
+      genJob.status = 'error';
+      genJob.error = detail;
+      genJob.phase = 'Failed after 3 attempts. Please try again later.';
+      console.error(`[Generator] Attempt ${attempt} failed permanently: ${detail}`);
+      appendRun({ run_id: runId, prompt, status: 'error', startedAt, finishedAt: Date.now(), error: detail, attempt }).catch((e) => {
+        console.error('[Runtime] Failed to persist generation error:', e.message);
+      });
+      return;
+    }
+
     const delay = retryDelay(attempt);
     genJob.status = 'running';
     genJob.error = detail;
