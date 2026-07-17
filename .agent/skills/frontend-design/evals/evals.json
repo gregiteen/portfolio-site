@@ -1,0 +1,22 @@
+[
+  {
+    "name": "no-cyberpunk-anywhere",
+    "assertion": "No generated design, prompt, palette description, or committed style contains Cyberpunk aesthetics or the word 'cyberpunk' — this is an absolute owner rule.",
+    "severity": "error"
+  },
+  {
+    "name": "review-used-rendered-screenshots",
+    "assertion": "Any design review that led to a publish can point to the actual rendered screenshots it examined (desktop + mobile) — a source-only review is invalid.",
+    "severity": "error"
+  },
+  {
+    "name": "contrast-script-correct",
+    "assertion": "node .agent/skills/frontend-design/scripts/check-contrast.mjs '#000000' '#ffffff' reports 21.00:1 and exits 0; '#777777' vs '#888888' exits 1.",
+    "severity": "error"
+  },
+  {
+    "name": "design-source-of-truth-respected",
+    "assertion": "UI changes to generated themes were made via designs/<slug>/DESIGN.md sections (fail-closed build), not by patching build output or adding silent fallbacks.",
+    "severity": "warning"
+  }
+]

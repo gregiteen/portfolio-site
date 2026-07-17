@@ -30,11 +30,11 @@ dist/
 !.agent/skills/project-management/
 !.agent/skills/push/
 !.agent/skills/security/
+!.agent/skills/skill-creator/
 !.agent/skills/test/
 !.agent/skills/webmail/
 # Total Recall skill + its embedded skills are global/symlinked — keep out
 .agent/skills/total-recall
-.agent/skills/tr-*
 .claude/
 .remember/
 

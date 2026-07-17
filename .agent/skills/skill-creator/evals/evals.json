@@ -1,0 +1,27 @@
+[
+  {
+    "name": "validator-runs-clean",
+    "assertion": "node .agent/skills/skill-creator/scripts/validate-skills.mjs exits 0 across the whole skills directory",
+    "severity": "error"
+  },
+  {
+    "name": "scaffolder-output-fails-validation",
+    "assertion": "A freshly scaffolded skill (create-skill.mjs output, untouched) is flagged with errors by validate-skills.mjs — the scaffold must never pass as a finished skill",
+    "severity": "error"
+  },
+  {
+    "name": "scaffolder-wires-gitignore-and-symlink",
+    "assertion": "create-skill.mjs appends the !.agent/skills/<name>/ allowlist line to .gitignore and creates the .claude/skills/<name> symlink",
+    "severity": "error"
+  },
+  {
+    "name": "no-ghost-references",
+    "assertion": "Every script, hook, and file path referenced anywhere in this skill exists and parses (node --check / bash -n)",
+    "severity": "error"
+  },
+  {
+    "name": "hook-is-installable",
+    "assertion": "hooks/pre-commit-validate.sh's header install snippet works verbatim from the repo root and the hook exits 0 when no skill files are staged",
+    "severity": "warning"
+  }
+]

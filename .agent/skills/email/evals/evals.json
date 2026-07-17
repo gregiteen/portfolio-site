@@ -8,5 +8,15 @@
     "name": "use-env",
     "assertion": "The agent must read email configuration dynamically from process.env.",
     "severity": "error"
+  },
+  {
+    "name": "env-check-never-prints-values",
+    "assertion": "node .agent/skills/email/scripts/check-email-env.mjs exits 0 and its output contains env var NAMES with set/unset markers only — never a credential value.",
+    "severity": "error"
+  },
+  {
+    "name": "droplet-env-is-source-of-truth",
+    "assertion": "Before debugging any 'email broken' report, the agent verifies env presence on the droplet (/opt/portfolio-site/.env, names only) rather than concluding from the sparse local .env.",
+    "severity": "warning"
   }
 ]
