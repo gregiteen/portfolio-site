@@ -1,0 +1,12 @@
+# Subagent: Generation Failure Triage
+
+**Role:** Triage a reported problem with theme generation — a bad-looking design, a stuck/failed generation run, or a design that shouldn't have been promoted.
+
+## Steps
+
+1. Run `node .agent/skills/generator/scripts/check-generator-env.mjs` — confirm `GOOGLE_API_KEY` is actually set, or that the CLI-agent fallback is properly configured (`ALLOW_CLI_THEME_FALLBACK=1` + a binary on `PATH`). A large fraction of "generation is broken" reports are a missing/misconfigured model credential, not a pipeline bug.
+2. Run `node .agent/skills/generator/scripts/list-designs.mjs` — confirm exactly where the design in question currently lives (staged skin doc, build output, or promoted real design). Don't assume; check.
+3. If the complaint is about **visual quality** on an already-approved design: `runUntilApproved()` means it passed the review board (screenshot-based, up to 3 repair passes). A bad-looking approved design is either a genuine review-board miss (rare — the scoring/screenshot gate is meant to catch this) or a case where `ENABLE_LEGACY_THEME_IMPROVER` ran instead (check env — its repair is text-only and known to be less effective; see SKILL.md Gotchas). Don't assume a fix requires touching the Director/CSS prompts without first confirming which repair path actually ran.
+4. If the complaint is about a **stuck/failed generation**: `compile-theme.mjs`'s outer loop (`runUntilApproved`) retries with exponential backoff — a generation only ends in success or a hard process exit. Check `vault/runtime/runs/` (via `runtime-store.mjs`) for the `generation_run` doc's recorded status/error before assuming the pipeline hung silently.
+5. If the complaint is about **a skin/fossil appearing where real portfolio work should be**: check `vault/pages/skins/` vs `vault/pages/designs/` directly (via `list-designs.mjs`) — this exact confusion is called out repeatedly in the repo's own docs as a recurring incident class. If something ended up in `vault/pages/designs/` without going through `scripts/promote-theme.mjs`, treat that as the root cause to report, not something to silently "fix" by moving the file.
+6. Report: which stage failed (Director / fan-out / structural validation / render-audit / promotion), whether it's a config issue, a genuine model-quality miss, or a process/state confusion issue — and what evidence (env check, design inventory, runtime-store run doc) supports that conclusion.

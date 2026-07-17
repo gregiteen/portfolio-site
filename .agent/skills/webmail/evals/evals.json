@@ -1,0 +1,27 @@
+[
+  {
+    "name": "skill-frontmatter",
+    "assertion": "SKILL.md exists with name: webmail and clearly distinguishes itself from the email skill",
+    "severity": "error"
+  },
+  {
+    "name": "env-checker-runs",
+    "assertion": "node .agent/skills/webmail/scripts/check-webmail-env.mjs runs and never prints an actual secret value",
+    "severity": "error"
+  },
+  {
+    "name": "mailcow-password-tests-pass",
+    "assertion": "node --test test/mailcow-password.test.mjs passes",
+    "severity": "error"
+  },
+  {
+    "name": "two-stacks-documented",
+    "assertion": "The skill documents both IMAP stacks (imap.mjs legacy vs webmail.mjs/webmail-ui.mjs current) and does not conflate them",
+    "severity": "error"
+  },
+  {
+    "name": "no-untested-claim",
+    "assertion": "The skill does not imply webmail.mjs, webmail-ui.mjs, or imap.mjs have test coverage — they don't",
+    "severity": "warning"
+  }
+]

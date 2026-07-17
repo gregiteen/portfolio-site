@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 // @ts-ignore
 import { parseDocument } from '@ssss/cli/frontmatter';
 import { extractSections, fillTemplate, hoistCssImports, INTERACTION_CSS } from './lib/theme.mjs';
+import { createWaitingProfile } from './lib/waiting-profile.mjs';
+import { execSync } from 'child_process';
 
 let targetDesign = null;
 let targetDesignName = 'Greg Iteen';
@@ -697,13 +699,16 @@ const FLIPPER_SCRIPT_TEMPLATE = `<script>
       <a class="ai-flipper-link ai-flipper-prev" href="\${prevUrl}">&larr; Prev Design</a>
       <span class="ai-flipper-name">\${designs[currentIndex].name}</span>
       <a class="ai-flipper-link ai-flipper-next" href="\${nextUrl}">Next Design &rarr;</a>
+      <a class="ai-flipper-consult" href="/consult.html" title="Start a client needs assessment">Start a project</a>
     </div>
     <style>
-      #ai-design-flipper{position:fixed;top:0;left:0;right:0;min-height:44px;padding:0 92px 0 8px;background:#111;color:#eee;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:4px;z-index:99999;font-family:monospace;font-size:12px;border-bottom:1px solid #333;view-transition-name:design-flipper;box-sizing:border-box}
+      #ai-design-flipper{position:fixed;top:0;left:0;right:0;min-height:44px;padding:0 8px;background:#111;color:#eee;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto;align-items:center;gap:4px;z-index:99999;font-family:monospace;font-size:12px;border-bottom:1px solid #333;view-transition-name:design-flipper;box-sizing:border-box}
       .ai-flipper-link{display:flex;align-items:center;min-width:0;min-height:44px;padding:0 8px;color:#aaa;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box}
       .ai-flipper-prev{justify-content:flex-end}.ai-flipper-next{justify-content:flex-start}
       .ai-flipper-name{max-width:38vw;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      @media(max-width:520px){#ai-design-flipper{grid-template-columns:minmax(0,1fr) minmax(0,1fr);font-size:10px}.ai-flipper-name{display:none}.ai-flipper-prev{justify-content:flex-start}.ai-flipper-next{justify-content:center}}
+      .ai-flipper-consult{display:flex;align-items:center;min-height:30px;padding:0 12px;border:1px solid #ff6a00;color:#fff;background:#b94900;text-decoration:none;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+      .ai-flipper-consult:hover{background:#ff6a00;color:#111}
+      @media(max-width:620px){#ai-design-flipper{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;font-size:10px}.ai-flipper-name{display:none}.ai-flipper-prev{justify-content:flex-start}.ai-flipper-next{justify-content:center}.ai-flipper-consult{padding:0 8px}}
     </style>
   \`;
 
@@ -722,6 +727,7 @@ const FLIPPER_SCRIPT_TEMPLATE = `<script>
       
       const transition = document.startViewTransition(async () => {
         const res = await fetch(href);
+        if (!res.ok) throw new Error('Navigation failed: ' + res.status);
         const html = await res.text();
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
@@ -739,9 +745,16 @@ const FLIPPER_SCRIPT_TEMPLATE = `<script>
         window.scrollTo(0, 0);
       });
       
-      transition.finished.finally(() => {
-        document.documentElement.classList.remove('theme-morph');
-      });
+      // A skipped transition is normal when the document becomes hidden or a
+      // navigation supersedes it. The View Transition spec exposes that skip
+      // as a rejected ready promise, so consume every lifecycle promise and
+      // always remove the temporary morph class.
+      transition.ready.catch(() => {});
+      transition.updateCallbackDone.catch(() => {});
+      transition.finished.then(
+        () => document.documentElement.classList.remove('theme-morph'),
+        () => document.documentElement.classList.remove('theme-morph')
+      );
     });
   };
 
@@ -915,8 +928,9 @@ ${TRANSITIONS}
 
   // CNA banner behavior, shared by both the default shell's in-flow banner and
   // the fixed bar injected into AI-generated skins (same ids/classes in both).
-  // It stays hidden until the visitor shows real intent — a dwell timer or
-  // touching a form field — rather than nagging every visitor immediately.
+  // It stays hidden until the visitor has actually engaged with the portfolio
+  // (eight seconds, 30% scroll, or a form interaction). The permanent project
+  // CTA is navigation; this banner is the secondary A/B offer.
   // Offer copy is A/B-assigned client-side (sticky via cookie) from
   // /api/banner-offers (vault/runtime/config/banner-offers.md), and
   // impressions/clicks are logged to /api/banner-event for analysis; the CNA
@@ -961,7 +975,16 @@ ${TRANSITIONS}
       banner.classList.add('visible');
       track('shown', offer.id, trigger);
     }
-    var dwellTimer = setTimeout(function() { reveal('dwell'); }, 25000);
+    var dwellTimer = setTimeout(function() { reveal('dwell'); }, 8000);
+    function onScroll() {
+      var available = Math.max(1, document.documentElement.scrollHeight - innerHeight);
+      if ((scrollY || document.documentElement.scrollTop || 0) / available >= 0.30) {
+        clearTimeout(dwellTimer);
+        removeEventListener('scroll', onScroll);
+        reveal('scroll-30');
+      }
+    }
+    addEventListener('scroll', onScroll, { passive: true });
     document.addEventListener('focusin', function(e) {
       var t = e.target;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) {
@@ -1042,11 +1065,30 @@ ${TRANSITIONS}
 })();
 </script>`;
 
-  const LOGOUT_FIXED = `<a href="/api/logout" id="giLogout" title="Sign out">sign out</a>
-<style>
-#giLogout{position:fixed !important;top:14px !important;right:14px !important;z-index:2147483647 !important;font-family:monospace !important;font-size:.68rem !important;letter-spacing:.08em !important;text-transform:uppercase !important;text-decoration:none !important;color:#fff !important;background:#000 !important;border:2px solid #fff !important;border-radius:4px !important;padding:7px 12px !important;backdrop-filter:blur(6px) !important;transition:all .2s !important;box-shadow:0 2px 10px rgba(0,0,0,0.5) !important}
-#giLogout:hover{background:#fff !important;color:#000 !important;border-color:#000 !important}
-</style>`;
+  // The owner needs a reliable way to return to the public entry flow during
+  // testing. The server authorizes this control per-session; it is never in
+  // the static markup for ordinary visitors and uses POST to avoid accidental
+  // logout through navigation restoration or prefetching.
+  const TEST_LOGOUT_SCRIPT = `<script>
+(function(){
+  fetch('/api/session', { credentials: 'same-origin' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(session){
+    if (!session || !session.testingLogout) return;
+    var control = document.createElement('button');
+    control.type = 'button'; control.textContent = 'testing: return to portal';
+    control.setAttribute('aria-label', 'Testing only: return to the public portal');
+    control.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:10000;padding:9px 11px;border:1px solid rgba(255,255,255,.35);border-radius:3px;background:rgba(10,10,10,.9);color:#fff;font:10px/1.1 monospace;letter-spacing:.08em;text-transform:uppercase;cursor:pointer';
+    control.addEventListener('click', function(){
+      if (!window.confirm('Return to the public portal? This ends only your test session.')) return;
+      control.disabled = true; control.textContent = 'returning…';
+      fetch('/api/test/logout', { method:'POST', credentials:'same-origin' }).then(function(r){
+        if (!r.ok) throw new Error('test logout failed');
+        location.assign('/splash.html');
+      }).catch(function(){ control.disabled=false; control.textContent='testing: return to portal'; });
+    });
+    document.body.appendChild(control);
+  }).catch(function(){});
+})();
+</script>`;
 
   let finalHtml;
   if (customLayouts.shell) {
@@ -1077,8 +1119,8 @@ ${TRANSITIONS}
       finalHtml = `${headContent}\n<body>\n${customHtml}\n</body>\n</html>`;
     }
     finalHtml = finalHtml.includes('</body>')
-      ? finalHtml.replace('</body>', `${CNA_BANNER_FIXED}\n${MOTION_SCRIPT}\n${LOGOUT_FIXED}\n</body>`)
-      : finalHtml + CNA_BANNER_FIXED + MOTION_SCRIPT + LOGOUT_FIXED;
+      ? finalHtml.replace('</body>', `${CNA_BANNER_FIXED}\n${MOTION_SCRIPT}\n${TEST_LOGOUT_SCRIPT}\n</body>`)
+      : finalHtml + CNA_BANNER_FIXED + MOTION_SCRIPT + TEST_LOGOUT_SCRIPT;
   } else {
     finalHtml = headContent + `<body>
 <div class="ambient-glows">
@@ -1093,7 +1135,7 @@ ${TRANSITIONS}
       <div class="theme-pills" role="group" aria-label="Theme switcher">
         ${themePillsHtml}
       </div>
-      <a href="/api/logout" class="logout-link" title="Sign out">↗ out</a>
+      <a href="/consult.html" class="consult-link" title="Start a client needs assessment">start a project</a>
     </nav>
   </div>
 </header>
@@ -1119,6 +1161,7 @@ ${content}
 .cna-cta{font-family:monospace;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:rgba(139,92,246,0.8)}
 </style>
 <script>${CNA_BANNER_SCRIPT}</script>
+${TEST_LOGOUT_SCRIPT}
 <footer>
   <div class="frame">
     <p>rendered from <code>${escapeHtml(sourcePath)}</code> · vault → html, no database</p>
@@ -1641,6 +1684,12 @@ try {
     await cp(join(staticDir, f), join(outDir, f), { force: true });
   }
 } catch {}
+if (!targetDesign) {
+  await writeFile(
+    join(outDir, 'waiting-profile.json'),
+    `${JSON.stringify(createWaitingProfile(pages))}\n`
+  );
+}
 // Ensure generated assets survive rebuilds
 const genAssetsDir = join(outDir, 'assets');
 await mkdir(genAssetsDir, { recursive: true });
@@ -1649,7 +1698,6 @@ try { await cp(join(root, 'static', 'gi-logo.png'), join(genAssetsDir, 'gi-logo.
 console.log(`Built ${pages.length + 2} pages → ${outDir}`);
 
 // ─── Auto-build all designs ──────────────────────────────────────────────────
-import { execSync } from 'child_process';
 if (!targetDesign) {
   for (const d of aiDesigns) {
     const slug = d.data.slug.replace(/^(design|skin)-/, '');

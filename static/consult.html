@@ -214,6 +214,7 @@ h1{
   </footer>
 </div>
 
+<script src="/cna-state.js"></script>
 <script>
 const messages = document.getElementById('messages');
 const input = document.getElementById('userInput');
@@ -228,6 +229,16 @@ let conversationHistory = [];
 let assessmentComplete = false;
 let assessmentData = null;
 let intakeData = null;
+
+function persistConsultation(patch = {}) {
+  if (!window.GICna) return;
+  window.GICna.save({
+    history: conversationHistory,
+    assessment: assessmentData,
+    intake: intakeData,
+    ...patch,
+  });
+}
 
 // Auto-resize textarea
 input.addEventListener('input', () => {
@@ -274,6 +285,7 @@ async function handleSend() {
 
   addMessage(text, 'user');
   conversationHistory.push({ role: 'user', content: text });
+  persistConsultation();
   input.value = '';
   input.style.height = 'auto';
   sendBtn.disabled = true;
@@ -292,11 +304,13 @@ async function handleSend() {
     if (data.message) {
       addMessage(data.message, 'ai');
       conversationHistory.push({ role: 'assistant', content: data.message });
+      persistConsultation();
     }
 
     if (data.complete && data.assessment) {
       assessmentComplete = true;
       assessmentData = data.assessment;
+      persistConsultation();
       showSummary(data.assessment);
     }
   } catch (err) {
@@ -345,12 +359,17 @@ submitProposal.addEventListener('click', async () => {
       body: JSON.stringify({
         assessment: assessmentData,
         history: conversationHistory,
+        intake: intakeData,
+        email: intakeData?.email || null,
+        requestId: window.GICna.requestId(),
       }),
     });
     const data = await res.json();
-    if (data.success) {
-      submitProposal.textContent = 'Proposal Sent to Greg ✓';
-      addMessage('Your proposal has been generated and sent to Greg for review. We will reply within 24 hours.', 'ai');
+    if (res.ok && data.success && data.proposalId) {
+      const proposal = { id: data.proposalId, status: data.status || 'generating' };
+      persistConsultation({ proposal });
+      submitProposal.textContent = 'Proposal Request Accepted ✓';
+      addMessage(`Your request is safely queued as ${data.proposalId}. Greg will review the generated proposal before it is sent to you.`, 'ai');
     } else {
       submitProposal.textContent = 'Error — Try Again';
       submitProposal.disabled = false;
@@ -370,6 +389,7 @@ intakeForm.addEventListener('submit', async (e) => {
     company: document.getElementById('intakeCompany').value.trim(),
     budget: document.getElementById('intakeBudget').value
   };
+  persistConsultation();
 
   intakeForm.style.display = 'none';
   chatContainer.style.display = 'flex';
@@ -377,6 +397,7 @@ intakeForm.addEventListener('submit', async (e) => {
   // Seed the context with intake data
   const seedMessage = `[SYSTEM MESSAGE] Prospect info captured: Name: ${intakeData.name}, Email: ${intakeData.email}, Company: ${intakeData.company}, Budget: ${intakeData.budget}. Start the consultation by acknowledging this and probing for their main challenges.`;
   conversationHistory.push({ role: 'user', content: seedMessage });
+  persistConsultation();
 
   addTypingIndicator();
   try {
@@ -390,13 +411,45 @@ intakeForm.addEventListener('submit', async (e) => {
     if (data.message) {
       addMessage(data.message, 'ai');
       conversationHistory.push({ role: 'assistant', content: data.message });
+      persistConsultation();
     }
   } catch {
     removeTypingIndicator();
     addMessage(`Welcome ${intakeData.name}! Tell me about the project you have in mind.`, 'ai');
     conversationHistory.push({ role: 'assistant', content: `Welcome ${intakeData.name}! Tell me about the project you have in mind.` });
+    persistConsultation();
   }
 });
+
+async function restoreConsultation() {
+  if (!window.GICna) return;
+  const state = await window.GICna.hydrate();
+  if (!state.history.length && !state.assessment) return;
+
+  conversationHistory = state.history;
+  assessmentData = state.assessment;
+  intakeData = state.intake;
+  assessmentComplete = Boolean(assessmentData);
+  intakeForm.style.display = 'none';
+  chatContainer.style.display = 'flex';
+  messages.textContent = '';
+  for (const message of conversationHistory) {
+    if (message.content.startsWith('[SYSTEM MESSAGE]')) continue;
+    addMessage(message.content, message.role === 'assistant' ? 'ai' : 'user');
+  }
+  if (assessmentData) {
+    showSummary(assessmentData);
+    sendBtn.disabled = true;
+  } else {
+    input.focus();
+  }
+  if (state.proposal?.id) {
+    submitProposal.disabled = true;
+    submitProposal.textContent = `Request ${state.proposal.id} Accepted ✓`;
+  }
+}
+
+restoreConsultation();
 </script>
 </body>
 </html>

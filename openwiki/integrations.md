@@ -50,4 +50,4 @@ The deploy skill includes the concrete rsync commands and the rationale for each
 - `vault-registry/core.json`
 - `vault-registry/extensions/portfolio.json`
 - `.agent/skills/deploy/SKILL.md`
-- `docs/projects/in-progress/portfolio-platform/PORTFOLIO_PLATFORM_PRD.md`
+- `docs/projects/in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/PORTFOLIO_VISITOR_FUNNEL_RECOVERY_PRD.md`

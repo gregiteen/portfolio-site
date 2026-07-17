@@ -1,4 +1,5 @@
 ---
+repo_scoped: true
 name: email
 description: "Use this skill to manage email infrastructure, check the mail server status, and configure SMTP2GO or Mailcow environments."
 ---

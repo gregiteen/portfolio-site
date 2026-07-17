@@ -2,13 +2,13 @@
 
 ## Sovereign Sync → Portfolio Platform (merged 2026-07-07)
 
-The sovereign-sync project was merged into
-`in-progress/portfolio-platform/`. The items previously listed here (0.2,
-0.6, T1–T6) had been extracted during a **false archival** — the project
-never passed its testing gate. They are all ACTIVE tasks again in
-`in-progress/portfolio-platform/PORTFOLIO_PLATFORM_TRACKER.md` (Phase 0
-tasks 0.3–0.4 and Phase 2 tasks 2.1–2.6). Nothing was deleted; everything
-was re-absorbed.
+The sovereign-sync and portfolio-platform work is now consolidated into
+`in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/`. The items previously listed
+here (0.2, 0.6, T1–T6) had been extracted during a **false archival** — the
+project never passed its testing gate. They remain ACTIVE in
+`in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/PORTFOLIO_VISITOR_FUNNEL_RECOVERY_PROJECT_TRACKER.md`
+under the consolidated platform-operations and release phases. Nothing was
+deleted; everything was re-absorbed.
 
 Genuinely deferred items (out of the combined project's scope — re-confirm
 at archival time):

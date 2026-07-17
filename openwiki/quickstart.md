@@ -21,7 +21,7 @@ Start here if you need to understand the repo quickly:
 - `vault/runtime/` — durable runtime documents for visitors, proposals, and generation runs.
 - `vault/pages/skins/` — generated theme-skin documents used by the flipper/theme pipeline.
 - `scripts/` — build, serve, theme generation, registry sync, promotion, and improvement jobs.
-- `docs/projects/in-progress/portfolio-platform/` — current product/architecture/verification plan for the platform work.
+- `docs/projects/in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/` — consolidated product, architecture, implementation, and verification plan for the visitor-to-client platform.
 - `.agent/skills/` — operational skills that govern deploys, quality checks, security, and project management.
 
 ## Core concepts to keep straight

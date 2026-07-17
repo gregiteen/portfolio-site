@@ -47,8 +47,8 @@ The deploy skill in `.agent/skills/deploy/SKILL.md` is a primary operational sou
 - `scripts/serve.mjs`
 - `scripts/build-site.mjs`
 - `.agent/skills/deploy/SKILL.md`
-- `docs/projects/in-progress/portfolio-platform/PORTFOLIO_PLATFORM_DEV_PLAN.md`
-- `docs/projects/in-progress/portfolio-platform/PORTFOLIO_PLATFORM_TRACKER.md`
+- `docs/projects/in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/PORTFOLIO_VISITOR_FUNNEL_RECOVERY_DEVELOPMENT_PLAN.md`
+- `docs/projects/in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/PORTFOLIO_VISITOR_FUNNEL_RECOVERY_PROJECT_TRACKER.md`
 
 ## Custom Webmail CRM Dashboard
 The central admin dashboard, CRM (prospects, stages, deals, funnels), and drip campaigns are ALL managed through the custom webmail app at mail.gregiteen.xyz. There is NO standalone admin page; everything is integrated into the webmail client.

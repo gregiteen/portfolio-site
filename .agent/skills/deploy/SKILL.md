@@ -17,32 +17,33 @@ commit. That is exactly how the sovereign-sync verification docs got wiped and h
 half-done phases got committed as "done." Committing is a **separate, intentional
 act the user requests explicitly** — never a side effect of deploying.
 
-1. **Pre-flight guardrail — inspect, do not commit.** Run `git status --short`.
-   - If the tree is **dirty**, STOP and show the user exactly what changed. Do not
-     `git add` anything. Ask whether those changes are intended to go live. Only
-     proceed once the user confirms (deploy ships the working tree as-is) or after
-     they have committed/stashed intentionally themselves.
-   - If the tree is **clean**, proceed.
+1. **Pre-flight guardrail — inspect, do not commit, then back up.** Run:
+   ```
+   node .agent/skills/deploy/scripts/deploy.mjs
+   ```
+   This refuses to proceed if the git tree is dirty (prints the diff and exits 1 —
+   STOP and show the user exactly what changed, do not `git add` anything; only
+   re-run with `--confirm-dirty` once they confirm those changes should go live,
+   or after they've committed/stashed intentionally themselves), then takes the
+   pre-deploy safety backup on the droplet before any `--delete` rsync runs.
 2. **Rebuild:** Run `npm run build` to compile all static assets.
 3. **Deploy to Droplet:**
-   - The Droplet IP is `138.197.199.217` (stored in `.env` as `DROPLET_IP`).
+   - The Droplet IP is `138.197.199.217` (stored in `.env` as `DROPLET_IP`; see [references/digitalocean.md](./references/digitalocean.md) for the full droplet layout).
 
    **Step 1 — Execute strict deployment script**:
    Instead of running fragmented commands, run the dedicated deployment script which handles the rsync, strict SSH timeouts, and live health check verification.
    ```
    bash scripts/deploy.sh
    ```
-   *Note: If `scripts/deploy.sh` does not exist, recreate it from the standards to enforce atomic health checks.*
 
 ## ⚠️ Step 2 exclude list — do not edit without reading this
 
 `--delete` makes the droplet's `/opt/portfolio-site/` mirror the repo exactly.
 Every exclude below is a **runtime-data root the repo does not own**. Removing an
 exclude is a **data-loss event**: the next deploy will delete live customer data,
-generated designs, or sessions on the droplet. Before touching this list, take
-the full safety backup first (see the cleanup procedure in
-`docs/projects/.../sovereign-sync/SOVEREIGN_SYNC_ARCHITECTURE.md` §4.2):
-`ssh root@138.197.199.217 "tar czf /root/pre-deploy-backup-$(date +%F).tar.gz /opt/portfolio-site /var/www/gregiteen.xyz"`.
+generated designs, or sessions on the droplet. Step 1 above already takes the
+pre-deploy backup automatically — don't touch this exclude list without that
+backup having run first.
 
 | Exclude | Why it must be excluded |
 |---|---|

@@ -32,7 +32,7 @@ This repo combines static site generation, runtime business data, AI-driven gene
 
 ## Source references
 - `package.json`
-- `docs/projects/in-progress/portfolio-platform/PORTFOLIO_PLATFORM_DEV_PLAN.md`
-- `docs/projects/in-progress/portfolio-platform/PORTFOLIO_PLATFORM_TRACKER.md`
-- `docs/projects/in-progress/portfolio-platform/PORTFOLIO_PLATFORM_PRD.md`
+- `docs/projects/in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/PORTFOLIO_VISITOR_FUNNEL_RECOVERY_DEVELOPMENT_PLAN.md`
+- `docs/projects/in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/PORTFOLIO_VISITOR_FUNNEL_RECOVERY_PROJECT_TRACKER.md`
+- `docs/projects/in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/PORTFOLIO_VISITOR_FUNNEL_RECOVERY_PRD.md`
 - `README.md`

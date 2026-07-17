@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isValidProposalStatus } from './lib/proposal-lifecycle.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, '..');
@@ -28,8 +29,7 @@ const writeTimers = new Map();
 const flushPromises = new Map();
 let initialized = false;
 
-const VALID_PROPOSAL_STATUSES = new Set(['draft', 'pending_approval', 'revising', 'approved', 'sent', 'rejected']);
-const VALID_RUN_STATUSES = new Set(['queued', 'running', 'done', 'failed']);
+const VALID_RUN_STATUSES = new Set(['queued', 'running', 'retrying', 'done', 'failed']);
 
 function nowIso() {
   return new Date().toISOString();
@@ -97,6 +97,7 @@ function visitorBody(visitor) {
       enrichment: visitor.enrichment || {},
       pending_notification: visitor.pending_notification || null,
       drip: visitor.drip || null,
+      cna_draft: visitor.cna_draft || null,
     }),
     '',
     '## Notes',
@@ -127,6 +128,9 @@ function proposalBody(proposal) {
       status: proposal.status || 'pending_approval',
       decidedAt: proposal.decidedAt || null,
       decisionNotes: proposal.decisionNotes || null,
+      requestId: proposal.requestId || null,
+      generationState: proposal.generationState || null,
+      generationError: proposal.generationError || null,
     }),
     '',
     '## Assessment',
@@ -205,6 +209,7 @@ function normalizeVisitorData(data, raw) {
       enrichment: runtime.enrichment || {},
       pending_notification: runtime.pending_notification || null,
       drip: runtime.drip || null,
+      cna_draft: runtime.cna_draft || null,
     },
   };
 }
@@ -232,6 +237,9 @@ function normalizeProposalData(data, raw) {
       status: thread.status || data.status || 'pending_approval',
       decidedAt: thread.decidedAt || data.decided_at || null,
       decisionNotes: thread.decisionNotes || data.decision_notes || null,
+      requestId: thread.requestId || null,
+      generationState: thread.generationState || null,
+      generationError: thread.generationError || null,
     },
   };
 }
@@ -290,6 +298,7 @@ async function persistVisitor(email, visitor) {
     enrichment: serializable(visitor.enrichment || {}),
     pending_notification: serializable(visitor.pending_notification || null),
     drip: serializable(visitor.drip || null),
+    cna_draft: serializable(visitor.cna_draft || null),
   };
   await scheduleWrite(rel, serializeRuntimeDocument(fm, visitorBody(visitor)));
 }
@@ -297,7 +306,7 @@ async function persistVisitor(email, visitor) {
 async function persistProposal(id, proposal) {
   const rel = `runtime/proposals/${safeId(id)}.md`;
   const status = proposal.status || 'pending_approval';
-  if (!VALID_PROPOSAL_STATUSES.has(status)) throw new Error(`Invalid proposal status: ${status}`);
+  if (!isValidProposalStatus(status)) throw new Error(`Invalid proposal status: ${status}`);
   const fm = {
     type: 'proposal',
     title: `Proposal: ${safeId(id)}`,
@@ -457,7 +466,7 @@ export async function upsertProposal(id, patch) {
   const key = safeId(id);
   const prior = proposalCache.get(key) || { id: key, revisions: 0, createdAt: Date.now(), status: 'draft' };
   const next = { ...prior, ...patch, id: key };
-  if (!VALID_PROPOSAL_STATUSES.has(next.status || 'draft')) throw new Error(`Invalid proposal status: ${next.status}`);
+  if (!isValidProposalStatus(next.status || 'draft')) throw new Error(`Invalid proposal status: ${next.status}`);
   proposalCache.set(key, next);
   await persistProposal(key, next);
   return next;

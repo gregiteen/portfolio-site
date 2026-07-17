@@ -50,7 +50,7 @@ A few repo rules matter when making changes:
 - If you change content generation, inspect `scripts/build-site.mjs` and `scripts/lib/theme.mjs` together.
 - If you change auth, notifications, or proposals, inspect `scripts/serve.mjs` and `scripts/runtime-store.mjs` together.
 - If you change registry-driven behavior, inspect `scripts/sync-registry.mjs` and the tests that rely on `vault-registry/core.json`.
-- If you change deploy or runtime persistence, confirm the current product docs in `docs/projects/in-progress/portfolio-platform/` still match the code.
+- If you change deploy or runtime persistence, confirm the current product docs in `docs/projects/in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/` still match the code.
 
 ## Source references
 

@@ -74,4 +74,4 @@ The richer visitor flow is:
 - `scripts/lib/theme.mjs`
 - `vault-registry/core.json`
 - `vault/pages/home.md`
-- `docs/projects/in-progress/portfolio-platform/PORTFOLIO_PLATFORM_ARCHITECTURE.md`
+- `docs/projects/in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/PORTFOLIO_VISITOR_FUNNEL_RECOVERY_ARCHITECTURE.md`

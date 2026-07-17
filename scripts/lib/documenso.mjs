@@ -23,6 +23,7 @@
 // hostname, and NOT exposed publicly (default-deny ufw, no rule for 9000).
 
 import { timingSafeEqual } from 'node:crypto';
+import { applyDocumensoLifecycle } from './proposal-lifecycle.mjs';
 
 const FIELD_TYPE = 'SIGNATURE';
 
@@ -140,15 +141,13 @@ export function startDocumensoPoller(threadsMap, upsertFn, notifyFn, intervalMs 
             if (doc.status === 'COMPLETED') nextStatus = 'signed';
             else if (doc.status === 'REJECTED') nextStatus = 'client_rejected';
             
-            if (nextStatus && thread.status !== nextStatus) {
-              const previous = thread.status;
-              thread.status = nextStatus;
-              thread.signingStatus = nextStatus;
-              thread.signingUpdatedAt = new Date().toISOString();
-              threadsMap.set(id, thread);
-              await upsertFn(id, thread);
+            if (nextStatus) {
+              const transition = applyDocumensoLifecycle(thread, nextStatus);
+              if (!transition.changed) continue;
+              threadsMap.set(id, transition.thread);
+              await upsertFn(id, transition.thread);
               
-              if (notifyFn) {
+              if (notifyFn && transition.terminal) {
                 const label = nextStatus === 'signed' ? 'signed' : 'rejected by the client';
                 await notifyFn(id, label);
               }

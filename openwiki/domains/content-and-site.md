@@ -30,7 +30,7 @@ The portfolio presents Greg Iteen’s work across a few consistent categories:
 
 ### Visitor experience
 
-The product doc set in `docs/projects/in-progress/portfolio-platform/` describes a more elaborate visitor funnel than the static content alone suggests:
+The product doc set in `docs/projects/in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/` describes a more elaborate visitor funnel than the static content alone suggests:
 
 - visitor style prompt collection
 - email verification
@@ -56,7 +56,7 @@ The server keeps in-memory state for request handling, but the vault documents a
 - **Design case studies** in `vault/pages/designs/` are portfolio entries.
 - **Theme skins** in `vault/pages/skins/` are generated artifacts used by the live design system and should not be confused with client work.
 - **Generated builds** in `designs/` are runtime outputs, not authored content.
-- **Project docs** in `docs/projects/in-progress/portfolio-platform/` describe product behavior and acceptance criteria; they are not site content.
+- **Project docs** in `docs/projects/in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/` describe product behavior and acceptance criteria; they are not site content.
 
 ## Source references
 
@@ -68,5 +68,5 @@ The server keeps in-memory state for request handling, but the vault documents a
 - `vault/pages/projects/festech.md`
 - `vault/pages/designs/nostalgia.md`
 - `vault/pages/designs/high-stakes-field-day.md`
-- `docs/projects/in-progress/portfolio-platform/PORTFOLIO_PLATFORM_PRD.md`
-- `docs/projects/in-progress/portfolio-platform/PORTFOLIO_PLATFORM_ARCHITECTURE.md`
+- `docs/projects/in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/PORTFOLIO_VISITOR_FUNNEL_RECOVERY_PRD.md`
+- `docs/projects/in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/PORTFOLIO_VISITOR_FUNNEL_RECOVERY_ARCHITECTURE.md`

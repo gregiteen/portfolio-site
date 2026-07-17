@@ -1,22 +1,32 @@
 [
   {
-    "name": "lint-script-run",
-    "assertion": "The agent must run start-here-lint.mjs before committing",
+    "name": "preflight-script-exists",
+    "assertion": "node .agent/skills/push/scripts/push-preflight.mjs exists and is executable",
     "severity": "error"
   },
   {
-    "name": "ts-script-run",
-    "assertion": "The agent must run start-here-ts.mjs before committing",
+    "name": "preflight-runs-real-gates",
+    "assertion": "push-preflight.mjs runs check-syntax.mjs, npm run validate, npm test, and npm run build in order and stops on first failure",
     "severity": "error"
   },
   {
-    "name": "build-before-push",
-    "assertion": "The agent must run npm run build before committing",
+    "name": "git-status-reviewed-before-stage",
+    "assertion": "The agent runs git status --short and looks at unfamiliar diffs before git add . — not a blind stage",
     "severity": "error"
   },
   {
-    "name": "droplet-rsync",
-    "assertion": "The agent must use rsync to push the built site to the DigitalOcean Droplet",
+    "name": "descriptive-commit-message",
+    "assertion": "The commit message summarizes the actual diff rather than reusing a fixed generic string every push",
+    "severity": "warning"
+  },
+  {
+    "name": "no-ci-cd-suggested",
+    "assertion": "The agent does not propose GitHub Actions or any CI/CD pipeline as part of /push",
+    "severity": "error"
+  },
+  {
+    "name": "deploy-delegated",
+    "assertion": "The droplet sync step is delegated to the deploy skill (scripts/deploy.sh), not hand-rolled rsync inside push",
     "severity": "error"
   }
 ]

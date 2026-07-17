@@ -15,13 +15,19 @@
 </head>
 <body>
   <div class="box">
-    <h2>Set New Password</h2>
-    <input type="password" id="password" placeholder="New Password" required>
-    <button onclick="resetPassword()">Update Password</button>
+    <h2>Set New Webmail Password</h2>
+    <p class="msg">This link resets the administrator webmail account only.</p>
+    <form id="resetForm">
+      <label for="password" style="display:block;text-align:left">New password</label>
+      <input type="password" id="password" name="password" placeholder="New Password" required minlength="8" autocomplete="new-password">
+      <button type="submit" id="resetButton">Update Password</button>
+    </form>
     <div id="msg" class="msg"></div>
   </div>
   <script>
-    async function resetPassword() {
+    document.getElementById('resetForm').addEventListener('submit', resetPassword);
+    async function resetPassword(event) {
+      event.preventDefault();
       const password = document.getElementById('password').value;
       if (!password || password.length < 8) {
         document.getElementById('msg').innerHTML = `<span style="color:var(--red)">Password must be at least 8 characters.</span>`;
@@ -33,7 +39,9 @@
         return;
       }
       
-      document.getElementById('msg').textContent = 'Updating...';
+      const button = document.getElementById('resetButton');
+      button.disabled = true;
+      document.getElementById('msg').textContent = 'Updating secure webmail credentials…';
       try {
         const res = await fetch('/api/reset-password', {
           method: 'POST',
@@ -42,12 +50,15 @@
         });
         const data = await res.json();
         if (res.ok) {
+          history.replaceState({}, document.title, '/reset.html');
           document.getElementById('msg').innerHTML = `<span style="color:var(--green)">Password updated successfully! You can now log in to the webmail.</span>`;
         } else {
           document.getElementById('msg').innerHTML = `<span style="color:var(--red)">${data.error || 'Failed to update'}</span>`;
         }
       } catch(e) {
         document.getElementById('msg').innerHTML = `<span style="color:var(--red)">Error: ${e.message}</span>`;
+      } finally {
+        button.disabled = false;
       }
     }
   </script>

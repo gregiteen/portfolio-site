@@ -24,6 +24,12 @@ import {
   serializeThemeDoc,
   enforceBrandAssetContract,
 } from './lib/theme.mjs';
+import {
+  generationRetryDelay,
+  renderedReviewState,
+  requireApprovedVisualAudit,
+  requireValidTheme,
+} from './lib/theme-release.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, '..');
@@ -704,7 +710,7 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
       requiredLayoutClasses,
     });
     if (!verdict.theme) {
-      console.warn(`[Review Override] Release gate rejected theme: ${verdict.errors.join('; ')} — applying last-resort fallback templates.`);
+      console.warn(`[Structural Repair] Release gate rejected theme: ${verdict.errors.join('; ')} — applying last-resort fallback templates.`);
       for (const [key, spec] of Object.entries(LAYOUT_SPECS)) {
         if (typeof candidate.layouts[key] !== 'string') candidate.layouts[key] = '';
         
@@ -730,13 +736,9 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
         requiredLayoutClasses,
       });
       
-      if (!verdict.theme) {
-         console.warn(`[Review Override] Fallback failed to clear all errors: ${verdict.errors.join('; ')} — shipping raw payload anyway per policy.`);
-         return { name: candidate.name || 'fallback', accent: candidate.accent || '#888888', css: candidate.css || '', layouts: candidate.layouts };
-      }
     }
     for (const warning of verdict.warnings) console.warn(`  ⚠ ${warning}`);
-    return verdict.theme;
+    return requireValidTheme(verdict, 'Structural release gate');
   };
 
   // The structural validator is deliberately stricter than an LLM: it catches
@@ -777,7 +779,7 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
         }
       }
       if (!issuesByTarget.size) {
-        console.warn(`[Review Override] Structural repair could not isolate target for errors: ${verdict.errors.join('; ')} — skipping targeted repair.`);
+        console.warn(`[Structural gate] Could not isolate a repair target: ${verdict.errors.join('; ')}. This attempt will be rejected and regenerated.`);
         break;
       }
       
@@ -864,7 +866,7 @@ OUTPUT: exactly one JSON object: { "html": "complete repaired ${target} fragment
       requiredLayoutClasses,
     });
     if (finalVerdict.theme) return;
-    console.warn(`[Review Override] Release gate rejected theme: ${finalVerdict.errors.join('; ')} — shipping anyway per policy.`);
+    console.warn(`[Release Gate] Structural repair exhausted: ${finalVerdict.errors.join('; ')}`);
     try {
       const pitfallsPath = join(__dirname, 'lib', 'pitfalls.json');
       const currentPitfalls = await readFile(pitfallsPath, 'utf8');
@@ -891,7 +893,7 @@ OUTPUT: exactly one JSON object: { "html": "complete repaired ${target} fragment
     } catch (e) {
       console.warn(`[Learning Error] Failed to write to pitfalls.json:`, e);
     }
-    return;
+    requireValidTheme(finalVerdict, 'Structural repair');
   };
 
   const auditForRelease = async (candidate, label) => {
@@ -995,14 +997,12 @@ OUTPUT: exactly one JSON object: { "approved": true, "issues": [] }`,
     if (!visualAudit.approved) {
       const issues = (visualAudit.issues || []).join('; ');
       const named = IMAGE_LABELS.filter((l) => issues.toLowerCase().includes(l));
-      const critical = named.filter((asset) => asset === 'hero' || asset === 'portrait');
-      if (critical.length) {
-        console.warn(`[Review Override] Visual asset review rejected prompt-critical ${critical.join(' + ')} after corrective generation: ${issues} — shipping anyway per policy.`);
-      }
-      console.warn(`  ⚠ Visual asset review still rejecting (${issues}) — using verified logo/favicon originals.`);
+      console.warn(`  ⚠ Visual asset review still rejecting (${issues}) — replacing brand marks and re-auditing.`);
       if (!named.length || named.includes('logo')) await copyFile(logoSource, logoPath);
       if (!named.length || named.includes('favicon')) await copyFile(faviconSource, faviconPath);
+      visualAudit = await auditVisualAssets();
     }
+    requireApprovedVisualAudit(visualAudit);
     console.log('  → Visual asset release review: approved (hero, logo, favicon, portrait)');
   })();
   assetFlow.catch(() => {}); // observed in the review board's Promise.all
@@ -1074,8 +1074,10 @@ ${blocks}
   console.log(`[5/5] Review board: source + rendered reviews in parallel…`);
   const { renderAudit } = await import('./render-audit.mjs');
   const allowedTargets = new Set(['css', ...Object.keys(LAYOUT_SPECS)]);
+  const maxRenderedReviewPasses = 3;
+  let renderedApproved = false;
   try {
-    for (let pass = 1; pass <= 2; pass++) {
+    for (let pass = 1; pass <= maxRenderedReviewPasses; pass++) {
       const label = pass === 1 ? 'initial' : `repair ${pass - 1}`;
       // Deterministic source validation already owns placeholders, DOM/CSS
       // syntax, class linking, and constitution root classes. The old source
@@ -1086,17 +1088,22 @@ ${blocks}
         renderAudit(styleName, { siteRoot: reviewSiteRoot, brief: prompt, designPlan: plan }),
         ...(pass === 1 ? [assetFlow] : []),
       ]);
-      const renderBlocking = renderVerdict.issues.filter((i) => i?.severity !== 'minor');
-      const renderOk = renderVerdict.approved && renderVerdict.score >= 8 && renderBlocking.length === 0;
-      console.log(`  → Rendered review (${label}): ${renderVerdict.score}/10 — ${renderOk ? 'approved' : 'repair required'} (${renderBlocking.length} blocking, ${renderVerdict.issues.length - renderBlocking.length} minor)`);
-      for (const issue of renderVerdict.issues) {
+      const renderState = renderedReviewState(renderVerdict);
+      const renderBlocking = renderState.blocking;
+      console.log(`  → Rendered review (${label}): ${renderState.score}/10 — ${renderState.approved ? 'approved' : 'repair required'} (${renderBlocking.length} blocking, ${renderState.issues.length - renderBlocking.length} minor)`);
+      for (const issue of renderState.issues) {
         if (typeof issue?.target === 'string' && typeof issue?.issue === 'string') {
           console.log(`    • [${issue.severity || 'blocking'}] ${issue.target}: ${issue.issue}`);
         }
       }
-      if (renderOk) break;
+      if (renderState.approved) {
+        renderedApproved = true;
+        break;
+      }
+      if (pass === maxRenderedReviewPasses) {
+        throw new Error(`Rendered review rejected theme after ${pass} passes (${renderState.score}/10, ${renderBlocking.length} blocking issue(s))`);
+      }
       if (renderBlocking.length > 0) {
-        if (pass === 2) console.warn(`[Review Override] Rendered review still rejected the theme (${renderVerdict.score}/10, ${renderBlocking.length} blocking issue(s)) after one targeted repair pass — shipping anyway per policy.`);
         try {
           const pitfallsPath = join(__dirname, 'lib', 'pitfalls.json');
           const currentPitfalls = await readFile(pitfallsPath, 'utf8');
@@ -1134,8 +1141,7 @@ ${blocks}
         }
       }
       if (!issuesByTarget.size) {
-        console.warn('[Review Override] Review board rejected the theme without actionable, valid repair targets — skipping targeted repair.');
-        break;
+        throw new Error('Rendered review rejected theme without actionable repair targets');
       }
 
       console.log(`  → Repairing ${issuesByTarget.size} review-board target(s) in one bounded parallel pass…`);
@@ -1236,6 +1242,7 @@ OUTPUT: exactly one JSON object: { "html": "…complete repaired ${target} layou
       await writeDesignMd(theme);
       buildDesignLayer();
     }
+    if (!renderedApproved) throw new Error('Rendered review ended without approval');
   } catch (err) {
     // Rejected work exists only in the ignored staging root. Previously the
     // review build wrote into public dist/site before approval, so visitors
@@ -1347,10 +1354,27 @@ OUTPUT: exactly one JSON object: { "html": "…complete repaired ${target} layou
   console.log(`[Success] "${theme.name}" → designs/${styleName} [${elapsed}s]`);
 }
 
-run().catch(async (e) => {
-  if (activeStagingRoot) {
-    await rm(activeStagingRoot, { recursive: true, force: true }).catch(() => {});
+async function runUntilApproved() {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      console.log(`[Attempt ${attempt}] Generating a reviewable design…`);
+      await run();
+      return;
+    } catch (error) {
+      if (activeStagingRoot) {
+        await rm(activeStagingRoot, { recursive: true, force: true }).catch(() => {});
+        activeStagingRoot = null;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      const delay = generationRetryDelay(attempt);
+      console.error(`[Attempt ${attempt}] Rejected: ${message}`);
+      console.log(`[Retry] Attempt ${attempt} did not pass review; regenerating from scratch in ${Math.ceil(delay / 1000)}s…`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
   }
-  console.error(`[Failed] ${e.message}`);
+}
+
+runUntilApproved().catch((error) => {
+  console.error(`[Failed] ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 });

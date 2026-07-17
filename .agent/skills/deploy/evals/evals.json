@@ -1,17 +1,37 @@
 [
   {
     "name": "droplet-deploy",
-    "assertion": "Deploy must push directly to the droplet via rsync",
+    "assertion": "Deploy must push directly to the droplet via rsync (scripts/deploy.sh), not GitHub Actions",
     "severity": "error"
   },
   {
     "name": "env-usage",
-    "assertion": "The agent must use the DROPLET_IP from .env",
+    "assertion": "The agent must use the DROPLET_IP from .env, never hardcode or print a different value",
     "severity": "error"
   },
   {
     "name": "no-actions",
     "assertion": "Do not use GitHub actions",
+    "severity": "error"
+  },
+  {
+    "name": "no-blind-commit",
+    "assertion": "Deploy must never run git add/commit/push as a side effect — that is push's job, not deploy's",
+    "severity": "error"
+  },
+  {
+    "name": "dirty-tree-gated",
+    "assertion": "node .agent/skills/deploy/scripts/deploy.mjs exits non-zero on a dirty tree without --confirm-dirty",
+    "severity": "error"
+  },
+  {
+    "name": "exclude-leading-slash",
+    "assertion": "scripts/deploy.sh excludes /designs/ and /dist/ with a leading slash, not bare designs/ or dist/",
+    "severity": "error"
+  },
+  {
+    "name": "health-check-present",
+    "assertion": "scripts/deploy.sh checks the live site health endpoint after restart and fails loudly if unhealthy",
     "severity": "error"
   }
 ]

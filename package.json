@@ -28,7 +28,7 @@
   "devDependencies": {
     "@types/node": "^26.1.0",
     "better-sqlite3": "^12.11.1",
-    "total-recall-brain": "github:gregiteen/total-recall#3259bb99b091a359ed5aba1fdd2c5a12379bfa9f"
+    "total-recall-brain": "^3.16.1"
   },
   "overrides": {
     "total-recall-brain": {

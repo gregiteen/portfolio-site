@@ -46,21 +46,27 @@ a.out:hover{color:var(--white)}
 .narrate{margin-top:8px;font-size:.92rem;color:var(--white);min-height:1.4em;transition:opacity .4s}
 .meta{margin-top:10px;display:flex;gap:18px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
 
-/* ── Chat ── */
-.chat{margin-top:38px;display:flex;flex-direction:column;max-width:560px;border:1px solid var(--line);padding:20px;height:350px;display:none;}
-.chat.visible{display:flex;}
-.intake-label{font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:18px}
-.messages{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;margin-bottom:16px;}
-.msg{max-width:90%;padding:10px 14px;font-size:.85rem;line-height:1.5;border-radius:2px;}
-.msg.ai{align-self:flex-start;background:rgba(245,245,243,.06);border-left:2px solid var(--accent);color:var(--white);}
-.msg.user{align-self:flex-end;background:var(--white);color:var(--black);}
-.msg.typing::after{content:'…';animation:blink 1s steps(3) infinite;}
-@keyframes blink{0%,100%{opacity:.2}50%{opacity:1}}
-.input-row{display:flex;gap:8px;}
-.input-row input{flex:1;padding:10px;border:1px solid var(--line);background:transparent;color:var(--white);font-family:'Archivo',sans-serif;font-size:.9rem;outline:none;}
-.input-row input:focus{border-color:var(--white);}
-.input-row button{padding:10px 16px;border:1px solid var(--accent);background:var(--accent);color:var(--white);font-family:'IBM Plex Mono',monospace;font-size:.7rem;text-transform:uppercase;cursor:pointer;}
-.input-row button:hover{background:transparent;color:var(--white);}
+/* ── Waiting experience ── */
+.main.generating>h1,.main.generating>.lede,.main.generating>#genForm{display:none}
+.dossier{margin-top:30px;max-width:620px;border-top:1px solid var(--line);padding-top:22px;display:none}
+.dossier.visible{display:block}
+.dossier-label{font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+.dossier-intro{color:var(--gray);font-size:.88rem;line-height:1.5;margin-bottom:16px}
+.dossier-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.dossier-card{padding:14px;border:1px solid var(--line);background:rgba(10,10,10,.32)}
+.dossier-card-label{font-family:'IBM Plex Mono',monospace;font-size:.57rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:7px}
+.dossier-card h2{font-size:1rem;line-height:1.1;margin-bottom:8px}
+.dossier-card p{color:var(--gray);font-size:.8rem;line-height:1.45}
+.tour{margin-top:38px;max-width:620px;border-top:1px solid var(--line);padding-top:22px;display:none}
+.tour.visible{display:block}
+.tour-label{font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+.tour-copy{color:var(--gray);font-size:.88rem;line-height:1.5;margin-bottom:16px}
+.tour-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.tour-choice{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:48px;padding:11px 13px;border:1px solid var(--line);background:rgba(10,10,10,.35);color:var(--white);font-family:'IBM Plex Mono',monospace;font-size:.66rem;letter-spacing:.08em;text-align:left;text-transform:uppercase;cursor:pointer;transition:border-color .2s,background .2s}
+.tour-choice::after{content:'→';color:var(--faint)}
+.tour-choice:hover,.tour-choice.selected{border-color:var(--accent);background:rgba(255,106,0,.12)}
+.tour-choice.selected::after{content:'✓';color:var(--accent)}
+@media(max-width:560px){.tour-grid,.dossier-grid{grid-template-columns:1fr}}
 
 /* ── Dramatic reveal ── */
 .reveal{position:fixed;inset:0;z-index:100;background:#000;display:none;align-items:center;justify-content:center;flex-direction:column}
@@ -77,8 +83,8 @@ a.out:hover{color:var(--white)}
 <body>
 <div class="photo"></div><div class="scrim"></div>
 <div class="frame">
-  <header class="top"><span>greg<span style="color:var(--accent)">.</span>iteen</span><a class="out" href="/api/logout">Sign out</a></header>
-  <main class="main">
+  <header class="top"><span>greg<span style="color:var(--accent)">.</span>iteen</span><span>Your private edition</span></header>
+  <main class="main" id="mainPanel">
     <h1>Name your<br><span class="outline">aesthetic.</span></h1>
     <p class="lede">This portfolio doesn't have a look until you give it one. Describe a design style — the site, its imagery, logo, and even the bio photo are generated to match, then quality-reviewed before you see them.</p>
     <form id="genForm">
@@ -98,15 +104,23 @@ a.out:hover{color:var(--white)}
       <div class="narrate" id="narrate"></div>
       <div class="meta"><span id="elapsed"></span><span>Typically 2–4 minutes — every design is quality-reviewed before you see it.</span></div>
 
-      <!-- Chat during generation -->
-      <div class="chat" id="chatContainer">
-        <div class="intake-label">While the studio works, let's talk about your project:</div>
-        <div class="messages" id="chatMsgs"></div>
-        <div class="input-row">
-          <input type="text" id="chatInput" placeholder="Tell me about your project…">
-          <button type="button" id="chatSend">Send</button>
+      <section class="dossier" id="dossier" aria-labelledby="dossierLabel">
+        <div class="dossier-label" id="dossierLabel">While you wait</div>
+        <p class="dossier-intro">A few notes on the person and systems behind this portfolio.</p>
+        <div class="dossier-grid" id="dossierGrid"></div>
+      </section>
+
+      <section class="tour" id="tour" aria-labelledby="tourLabel">
+        <div class="tour-label" id="tourLabel">Choose your first stop</div>
+        <p class="tour-copy">Pick the work you want to see first. Your approved portfolio will open there when the studio finishes.</p>
+        <div class="tour-grid">
+          <button class="tour-choice selected" type="button" data-path="">Full portfolio</button>
+          <button class="tour-choice" type="button" data-path="projects/ultrachat.html">UltraChat</button>
+          <button class="tour-choice" type="button" data-path="projects/total-recall.html">Total Recall</button>
+          <button class="tour-choice" type="button" data-path="projects/ssss.html">SSSS</button>
+          <button class="tour-choice" type="button" data-path="projects/festech.html">festech.live</button>
         </div>
-      </div>
+      </section>
     </div>
 
     <!-- Dramatic final reveal: their logo, then their hero, then in. -->
@@ -177,39 +191,52 @@ a.out:hover{color:var(--white)}
     setTimeout(function(){location.href=targetUrl;},4600);         // enter
   }
 
-  // ── Chat ──
-  var chatContainer=document.getElementById('chatContainer');
-  var chatMsgs=document.getElementById('chatMsgs');
-  var chatInput=document.getElementById('chatInput');
-  var chatSend=document.getElementById('chatSend');
-  var conversationHistory=[];
-  var chatInitialized=false;
-
-  function addMsg(text,role){
-    var d=document.createElement('div');d.className='msg '+role;d.textContent=text;
-    chatMsgs.appendChild(d);chatMsgs.scrollTop=chatMsgs.scrollHeight;
-    return d;
+  var tour=document.getElementById('tour'),dossier=document.getElementById('dossier'),dossierGrid=document.getElementById('dossierGrid');
+  var selectedTourPath='';
+  try{selectedTourPath=localStorage.getItem('gi_portfolio_first_stop')||'';}catch(_){}
+  function selectTour(path){
+    selectedTourPath=path||'';
+    try{localStorage.setItem('gi_portfolio_first_stop',selectedTourPath);}catch(_){}
+    document.querySelectorAll('.tour-choice').forEach(function(choice){
+      choice.classList.toggle('selected',choice.getAttribute('data-path')===selectedTourPath);
+    });
   }
-  function sendChat(){
-    var v=chatInput.value.trim();if(!v)return;
-    chatInput.value='';addMsg(v,'user');
-    conversationHistory.push({role:'user',content:v});
-    var t=addMsg('','ai typing');
-    fetch('/api/cna',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({history:conversationHistory})})
-      .then(function(r){return r.json()}).then(function(d){
-        t.remove();
-        if(d.message){addMsg(d.message,'ai');conversationHistory.push({role:'assistant',content:d.message});}
-      }).catch(function(){t.remove();addMsg('Error connecting to chat.','ai');});
-  }
-  chatSend.addEventListener('click',sendChat);
-  chatInput.addEventListener('keypress',function(e){if(e.key==='Enter')sendChat();});
+  tour.addEventListener('click',function(event){
+    var choice=event.target.closest('.tour-choice');
+    if(choice)selectTour(choice.getAttribute('data-path'));
+  });
+  selectTour(selectedTourPath);
 
-  function startChat(){
-    if(chatInitialized)return;
-    chatInitialized=true;
-    chatContainer.classList.add('visible');
-    addMsg('Welcome! Tell me about the project you have in mind while we generate your design.','ai');
-    conversationHistory.push({role:'assistant',content:'Welcome! Tell me about the project you have in mind while we generate your design.'});
+  var dossierLoaded=false;
+  function loadDossier(){
+    if(dossierLoaded)return;
+    dossierLoaded=true;
+    fetch('/waiting-profile.json').then(function(response){
+      if(!response.ok)throw new Error('Waiting profile unavailable');
+      return response.json();
+    }).then(function(profile){
+      if(!profile||!Array.isArray(profile.sections)||!profile.sections.length)return;
+      profile.sections.slice(0,4).forEach(function(item){
+        if(!item||!item.copy)return;
+        var card=document.createElement('article');card.className='dossier-card';
+        var label=document.createElement('div');label.className='dossier-card-label';label.textContent=item.label||'Notes';
+        var title=document.createElement('h2');title.textContent=item.title||'';
+        var copy=document.createElement('p');copy.textContent=item.copy;
+        card.appendChild(label);card.appendChild(title);card.appendChild(copy);dossierGrid.appendChild(card);
+      });
+      if(dossierGrid.childNodes.length)dossier.classList.add('visible');
+    }).catch(function(){});
+  }
+
+  function showWaitingExperience(){
+    document.getElementById('mainPanel').classList.add('generating');
+    loadDossier();
+    tour.classList.add('visible');
+  }
+
+  function selectedPortfolioUrl(targetUrl){
+    if(!selectedTourPath||!targetUrl||!targetUrl.endsWith('/index.html'))return targetUrl;
+    return targetUrl.slice(0,-'index.html'.length)+selectedTourPath;
   }
 
   var polling=false;
@@ -220,7 +247,7 @@ a.out:hover{color:var(--white)}
 
   function setBusy(b){btn.disabled=b;btn.textContent=b?'Generating…':'Generate my site';input.disabled=b;}
   function fail(msg,fallbackUrl){
-    status.textContent=msg+' — adjust your style and try again.';
+    status.textContent=msg+' — the studio is retrying automatically.';
     while(status.childNodes.length>1)status.removeChild(status.lastChild);
     if(fallbackUrl){
       var a=document.createElement('a');
@@ -228,8 +255,9 @@ a.out:hover{color:var(--white)}
       a.style.cssText='display:block;margin-top:10px;color:var(--accent);text-decoration:none;';
       status.appendChild(a);
     }
-    status.classList.add('err');bar.style.width='0';
-    setBusy(false);polling=false;
+    status.classList.remove('err');
+    if(fallbackUrl){setBusy(false);polling=false;return;}
+    setTimeout(poll,3000);
   }
   function poll(){
     polling=true;
@@ -240,7 +268,7 @@ a.out:hover{color:var(--white)}
         bar.style.width='100%';status.classList.remove('err');
         status.textContent='Design approved.';
         narrate.textContent='The review board signed off.';
-        runReveal(d.latestUrl||'/splash.html');
+        runReveal(selectedPortfolioUrl(d.latestUrl||'/splash.html'));
       }else if(d.status==='running'){
         status.classList.remove('err');
         status.textContent=d.phase||'Working…';
@@ -259,7 +287,7 @@ a.out:hover{color:var(--white)}
     e.preventDefault();
     var v=input.value.trim();if(!v)return;
     setBusy(true);prog.classList.add('on');status.classList.remove('err');
-    startChat();
+    showWaitingExperience();
     status.textContent='Dispatching the design team…';bar.style.width='6%';
     fetch('/generate-theme',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:v})})
       .then(function(r){return r.json()})
@@ -269,7 +297,7 @@ a.out:hover{color:var(--white)}
 
   // Resume a generation already in flight (e.g. arrived from verify).
   fetch('/generate-status').then(function(r){return r.json()}).then(function(d){
-    if(d.status==='running'){setBusy(true);prog.classList.add('on');startChat();poll();}
+    if(d.status==='running'){setBusy(true);prog.classList.add('on');showWaitingExperience();poll();}
   }).catch(function(){});
 })();
 </script>

@@ -1,0 +1,27 @@
+[
+  {
+    "name": "skill-frontmatter",
+    "assertion": "SKILL.md exists with name: test",
+    "severity": "error"
+  },
+  {
+    "name": "npm-test-passes",
+    "assertion": "npm test passes with 0 failures",
+    "severity": "error"
+  },
+  {
+    "name": "validate-vs-test-distinguished",
+    "assertion": "The skill clearly distinguishes npm run validate (package's own fixtures/bundle) from test/ssss-conformance.test.mjs (this repo's vault)",
+    "severity": "error"
+  },
+  {
+    "name": "coverage-gaps-script-accurate",
+    "assertion": "coverage-gaps.mjs's reported gap list is derived by parsing real imports, not a hardcoded list, and matches an independent audit",
+    "severity": "error"
+  },
+  {
+    "name": "no-ci-claim-accurate",
+    "assertion": "The skill correctly states there is no .github/workflows/ — verify this hasn't changed before trusting the claim",
+    "severity": "warning"
+  }
+]

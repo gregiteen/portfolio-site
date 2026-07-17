@@ -7,20 +7,32 @@
   },
   {
     "id": "code-quality-eval-2",
-    "description": "Ensure start-here-ts.mjs is executable and passes",
-    "command": "node .agent/skills/code-quality/scripts/start-here-ts.mjs --help",
+    "description": "check-syntax.mjs runs clean against this repo's own source",
+    "command": "node .agent/skills/code-quality/scripts/check-syntax.mjs",
     "expected_exit_code": 0
   },
   {
     "id": "code-quality-eval-3",
-    "description": "Ensure code-quality-auditor subagent contains tool whitelist",
-    "command": "grep -q '## Tools Available' .agent/skills/code-quality/subagents/code-quality-auditor.md",
+    "description": "check-syntax.mjs actually detects a real syntax error (not a false-pass daemon)",
+    "command": "printf 'function broken( {' > /tmp/cq-eval-broken.mjs && node --check /tmp/cq-eval-broken.mjs; code=$?; rm -f /tmp/cq-eval-broken.mjs; test $code -ne 0",
     "expected_exit_code": 0
   },
   {
     "id": "code-quality-eval-4",
-    "description": "Ensure on-lint-error hook executes successfully",
-    "command": "bash .agent/skills/code-quality/hooks/on-lint-error.sh",
+    "description": "npm run validate (SSSS conformance) passes",
+    "command": "npm run validate",
+    "expected_exit_code": 0
+  },
+  {
+    "id": "code-quality-eval-5",
+    "description": "npm test passes",
+    "command": "npm test",
+    "expected_exit_code": 0
+  },
+  {
+    "id": "code-quality-eval-6",
+    "description": "No stale checker scratch files are tracked in git",
+    "command": "! git ls-files | grep -E '^(typescript-fullrepo-errors\\.txt|lint-status\\.txt|lint-checker\\.pid|typescript-checker\\.pid|\\.typescript-checker\\.status)$'",
     "expected_exit_code": 0
   }
 ]

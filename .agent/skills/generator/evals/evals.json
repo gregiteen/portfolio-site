@@ -1,0 +1,37 @@
+[
+  {
+    "name": "skill-frontmatter",
+    "assertion": "SKILL.md exists with name: generator and distinguishes the core pipeline from the one-off gen-*.mjs legacy scripts",
+    "severity": "error"
+  },
+  {
+    "name": "env-checker-runs",
+    "assertion": "node .agent/skills/generator/scripts/check-generator-env.mjs runs and never prints GOOGLE_API_KEY's value",
+    "severity": "error"
+  },
+  {
+    "name": "list-designs-runs",
+    "assertion": "node .agent/skills/generator/scripts/list-designs.mjs runs and reports all three design-shaped locations without crashing when any of them don't exist locally",
+    "severity": "error"
+  },
+  {
+    "name": "theme-utils-tests-pass",
+    "assertion": "node --test test/theme-utils.test.mjs passes",
+    "severity": "error"
+  },
+  {
+    "name": "three-locations-not-conflated",
+    "assertion": "The skill clearly separates vault/pages/designs/ (real), vault/pages/skins/ (generated docs), and designs/<slug>/ (generated build output)",
+    "severity": "error"
+  },
+  {
+    "name": "legacy-improver-warned",
+    "assertion": "The skill explicitly warns against resurrecting improve-theme.mjs's text-only repair pattern, citing the documented screenshot-vs-text failure",
+    "severity": "warning"
+  },
+  {
+    "name": "scopecss-dead-code-noted",
+    "assertion": "The skill flags that scopeCss() is dead code despite the architecture doc describing it as the isolation mechanism",
+    "severity": "warning"
+  }
+]

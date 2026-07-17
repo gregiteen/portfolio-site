@@ -49,5 +49,5 @@ Generated skins can be improved and promoted, but only real portfolio designs be
 - `vault/pages/projects/total-recall.md`
 - `vault/pages/projects/festech.md`
 - `vault/pages/designs/nostalgia.md`
-- `docs/projects/in-progress/portfolio-platform/PORTFOLIO_PLATFORM_PRD.md`
-- `docs/projects/in-progress/portfolio-platform/PORTFOLIO_PLATFORM_TRACKER.md`
+- `docs/projects/in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/PORTFOLIO_VISITOR_FUNNEL_RECOVERY_PRD.md`
+- `docs/projects/in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/PORTFOLIO_VISITOR_FUNNEL_RECOVERY_PROJECT_TRACKER.md`

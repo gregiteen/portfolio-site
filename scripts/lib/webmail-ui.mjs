@@ -28,6 +28,10 @@ function escapeHtml(s) {
 
 function getSession(req) {
   const token = parseCookies(req.headers.cookie).gi_webmail;
+  return getWebmailSessionByToken(token);
+}
+
+export function getWebmailSessionByToken(token) {
   if (!token) return null;
   const session = webmailSessions.get(token);
   if (!session) return null;
@@ -36,6 +40,13 @@ function getSession(req) {
     return null;
   }
   return { token, ...session };
+}
+
+export function updateWebmailSessionPasswords(email, password) {
+  const address = String(email || '').trim().toLowerCase();
+  for (const session of webmailSessions.values()) {
+    if (String(session.email || '').trim().toLowerCase() === address) session.password = password;
+  }
 }
 
 async function readBody(req) {
@@ -234,14 +245,14 @@ export async function handleWebmail(req, res, urlPath) {
       return sendHtml(res, 401, loginPage('Invalid email or password.'));
     }
     const token = randomBytes(24).toString('hex');
-    sessions.set(token, { email, password, createdAt: Date.now() });
+    webmailSessions.set(token, { email, password, createdAt: Date.now() });
     setCookie(res, token);
     res.writeHead(302, { Location: '/' });
     return res.end();
   }
 
   if (urlPath === '/logout') {
-    if (session) sessions.delete(session.token);
+    if (session) webmailSessions.delete(session.token);
     clearCookie(res);
     res.writeHead(302, { Location: '/login' });
     return res.end();

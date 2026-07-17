@@ -39,22 +39,30 @@ function emailTextToHtml(text) {
   // Letterhead-style wrapper so every outbound email carries the brand —
   // absolute image URLs because email clients have no origin to resolve
   // against. Table layout for broad email-client compatibility.
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f3;padding:24px 0;">
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#060608;padding:24px 0;">
 <tr><td align="center">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border:1px solid #e5e5e2;">
-<tr><td style="padding:24px 32px 16px;border-bottom:1px solid #eeeeee;">
-  <img src="https://gregiteen.xyz/gi-logo-transparent.png" alt="greg.iteen" height="24" style="height:24px;width:auto;display:block;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#0e0e12;border:1px solid rgba(255,255,255,.06);">
+<tr><td style="padding:24px 32px 16px;border-bottom:1px solid rgba(255,255,255,.06);">
+  <img src="https://gregiteen.xyz/signedgi-logo-dark.png" alt="Signed, gi." height="24" style="height:24px;width:auto;display:block;">
 </td></tr>
-<tr><td style="padding:24px 32px;font-family:Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#222222;">${html}</td></tr>
-<tr><td style="padding:16px 32px 24px;border-top:1px solid #eeeeee;font-family:Helvetica,Arial,sans-serif;font-size:11px;color:#999999;">
-  <a href="https://gregiteen.xyz" style="color:#999999;text-decoration:none;">gregiteen.xyz</a> &nbsp;·&nbsp; sales@gregiteen.xyz &nbsp;·&nbsp; e-signatures by <img src="https://gregiteen.xyz/signedgi-logo.png" alt="SignedGI" height="14" style="height:14px;width:auto;vertical-align:-3px;">
+<tr><td style="padding:24px 32px;font-family:Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#f0f0ec;">${html}</td></tr>
+<tr><td style="padding:16px 32px 24px;border-top:1px solid rgba(255,255,255,.06);font-family:Helvetica,Arial,sans-serif;font-size:11px;color:#555555;">
+  <a href="https://gregiteen.xyz" style="color:#555555;text-decoration:none;">gregiteen.xyz</a> &nbsp;·&nbsp; sales@gregiteen.xyz &nbsp;·&nbsp; e-signatures by <img src="https://gregiteen.xyz/signedgi-logo-dark.png" alt="Signed, gi." height="14" style="height:14px;width:auto;vertical-align:-3px;">
 </td></tr>
 </table>
 </td></tr></table>`;
 }
 
 import { parseProposalOutput } from './lib/proposal-output.mjs';
-import { handleWebmail, webmailSessions } from './lib/webmail-ui.mjs';
+import { isValidCnaEmail, normalizeCnaHistory, proposalIdForRequest } from './lib/cna-state.mjs';
+import { applyDocumensoLifecycle } from './lib/proposal-lifecycle.mjs';
+import { setMailcowMailboxPassword, persistAppMailboxPassword } from './lib/mailcow-password.mjs';
+import { handleWebmail, getWebmailSessionByToken, updateWebmailSessionPasswords } from './lib/webmail-ui.mjs';
+import {
+  consumeDocumensoSsoHandoff,
+  createDocumensoSsoHandoff,
+  pruneDocumensoSsoHandoffs,
+} from './lib/documenso-sso.mjs';
 import {
   initRuntimeStore,
   listVisitors,
@@ -79,6 +87,7 @@ import {
 
 import {
   fetchInbox,
+  refreshImapPassword,
   startImapPoller,
 } from './lib/imap.mjs';
 
@@ -107,6 +116,7 @@ const improveScript = join(__dirname, 'improve-theme.mjs');
 // builds so vault watcher events cannot race generator/improver rm() calls.
 const serializedThemeEnv = { ...process.env, THEME_DEFER_BUILD: '1' };
 const port = Number(process.env.PORT ?? 4173);
+const documensoSsoHandoffs = new Map();
 
 // Rate card + banner offers live in runtime-store.mjs (vault/runtime/config/),
 // written through the Operation Contract. readRateCard() re-reads per proposal
@@ -216,7 +226,7 @@ watch(vaultDir, { recursive: true }, (eventType, filename) => {
 });
 
 // ─── Theme generation job (queued, async, polled via /generate-status) ────────
-const genJob = { status: 'idle', phase: '', prompt: '', email: null, error: null, startedAt: null, finishedAt: null, runId: null, slug: null };
+const genJob = { status: 'idle', phase: '', prompt: '', email: null, error: null, startedAt: null, finishedAt: null, runId: null, slug: null, attempt: 0 };
 
 // Mirror of compile-theme.mjs's styleName derivation — lets the waiting page
 // peek at the in-progress design's generated assets as they are written.
@@ -240,18 +250,25 @@ function drainQueue() {
   if (next) startGeneration(next.prompt, next.email);
 }
 
-function startGeneration(prompt, email = null) {
-  const runId = randomBytes(8).toString('hex');
+function retryDelay(attempt) {
+  return Math.min(60_000, 2_000 * (2 ** Math.min(Math.max(attempt - 1, 0), 5)));
+}
+
+function startGeneration(prompt, email = null, retry = null) {
+  const runId = retry?.runId || randomBytes(8).toString('hex');
+  const startedAt = retry?.startedAt || Date.now();
+  const attempt = (retry?.attempt || 0) + 1;
   genJob.status = 'running';
-  genJob.phase = 'Starting generator…';
+  genJob.phase = attempt === 1 ? 'Starting generator…' : `Retrying the studio (attempt ${attempt})…`;
   genJob.prompt = prompt;
   genJob.email = email;
   genJob.error = null;
-  genJob.startedAt = Date.now();
+  genJob.startedAt = startedAt;
   genJob.finishedAt = null;
   genJob.runId = runId;
   genJob.slug = slugForPrompt(prompt);
-  appendRun({ run_id: runId, prompt, status: 'running', startedAt: genJob.startedAt }).catch((err) => {
+  genJob.attempt = attempt;
+  appendRun({ run_id: runId, prompt, status: attempt === 1 ? 'running' : 'retrying', startedAt: genJob.startedAt, attempt }).catch((err) => {
     console.error('[Runtime] Failed to persist generation start:', (err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)));
   });
 
@@ -262,6 +279,21 @@ function startGeneration(prompt, email = null) {
   });
   let stderrTail = '';
   let genSlug = null; // captured from compile-theme's "→ designs/<slug>" line
+  let settled = false;
+  const retryGeneration = (reason) => {
+    if (settled) return;
+    settled = true;
+    const detail = String(reason).slice(0, 300);
+    const delay = retryDelay(attempt);
+    genJob.status = 'running';
+    genJob.error = detail;
+    genJob.phase = `Recovering from a transient studio error; retrying in ${Math.ceil(delay / 1000)} seconds…`;
+    console.error(`[Generator] Attempt ${attempt} failed: ${detail}`);
+    appendRun({ run_id: runId, prompt, status: 'retrying', startedAt, error: detail, attempt }).catch((e) => {
+      console.error('[Runtime] Failed to persist generation retry:', e.message);
+    });
+    setTimeout(() => startGeneration(prompt, email, { runId, startedAt, attempt }), delay);
+  };
 
   child.stdout.on('data', (chunk) => {
     for (const line of String(chunk).split('\n')) {
@@ -279,16 +311,12 @@ function startGeneration(prompt, email = null) {
     if (detail) console.error(`[Generator] ${detail}`);
   });
   child.on('error', (err) => {
-    genJob.status = 'error';
-    genJob.error = (err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err));
-    genJob.finishedAt = Date.now();
-    appendRun({ run_id: runId, prompt, status: 'failed', startedAt: genJob.startedAt, finishedAt: genJob.finishedAt, error: (err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)) }).catch((e) => {
-      console.error('[Runtime] Failed to persist generation failure:', e.message);
-    });
-    drainQueue();
+    retryGeneration(err instanceof Error ? err.message : String(err));
   });
   child.on('close', (code) => {
+    if (settled) return;
     if (code === 0) {
+      settled = true;
       // compile-theme owns planning, screenshot review, bounded repair, and
       // atomic publication. Never mutate an approved design with the legacy
       // source-only improver after that release decision.
@@ -302,20 +330,13 @@ function startGeneration(prompt, email = null) {
           console.error('[Mail] Failed to send completion email:', err.message);
         });
       }
-      appendRun({ run_id: runId, prompt, status: 'done', startedAt: genJob.startedAt, finishedAt: genJob.finishedAt }).catch((e) => {
+      appendRun({ run_id: runId, prompt, status: 'done', startedAt: genJob.startedAt, finishedAt: genJob.finishedAt, attempt }).catch((e) => {
         console.error('[Runtime] Failed to persist generation completion:', e.message);
       });
       rebuild('generated theme');
       drainQueue();
     } else {
-      genJob.status = 'error';
-      genJob.finishedAt = Date.now();
-      genJob.error = (stderrTail.trim().split('\n').pop() || `generator exited with code ${code}`).slice(0, 300);
-      console.error(`[Generator] Failed:`, genJob.error);
-      appendRun({ run_id: runId, prompt, status: 'failed', startedAt: genJob.startedAt, finishedAt: genJob.finishedAt, error: genJob.error }).catch((e) => {
-        console.error('[Runtime] Failed to persist generation failure:', e.message);
-      });
-      drainQueue();
+      retryGeneration((stderrTail.trim().split('\n').pop() || `generator exited with code ${code}`).slice(0, 300));
     }
   });
 }
@@ -414,7 +435,7 @@ startDocumensoPoller(proposalThreads, upsertProposal, async (proposalId, label) 
     from: mailFrom,
     to: mailOwner,
     subject: `Proposal ${label}: ${proposalId}`,
-    text: `SignedGI reported that proposal ${proposalId} was ${label}.`,
+    text: `Signed, gi. reported that proposal ${proposalId} was ${label}.`,
   });
 });
 
@@ -832,55 +853,117 @@ function escapeHtml(s) {
 // flow, not an embed. The Documenso side is itself already branded (logo,
 // colors, site link) via its own branding settings.
 function renderSignPage({ found, clientName, subject, signingUrl }) {
-  const heading = found ? 'Your proposal is ready to sign' : 'Signing link not found';
+  const greeting = clientName ? escapeHtml(clientName) : 'Hi';
+  const subjectLine = subject ? `<span class="subject">${escapeHtml(subject)}</span>` : 'your proposal';
   const body = found
-    ? `<p>${clientName ? escapeHtml(clientName) + ',' : 'Hi,'} your proposal${subject ? ` — <em>${escapeHtml(subject)}</em>` : ''} — is ready for review and signature.</p>
-       <a class="cta" href="${signingUrl}" target="_top" rel="noopener">Review &amp; Sign Document →</a>
-       <a class="cta secondary" href="/book-meeting.html" target="_top" rel="noopener">Request Meeting 🗓️</a>
-       <p class="fine">You'll be taken to a secure SignedGI signing page. No account required.</p>`
-    : `<p>This signing link has expired or is no longer valid.</p>
-       <p class="fine">If you're expecting a proposal, reply to the original email from Greg and a fresh link will be sent.</p>`;
+    ? `<div class="card">
+        <div class="card-eyebrow">Ready for signature</div>
+        <p class="card-greeting">${greeting},</p>
+        <p class="card-body">${subjectLine} is ready for your review and signature.</p>
+        <div class="card-actions">
+          <a class="cta-primary" href="${signingUrl}" target="_top" rel="noopener">
+            <span class="cta-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></span>
+            Review &amp; Sign Document
+          </a>
+          <a class="cta-secondary" href="/book-meeting.html" target="_top" rel="noopener">Schedule a Call</a>
+        </div>
+        <p class="card-fine">Secure e-signature · No account required · Takes ~2 minutes</p>
+      </div>`
+    : `<div class="card card-error">
+        <div class="card-eyebrow">Link expired</div>
+        <p class="card-body">This signing link has expired or is no longer valid.</p>
+        <p class="card-fine">If you're expecting a proposal, reply to the original email from Greg and a fresh link will be sent.</p>
+      </div>`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${found ? 'Sign your proposal' : 'Link not found'} — Greg Iteen</title>
+<title>${found ? 'Sign your proposal' : 'Link not found'} — Signed, gi.</title>
 <meta name="robots" content="noindex">
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--black:#0a0a0a;--white:#f5f5f3;--gray:rgba(245,245,243,.55);--line:rgba(245,245,243,.28);--accent:#ff6a00}
-html,body{min-height:100%}
-body{font-family:'Archivo',sans-serif;background:var(--black);color:var(--white);display:flex;flex-direction:column;min-height:100dvh;padding:clamp(20px,4vw,56px)}
-.top{font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.22em;text-transform:uppercase;color:var(--gray);margin-bottom:clamp(32px,6vw,72px)}
-main{flex:1;display:flex;flex-direction:column;justify-content:center;max-width:640px}
-img.logo{height:32px;width:auto;align-self:flex-start;margin-bottom:clamp(24px,5vw,48px)}
-h1{font-family:'Archivo Black',sans-serif;font-size:clamp(1.6rem,4vw,2.6rem);line-height:1.15;margin-bottom:24px}
-main p{color:var(--gray);font-size:1rem;line-height:1.6;margin-bottom:20px}
-main p em{color:var(--white);font-style:normal}
-.cta{display:inline-block;background:var(--accent);color:var(--white);font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:.85rem;letter-spacing:.05em;text-decoration:none;padding:16px 28px;margin:8px 8px 20px 0;transition:opacity .2s}
-.cta.secondary{background:var(--white);color:var(--black)}
-.cta:hover{opacity:.85}
-.fine{font-size:.8rem;color:var(--gray)}
-footer{font-family:'IBM Plex Mono',monospace;font-size:.65rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gray);border-top:1px solid var(--line);padding-top:20px;margin-top:clamp(32px,6vw,72px);display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
-footer a{color:var(--gray);text-decoration:none}
-footer a:hover{color:var(--white)}
-.powered{display:flex;align-items:center;gap:10px}
-.powered img{height:22px;width:auto;opacity:.9}
+:root{
+  --bg:#060608;--surface:#0e0e12;--surface-raised:#14141a;
+  --white:#f0f0ec;--gray:#8a8a8a;--muted:#555;--line:rgba(255,255,255,.06);
+  --accent:#ff6a00;--accent-glow:rgba(255,106,0,.12);
+  --radius:16px;
+}
+html{min-height:100%;background:var(--bg)}
+body{font-family:'Inter',system-ui,sans-serif;color:var(--white);min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:clamp(20px,5vw,48px);position:relative;overflow-x:hidden}
+
+/* ambient glow */
+body::before{content:'';position:fixed;top:-40%;left:-20%;width:70%;height:80%;background:radial-gradient(ellipse,var(--accent-glow) 0%,transparent 70%);pointer-events:none;z-index:0;animation:drift 20s ease-in-out infinite alternate}
+body::after{content:'';position:fixed;bottom:-30%;right:-15%;width:50%;height:60%;background:radial-gradient(ellipse,rgba(255,106,0,.06) 0%,transparent 70%);pointer-events:none;z-index:0;animation:drift 25s ease-in-out infinite alternate-reverse}
+@keyframes drift{0%{transform:translate(0,0) scale(1)}100%{transform:translate(30px,-20px) scale(1.1)}}
+
+.wrapper{position:relative;z-index:1;width:100%;max-width:520px;animation:fadeUp .6s ease-out both}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+
+/* logo hero */
+.brand{display:flex;align-items:center;gap:16px;margin-bottom:48px}
+.brand img{height:36px;width:auto;opacity:.95}
+.brand .separator{width:1px;height:24px;background:var(--line)}
+.brand .label{font-family:'IBM Plex Mono',monospace;font-size:.6rem;letter-spacing:.25em;text-transform:uppercase;color:var(--muted)}
+
+/* card */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:clamp(28px,5vw,44px);position:relative;overflow:hidden;animation:fadeUp .6s ease-out .15s both}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,106,0,.3),transparent)}
+.card-error::before{background:linear-gradient(90deg,transparent,rgba(255,80,80,.3),transparent)}
+
+.card-eyebrow{font-family:'IBM Plex Mono',monospace;font-size:.65rem;letter-spacing:.2em;text-transform:uppercase;color:var(--accent);margin-bottom:20px;display:flex;align-items:center;gap:8px}
+.card-eyebrow::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 2s ease-in-out infinite}
+.card-error .card-eyebrow{color:#ff5555}
+.card-error .card-eyebrow::before{background:#ff5555}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+.card-greeting{font-size:1.5rem;font-weight:600;margin-bottom:8px;letter-spacing:-.02em}
+.card-body{color:var(--gray);font-size:.95rem;line-height:1.65;margin-bottom:28px}
+.card-body .subject{color:var(--white);font-weight:500}
+
+.card-actions{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:24px}
+.cta-primary{display:inline-flex;align-items:center;gap:10px;background:var(--accent);color:#fff;font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:.8rem;letter-spacing:.04em;text-decoration:none;padding:14px 24px;border-radius:10px;transition:all .25s ease;box-shadow:0 0 0 0 var(--accent-glow)}
+.cta-primary:hover{transform:translateY(-1px);box-shadow:0 8px 24px var(--accent-glow)}
+.cta-icon{display:flex;align-items:center}
+.cta-secondary{display:inline-flex;align-items:center;background:var(--surface-raised);color:var(--white);font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:.8rem;letter-spacing:.04em;text-decoration:none;padding:14px 24px;border:1px solid var(--line);border-radius:10px;transition:all .25s ease}
+.cta-secondary:hover{border-color:rgba(255,255,255,.15);background:rgba(255,255,255,.04)}
+
+.card-fine{font-family:'IBM Plex Mono',monospace;font-size:.68rem;color:var(--muted);letter-spacing:.02em;display:flex;align-items:center;gap:6px}
+.card-fine::before{content:'🔒';font-size:.7rem}
+
+/* footer */
+.foot{margin-top:48px;display:flex;align-items:center;justify-content:space-between;width:100%;animation:fadeUp .6s ease-out .3s both}
+.foot a{font-family:'IBM Plex Mono',monospace;font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);text-decoration:none;transition:color .2s}
+.foot a:hover{color:var(--white)}
+.foot .mark{display:flex;align-items:center;gap:8px}
+.foot .mark img{height:20px;width:auto;opacity:.7;transition:opacity .2s}
+.foot .mark:hover img{opacity:1}
+
+@media(max-width:480px){
+  .card{padding:24px 20px}
+  .card-greeting{font-size:1.25rem}
+  .card-actions{flex-direction:column}
+  .cta-primary,.cta-secondary{width:100%;justify-content:center}
+}
 </style>
 </head>
 <body>
-<div class="top">Greg Iteen — Proposal</div>
-<main>
-<img class="logo" src="/gi-logo-transparent-dark.png" alt="Greg Iteen">
-<h1>${heading}</h1>
-${body}
-</main>
-<footer><a href="https://gregiteen.xyz">gregiteen.xyz</a><span class="powered">Powered by <img src="/signedgi-logo-dark.png" alt="SignedGI"></span></footer>
+<div class="wrapper">
+  <div class="brand">
+    <img src="/signedgi-logo-dark.png" alt="Signed, gi.">
+    <span class="separator"></span>
+    <span class="label">E-Signature</span>
+  </div>
+  ${body}
+  <div class="foot">
+    <a href="https://gregiteen.xyz">gregiteen.xyz</a>
+    <a class="mark" href="https://gregiteen.xyz"><img src="/signedgi-logo-dark.png" alt="Signed, gi."></a>
+  </div>
+</div>
 </body>
 </html>`;
 }
@@ -920,7 +1003,7 @@ async function sendProposalToClient(proposalId, thread) {
 
   const wrapperSigningUrl = signingUrl ? `${SITE_URL}/sign/${proposalId}` : null;
   const signingBlock = wrapperSigningUrl
-    ? `\n\nReview & sign securely with SignedGI (no account required): ${wrapperSigningUrl}\n`
+    ? `\n\nReview & sign securely (no account required): ${wrapperSigningUrl}\n`
     : `\n\n(A signable copy will follow separately — for now, please review the attached PDF.)\n`;
 
   const webUrl = `${SITE_URL}/proposal/${proposalId}`;
@@ -938,7 +1021,7 @@ async function sendProposalToClient(proposalId, thread) {
     from: mailFrom,
     to: mailOwner,
     subject: `✓ Proposal sent to ${thread.clientEmail}`,
-    text: `Proposal ${proposalId} has been sent to ${thread.clientEmail}.\nYou were CC'd on the email.\n${signingUrl ? `SignedGI signing link: ${signingUrl}` : 'SignedGI e-sign not configured (DOCUMENSO_BASE_URL/DOCUMENSO_API_KEY unset) — sent as a plain PDF, no signature link.'}`,
+    text: `Proposal ${proposalId} has been sent to ${thread.clientEmail}.\nYou were CC'd on the email.\n${signingUrl ? `Signing link: ${signingUrl}` : 'E-sign not configured (DOCUMENSO_BASE_URL/DOCUMENSO_API_KEY unset) — sent as a plain PDF, no signature link.'}`,
   });
   thread.status = 'sent';
   thread.decidedAt = new Date().toISOString();
@@ -1015,7 +1098,7 @@ function isPublicPath(urlPath) {
   if (urlPath.startsWith('/api/')) return true;
   if (urlPath.startsWith('/assets/')) return true;
   if (urlPath.startsWith('/gi-logo')) return true; // brand marks — used on pre-auth pages
-  if (urlPath.startsWith('/signedgi-')) return true; // SignedGI e-sign brand marks
+  if (urlPath.startsWith('/signedgi-')) return true; // Signed, gi. e-sign brand marks
   // Browsers, bookmarks, and search crawlers request /favicon.ico directly;
   // redirecting it to the splash page made the site appear to have no favicon.
   if (urlPath === '/favicon.ico') return true;
@@ -1059,7 +1142,7 @@ function isAdmin(req) {
   
   const webToken = cookies.gi_webmail;
   if (webToken) {
-    const session = webmailSessions.get(webToken);
+    const session = getWebmailSessionByToken(webToken);
     if (session && (session.email === mailOwner || session.email === process.env.ADMIN_EMAIL || session.email === 'sales@gregiteen.xyz')) {
       return true;
     }
@@ -1149,48 +1232,109 @@ createServer(async (req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(thread.proposal.subject_line || 'Proposal')} — Greg Iteen</title>
+<title>${escapeHtml(thread.proposal.subject_line || 'Proposal')} — Signed, gi.</title>
 <meta name="robots" content="noindex">
 <link rel="icon" type="image/png" href="/assets/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  *,*::before,*::after { box-sizing: border-box; }
-  body { font-family: 'Archivo', 'Helvetica Neue', Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 900px; margin: 0 auto; padding: clamp(20px, 4vw, 40px); background: #f5f5f3; }
-  .brand-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
-  .brand-bar img { height: 26px; width: auto; display: block; }
-  .brand-bar .ref { font-family: 'IBM Plex Mono', monospace; font-size: .68rem; letter-spacing: .18em; text-transform: uppercase; color: #888; }
-  .proposal-html { background: #fff; padding: clamp(24px, 5vw, 48px); border: 1px solid #e5e5e2; }
-  h1, h2, h3 { color: #111; margin-top: 1.5em; line-height: 1.2; }
-  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-  th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-  th { background-color: #f5f5f5; }
-  a { color: #ff6a00; text-decoration: none; }
-  .actions { margin-top: 40px; text-align: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
-  .cta { display: inline-block; background: #ff6a00; color: #fff; font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: .85rem; letter-spacing: .05em; padding: 16px 28px; text-decoration: none; transition: opacity .2s; }
-  .cta:hover { opacity: .85; }
-  .actions .fine { flex-basis: 100%; font-size: .78rem; color: #999; margin-top: 4px; }
-  footer { font-family: 'IBM Plex Mono', monospace; font-size: .65rem; letter-spacing: .15em; text-transform: uppercase; color: #999; border-top: 1px solid #e0e0dd; padding-top: 18px; margin-top: 36px; display: flex; justify-content: space-between; gap: 12px; }
-  footer a { color: #999; }
-  footer a:hover { color: #333; }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#060608;--surface:#0e0e12;--surface-raised:#14141a;
+    --white:#f0f0ec;--gray:#8a8a8a;--muted:#555;--line:rgba(255,255,255,.06);
+    --accent:#ff6a00;--accent-glow:rgba(255,106,0,.12);
+    --radius:16px;
+  }
+  html{min-height:100%;background:var(--bg)}
+  body{font-family:'Inter',system-ui,sans-serif;color:var(--white);min-height:100dvh;padding:clamp(20px,4vw,48px);position:relative;overflow-x:hidden}
+
+  /* ambient glow */
+  body::before{content:'';position:fixed;top:-30%;right:-10%;width:50%;height:60%;background:radial-gradient(ellipse,var(--accent-glow) 0%,transparent 70%);pointer-events:none;z-index:0;animation:drift 22s ease-in-out infinite alternate}
+  @keyframes drift{0%{transform:translate(0,0) scale(1)}100%{transform:translate(20px,-15px) scale(1.05)}}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+
+  .page{position:relative;z-index:1;max-width:860px;margin:0 auto}
+
+  /* header bar */
+  .brand-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:32px;padding-bottom:20px;border-bottom:1px solid var(--line);animation:fadeUp .5s ease-out both}
+  .brand-bar .left{display:flex;align-items:center;gap:14px}
+  .brand-bar img{height:28px;width:auto;opacity:.9}
+  .brand-bar .separator{width:1px;height:20px;background:var(--line)}
+  .brand-bar .ref{font-family:'IBM Plex Mono',monospace;font-size:.6rem;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+
+  /* proposal card */
+  .proposal-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:clamp(28px,5vw,52px);position:relative;overflow:hidden;animation:fadeUp .5s ease-out .1s both}
+  .proposal-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,106,0,.2),transparent)}
+
+  /* proposal content typography */
+  .proposal-card h1,.proposal-card h2,.proposal-card h3{color:var(--white);margin-top:1.8em;margin-bottom:.6em;line-height:1.25;font-weight:600}
+  .proposal-card h1{font-size:1.5rem;margin-top:0}
+  .proposal-card h2{font-size:1.15rem;color:var(--accent);letter-spacing:.01em}
+  .proposal-card h3{font-size:1rem}
+  .proposal-card p,.proposal-card li{color:var(--gray);font-size:.92rem;line-height:1.7}
+  .proposal-card ul,.proposal-card ol{padding-left:1.4em;margin:.8em 0}
+  .proposal-card a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(255,106,0,.2);transition:border-color .2s}
+  .proposal-card a:hover{border-color:var(--accent)}
+  .proposal-card strong{color:var(--white);font-weight:600}
+  .proposal-card em{color:var(--white);font-style:italic}
+  .proposal-card hr{border:none;height:1px;background:var(--line);margin:2em 0}
+  .proposal-card table{width:100%;border-collapse:collapse;margin:1.5em 0;font-size:.88rem}
+  .proposal-card th{background:var(--surface-raised);color:var(--white);font-weight:500;text-align:left;padding:12px 16px;border:1px solid var(--line)}
+  .proposal-card td{padding:12px 16px;border:1px solid var(--line);color:var(--gray)}
+  .proposal-card tr:hover td{background:rgba(255,255,255,.02)}
+
+  /* actions */
+  .actions{margin-top:36px;padding-top:28px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:12px;align-items:center;animation:fadeUp .5s ease-out .2s both}
+  .cta-primary{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#fff;font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:.8rem;letter-spacing:.04em;text-decoration:none;padding:14px 28px;border-radius:10px;cursor:pointer;border:none;transition:all .25s ease;box-shadow:0 0 0 0 var(--accent-glow)}
+  .cta-primary:hover{transform:translateY(-1px);box-shadow:0 8px 24px var(--accent-glow)}
+  .cta-secondary{display:inline-flex;align-items:center;background:var(--surface-raised);color:var(--white);font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:.8rem;letter-spacing:.04em;text-decoration:none;padding:14px 28px;border:1px solid var(--line);border-radius:10px;transition:all .25s ease}
+  .cta-secondary:hover{border-color:rgba(255,255,255,.15)}
+  .actions .fine{flex-basis:100%;font-family:'IBM Plex Mono',monospace;font-size:.65rem;color:var(--muted);display:flex;align-items:center;gap:6px;margin-top:4px}
+  .actions .fine::before{content:'🔒';font-size:.65rem}
+  .actions .fine img{height:14px;width:auto;vertical-align:-2px;opacity:.8}
+
+  /* footer */
+  .foot{font-family:'IBM Plex Mono',monospace;font-size:.58rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--line);padding-top:18px;margin-top:40px;display:flex;justify-content:space-between;align-items:center;gap:12px;animation:fadeUp .5s ease-out .3s both}
+  .foot a{color:var(--muted);text-decoration:none;transition:color .2s}
+  .foot a:hover{color:var(--white)}
+  .foot .mark{display:flex;align-items:center;gap:8px}
+  .foot .mark img{height:18px;width:auto;opacity:.6}
+
+  @media(max-width:600px){
+    .proposal-card{padding:24px 18px}
+    .actions{flex-direction:column}
+    .cta-primary,.cta-secondary{width:100%;justify-content:center;text-align:center}
+  }
 </style>
 </head>
 <body>
-  <div class="brand-bar">
-    <a href="https://gregiteen.xyz"><img src="/gi-logo-transparent.png" alt="Greg Iteen"></a>
-    <span class="ref">Proposal · Ref #${escapeHtml(proposalId)}</span>
+  <div class="page">
+    <div class="brand-bar">
+      <div class="left">
+        <a href="https://gregiteen.xyz"><img src="/signedgi-logo-dark.png" alt="Signed, gi."></a>
+        <span class="separator"></span>
+        <span class="ref">Proposal</span>
+      </div>
+      <span class="ref">Ref #${escapeHtml(proposalId)}</span>
+    </div>
+    <div class="proposal-card">
+      ${thread.proposal.proposal_text}
+    </div>
+    <div class="actions">
+      ${thread.proposal.price_cents > 0 ? `
+        <button class="cta-primary" onclick="payProposal('${proposalId}')">Pay $${(thread.proposal.price_cents / 100).toLocaleString()} &amp; Sign &rarr;</button>
+      ` : `
+        <a class="cta-primary" href="/sign/${proposalId}">Review &amp; Sign &rarr;</a>
+      `}
+      <span class="fine">Secure e-signature by <img src="/signedgi-logo-dark.png" alt="Signed, gi."> — no account required.</span>
+    </div>
+    <div class="foot">
+      <a href="https://gregiteen.xyz">gregiteen.xyz</a>
+      <span>sales@gregiteen.xyz</span>
+      <a class="mark" href="https://gregiteen.xyz"><img src="/signedgi-logo-dark.png" alt="Signed, gi."></a>
+    </div>
   </div>
-  ${thread.proposal.proposal_text}
-  <div class="actions">
-    ${thread.proposal.price_cents > 0 ? `
-      <button class="cta" onclick="payProposal('${proposalId}')" style="cursor: pointer; border: none;">Pay $${(thread.proposal.price_cents / 100).toLocaleString()} &amp; Sign &rarr;</button>
-    ` : `
-      <a class="cta" href="/sign/${proposalId}">Review &amp; Sign &rarr;</a>
-    `}
-    <span class="fine">Secure e-signature by <img src="/signedgi-logo.png" alt="SignedGI" style="height:16px;vertical-align:-3px"> — no account required.</span>
-  </div>
-  <footer><a href="https://gregiteen.xyz">gregiteen.xyz</a><span>sales@gregiteen.xyz</span></footer>
   <script>
     async function payProposal(id) {
       try {
@@ -1279,8 +1423,27 @@ createServer(async (req, res) => {
     }
   }
 
+  // ── API: Test logout ──
+  // This is intentionally not visitor navigation. It exists only so the
+  // owner can return to the public entry flow while testing an authenticated
+  // edition, without relying on a GET request that browser prefetch/back
+  // navigation can accidentally execute.
+  if (urlPath === '/api/test/logout') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST required' });
+    if (!isAdmin(req)) return sendJson(res, 403, { error: 'Testing control requires admin access' });
+    const token = parseCookies(req.headers.cookie).gi_auth;
+    if (token) {
+      authTokens.delete(token);
+      saveSessions();
+    }
+    res.writeHead(204, { 'Set-Cookie': 'gi_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0' });
+    res.end();
+    return;
+  }
+
   // ── API: Logout ──
   if (urlPath === '/api/logout') {
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST required' });
     const cookies = parseCookies(req.headers.cookie);
     const token = cookies.gi_auth;
     if (token) {
@@ -1347,20 +1510,21 @@ createServer(async (req, res) => {
         return sendJson(res, 200, { received: true, ignored: true });
       }
       const [proposalId, thread] = entry;
-      const previous = thread.signingStatus;
-      thread.signingStatus = signingStatus;
-      thread.signingUpdatedAt = event?.payload?.completedAt || event?.createdAt || new Date().toISOString();
-      if (signingStatus === 'signed') thread.status = 'signed';
-      if (signingStatus === 'client_rejected') thread.status = 'client_rejected';
-      proposalThreads.set(proposalId, thread);
-      await upsertProposal(proposalId, thread);
-      if (previous !== signingStatus && (signingStatus === 'signed' || signingStatus === 'client_rejected')) {
+      const transition = applyDocumensoLifecycle(
+        thread,
+        signingStatus,
+        event?.payload?.completedAt || event?.createdAt || new Date().toISOString(),
+      );
+      if (!transition.changed) return sendJson(res, 200, { received: true, duplicate: true });
+      proposalThreads.set(proposalId, transition.thread);
+      await upsertProposal(proposalId, transition.thread);
+      if (transition.terminal) {
         const label = signingStatus === 'signed' ? 'signed' : 'rejected by the client';
         await smtpTransport.sendMail({
           from: mailFrom,
           to: mailOwner,
           subject: `Proposal ${label}: ${proposalId}`,
-          text: `SignedGI reported that proposal ${proposalId} was ${label}.`,
+          text: `Signed, gi. reported that proposal ${proposalId} was ${label}.`,
         });
       }
       console.log(`[Documenso] ${proposalId} -> ${signingStatus}`);
@@ -1368,6 +1532,34 @@ createServer(async (req, res) => {
     } catch (err) {
       console.error('[Documenso] Webhook processing failed:', err instanceof Error ? err.message : String(err));
       return sendJson(res, 400, { error: 'Invalid webhook payload' });
+    }
+  }
+
+  // ── API: one-time Signed, gi. SSO code consumption ──
+  // This endpoint is called only by the Documenso server. Codes are issued
+  // from the authenticated webmail CRM, live for 60 seconds, and are deleted
+  // on the first consume attempt.
+  if (urlPath === '/api/documenso/sso/consume' && req.method === 'POST') {
+    const expectedSecret = process.env.DOCUMENSO_SSO_SECRET || '';
+    const authorization = String(req.headers.authorization || '');
+    const receivedSecret = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+
+    if (!verifyWebhookSecret(receivedSecret, expectedSecret)) {
+      return sendJson(res, 401, { error: 'Unauthorized' });
+    }
+
+    try {
+      const body = await readBody(req);
+      const code = typeof body.code === 'string' ? body.code : '';
+      const email = consumeDocumensoSsoHandoff(documensoSsoHandoffs, code);
+
+      if (!email) {
+        return sendJson(res, 410, { error: 'Handoff expired or already used' });
+      }
+
+      return sendJson(res, 200, { email });
+    } catch {
+      return sendJson(res, 400, { error: 'Invalid handoff request' });
     }
   }
 
@@ -1501,31 +1693,20 @@ createServer(async (req, res) => {
         return sendJson(res, 400, { success: false, error: 'Reset token is invalid or expired.' });
       }
       
-      // We must run doveadm on the docker container to generate the password hash.
-      // And then run a mysql query to update the mailbox table in mailcow.
-      const { execSync } = await import('node:child_process');
-      
-      // 1. Generate Mailcow SSHA512 hash using dovecot container
-      const hashCmd = `docker exec mailcowdockerized-dovecot-mailcow-1 doveadm pw -s SHA512-CRYPT -p '${password.replace(/'/g, "'\\''")}'`;
-      const hash = execSync(hashCmd).toString().trim();
-      
-      // 2. Update Mailcow database
-      // Using the DBPASS from /opt/mailcow-dockerized/mailcow.conf (IMf6Q76lVXgzP1xmXCDOVg9TfRir)
-      const dbCmd = `docker exec mailcowdockerized-mysql-mailcow-1 mysql -u mailcow -pIMf6Q76lVXgzP1xmXCDOVg9TfRir mailcow -e "UPDATE mailbox SET password='${hash}' WHERE username='${resetReq.email}';"`;
-      execSync(dbCmd);
-      
-      // 3. Update the .env file with the new IMAP_PASS so the webmail works!
+      await setMailcowMailboxPassword({
+        email: resetReq.email,
+        password,
+        mailcowRoot: process.env.MAILCOW_ROOT || '/opt/mailcow-dockerized',
+      });
+
+      // Keep the application's IMAP client and existing webmail sessions in
+      // sync before acknowledging success. A PM2 reload is not required.
       const envPath = join(__dirname, '..', '.env');
-      let envContent = await readFile(envPath, 'utf8');
-      envContent = envContent.replace(/^IMAP_PASS=.*$/m, `IMAP_PASS="${password.replace(/"/g, '\\"')}"`);
-      await writeFile(envPath, envContent, 'utf8');
-      
-      // Clear token
+      await persistAppMailboxPassword(envPath, password);
+      await refreshImapPassword(password);
+      updateWebmailSessionPasswords(resetReq.email, password);
+
       passwordResets.delete(token);
-      
-      // Trigger PM2 reload so the new IMAP_PASS is loaded into process.env!
-      // PM2 will gracefully reload this process in the background.
-      setTimeout(() => execSync('pm2 reload portfolio'), 1000);
       
       return sendJson(res, 200, { success: true });
     } catch (err) {
@@ -1667,6 +1848,7 @@ createServer(async (req, res) => {
         sessionAge: Math.round((Date.now() - session.issuedAt) / 1000) + 's',
         userAgent: session.userAgent,
         ip: session.ip,
+        testingLogout: isAdmin(req),
       });
     }
     return sendJson(res, 200, { authenticated: false });
@@ -1948,10 +2130,23 @@ createServer(async (req, res) => {
     }
   }
 
+  // ── API: CNA state ──
+  // The generation waiting page and /consult.html are two views of the same
+  // consultation. Authenticated visitors can resume the SSSS-backed draft on
+  // either page instead of losing the conversation during navigation.
+  if (urlPath === '/api/cna-state' && req.method === 'GET') {
+    const cookies = parseCookies(req.headers.cookie);
+    const token = cookies.gi_auth;
+    const session = token ? authTokens.get(token) : null;
+    const profile = session?.email ? visitorProfiles.get(session.email) : null;
+    return sendJson(res, 200, { state: profile?.cna_draft || null });
+  }
+
   // ── API: CNA Chat ──
   if (urlPath === '/api/cna' && req.method === 'POST') {
     try {
-      const { history } = await readBody(req);
+      const body = await readBody(req);
+      const history = normalizeCnaHistory(body.history);
       const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
       if (!GOOGLE_API_KEY) {
         return sendJson(res, 500, { message: 'AI service unavailable.' });
@@ -2072,6 +2267,38 @@ If NOT complete, respond with just:
         cnaResponse = { message: 'I\'d love to hear about your project. What are you looking to build?', complete: false };
       }
 
+      const nextHistory = normalizeCnaHistory([
+        ...history,
+        ...(cnaResponse.message ? [{ role: 'assistant', content: cnaResponse.message }] : []),
+      ]);
+      const cookies = parseCookies(req.headers.cookie);
+      const token = cookies.gi_auth;
+      const session = token ? authTokens.get(token) : null;
+      if (session?.email) {
+        const prior = visitorProfiles.get(session.email) || { email: session.email };
+        const next = {
+          ...prior,
+          cna_draft: {
+            history: nextHistory,
+            assessment: cnaResponse.complete && cnaResponse.assessment
+              ? cnaResponse.assessment
+              : prior.cna_draft?.assessment || null,
+            intake: body.intake && typeof body.intake === 'object'
+              ? body.intake
+              : prior.cna_draft?.intake || null,
+            requestId: prior.cna_draft?.requestId || null,
+            proposal: prior.cna_draft?.proposal || null,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+        visitorProfiles.set(session.email, next);
+        try {
+          await upsertVisitor(session.email, next);
+        } catch (persistError) {
+          console.error('[CNA] Failed to persist consultation state:', persistError instanceof Error ? persistError.message : String(persistError));
+        }
+      }
+
       return sendJson(res, 200, cnaResponse);
     } catch (/** @type {any} */ err) {
       console.error('[CNA] Error:', (err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)));
@@ -2081,17 +2308,28 @@ If NOT complete, respond with just:
 
   // ── API: CNA Proposal Generation ──
   if (urlPath === '/api/cna-proposal' && req.method === 'POST') {
+    let proposalId = null;
     try {
-      const { assessment, history } = await readBody(req);
+      const { assessment, history: rawHistory, intake, email: suppliedEmail, requestId } = await readBody(req);
       if (!assessment) {
         return sendJson(res, 400, { success: false, error: 'Assessment data required.' });
       }
+      const history = normalizeCnaHistory(rawHistory);
 
       // Get visitor info from auth token
       const cookies = parseCookies(req.headers.cookie);
       const token = cookies.gi_auth;
       const session = token ? authTokens.get(token) : null;
-      const clientEmail = session?.email || 'unknown';
+      const candidateEmail = session?.email || intake?.email || suppliedEmail;
+      const clientEmail = String(candidateEmail || '').trim().toLowerCase();
+      if (!isValidCnaEmail(clientEmail)) {
+        return sendJson(res, 400, { success: false, error: 'A valid client email is required.' });
+      }
+      try {
+        proposalId = proposalIdForRequest(requestId, clientEmail);
+      } catch (error) {
+        return sendJson(res, 400, { success: false, error: error instanceof Error ? error.message : String(error) });
+      }
       // Which A/B banner offer (if any) this visitor was shown — read from the
       // cookie the banner script sets, so proposals can reference what drove
       // them here without any change needed in consult.html.
@@ -2118,19 +2356,70 @@ If NOT complete, respond with just:
         }
       }
 
-      // Generate proposal in background — respond to client immediately
-      sendJson(res, 200, { success: true });
+      const conversationText = history.map(m => `${m.role === 'user' ? 'CLIENT' : 'AI'}: ${m.content}`).join('\n\n');
+      const assessmentText = Object.entries(assessment).map(([k, v]) => `${k}: ${v}`).join('\n');
+
+      // Accept the request only after its durable proposal record exists.
+      // The request ID makes repeat clicks/network retries idempotent.
+      const existingProposal = proposalThreads.get(proposalId);
+      if (existingProposal) {
+        return sendJson(res, 202, {
+          success: true,
+          proposalId,
+          status: existingProposal.generationState || existingProposal.status,
+        });
+      }
+
+      const proposalThread = {
+        clientEmail,
+        assessment,
+        enrichment: {},
+        bannerVariant: bannerVariant || null,
+        proposal: {},
+        history: conversationText,
+        revisions: 0,
+        createdAt: Date.now(),
+        status: 'draft',
+        requestId,
+        generationState: 'generating',
+        generationError: null,
+      };
+      proposalThreads.set(proposalId, proposalThread);
+      try {
+        await upsertProposal(proposalId, proposalThread);
+      } catch (persistError) {
+        proposalThreads.delete(proposalId);
+        throw persistError;
+      }
+
+      if (session?.email) {
+        const prior = visitorProfiles.get(session.email) || { email: session.email };
+        const next = {
+          ...prior,
+          cna_draft: {
+            history,
+            assessment,
+            intake: intake || prior.cna_draft?.intake || null,
+            requestId,
+            proposal: { id: proposalId, status: 'generating' },
+            updatedAt: new Date().toISOString(),
+          },
+        };
+        visitorProfiles.set(session.email, next);
+        await upsertVisitor(session.email, next);
+      }
+
+      sendJson(res, 202, { success: true, proposalId, status: 'generating' });
 
       // Kick off enrichment + proposal generation
       const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
       if (!GOOGLE_API_KEY) {
         console.error('[Proposal] No GOOGLE_API_KEY — cannot generate proposal');
+        proposalThread.generationState = 'retry_pending';
+        proposalThread.generationError = 'Proposal generator is temporarily unavailable.';
+        await upsertProposal(proposalId, proposalThread);
         return;
       }
-
-      const proposalId = randomBytes(8).toString('hex');
-      const conversationText = (history || []).map(m => `${m.role === 'user' ? 'CLIENT' : 'AI'}: ${m.content}`).join('\n\n');
-      const assessmentText = Object.entries(assessment).map(([k, v]) => `${k}: ${v}`).join('\n');
 
       // Step 1: Enrich client info via Gemini
       console.log(`[Proposal ${proposalId}] Enriching client info…`);
@@ -2228,18 +2517,14 @@ the total integer price in USD cents (e.g. 1500000 for $15,000)
         };
       }
 
-      // Store proposal for email thread
-      const proposalThread = {
-        clientEmail,
-        assessment,
+      // Promote the already-durable request into a reviewable proposal.
+      Object.assign(proposalThread, {
         enrichment,
-        bannerVariant: bannerVariant || null,
         proposal: proposalDraft,
-        history: conversationText,
-        revisions: 0,
-        createdAt: Date.now(),
         status: 'pending_approval',
-      };
+        generationState: 'ready_for_review',
+        generationError: null,
+      });
       proposalThreads.set(proposalId, proposalThread);
       await upsertProposal(proposalId, proposalThread);
       // A prospect with an active proposal should not receive general nurture
@@ -2322,6 +2607,14 @@ ${'═'.repeat(60)}`;
 
     } catch (/** @type {any} */ err) {
       console.error('[Proposal] Error:', (err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)));
+      if (typeof proposalId === 'string' && proposalThreads.has(proposalId)) {
+        const failedThread = proposalThreads.get(proposalId);
+        failedThread.generationState = 'retry_pending';
+        failedThread.generationError = err instanceof Error ? err.message : String(err);
+        upsertProposal(proposalId, failedThread).catch((persistError) => {
+          console.error(`[Proposal ${proposalId}] Failed to persist retry state:`, persistError instanceof Error ? persistError.message : String(persistError));
+        });
+      }
       if (!res.writableEnded) sendJson(res, 500, { success: false, error: 'Failed to generate proposal.' });
     }
     return;
@@ -2402,6 +2695,90 @@ ${'═'.repeat(60)}`;
     }
 
     const adminPath = urlPath.slice('/api/admin'.length);
+
+    // GET /api/admin/documenso — read-only operational status and documents.
+    if (adminPath === '/documenso' && req.method === 'GET') {
+      const baseUrl = process.env.DOCUMENSO_BASE_URL || '';
+      const apiKey = process.env.DOCUMENSO_API_KEY || '';
+      const ssoEmail = process.env.DOCUMENSO_SSO_EMAIL || process.env.IMAP_USER || '';
+      const ssoConfigured = Boolean(
+        process.env.DOCUMENSO_SSO_SECRET &&
+        ssoEmail &&
+        baseUrl,
+      );
+      let serviceStatus = 'unconfigured';
+      let serviceError = '';
+      let documents = [];
+      let totalPages = 0;
+
+      if (baseUrl && apiKey) {
+        try {
+          const response = await fetch(new URL('/api/v1/documents?page=1&perPage=20', baseUrl), {
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            signal: AbortSignal.timeout(5000),
+          });
+
+          if (!response.ok) {
+            throw new Error(`API returned ${response.status}`);
+          }
+
+          const payload = await response.json();
+          documents = Array.isArray(payload.documents)
+            ? payload.documents.map((document) => ({
+                id: document.id,
+                title: document.title,
+                status: document.status,
+                createdAt: document.createdAt,
+                updatedAt: document.updatedAt,
+                completedAt: document.completedAt,
+              }))
+            : [];
+          totalPages = Number(payload.totalPages) || 0;
+          serviceStatus = 'healthy';
+        } catch (error) {
+          serviceStatus = 'unreachable';
+          serviceError = error instanceof Error ? error.message : 'Request failed';
+        }
+      }
+
+      return sendJson(res, 200, {
+        serviceStatus,
+        serviceError,
+        baseUrl,
+        accountEmail: ssoEmail,
+        apiConfigured: Boolean(apiKey && baseUrl),
+        webhookConfigured: Boolean(process.env.DOCUMENSO_WEBHOOK_SECRET),
+        ssoConfigured,
+        pollingEnabled: true,
+        totalPages,
+        documents,
+      });
+    }
+
+    // GET /api/admin/documenso/sso — authenticated, passwordless handoff.
+    if (adminPath === '/documenso/sso' && req.method === 'GET') {
+      const baseUrl = process.env.DOCUMENSO_BASE_URL || '';
+      const ssoEmail = process.env.DOCUMENSO_SSO_EMAIL || process.env.IMAP_USER || '';
+
+      if (!baseUrl || !ssoEmail || !process.env.DOCUMENSO_SSO_SECRET) {
+        return sendJson(res, 503, { error: 'Signed, gi. SSO is not configured' });
+      }
+
+      pruneDocumensoSsoHandoffs(documensoSsoHandoffs);
+      const code = createDocumensoSsoHandoff(documensoSsoHandoffs, ssoEmail);
+      const target = new URL('/api/auth/signedgi-sso', baseUrl);
+      target.searchParams.set('code', code);
+
+      res.writeHead(303, {
+        Location: target.toString(),
+        'Cache-Control': 'no-store',
+        'Referrer-Policy': 'no-referrer',
+      });
+      return res.end();
+    }
 
     // GET /api/admin/stats
     if (adminPath === '/stats' && req.method === 'GET') {

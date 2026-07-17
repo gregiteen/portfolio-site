@@ -1,0 +1,27 @@
+[
+  {
+    "name": "skill-frontmatter",
+    "assertion": "SKILL.md exists with name: documenso and a trigger-optimized description",
+    "severity": "error"
+  },
+  {
+    "name": "env-checker-runs",
+    "assertion": "node .agent/skills/documenso/scripts/check-documenso-env.mjs runs and never prints an actual secret value, only presence/absence",
+    "severity": "error"
+  },
+  {
+    "name": "sso-tests-pass",
+    "assertion": "node --test test/documenso-sso.test.mjs passes",
+    "severity": "error"
+  },
+  {
+    "name": "no-untested-claim",
+    "assertion": "The skill does not imply the Documenso HTTP routes, webhook verification, or the Documenso-side SSO handshake are test-covered — they are not",
+    "severity": "warning"
+  },
+  {
+    "name": "signature-field-coupling-documented",
+    "assertion": "The skill documents that SIGNATURE_FIELD in letterhead.mjs must be updated in lockstep with the letterhead PDF layout",
+    "severity": "warning"
+  }
+]

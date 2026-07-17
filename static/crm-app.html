@@ -171,6 +171,19 @@ tr:hover td{background:var(--surface);color:var(--white)}
   transform:translateY(120%);opacity:0;transition:all .3s;
 }
 .toast.show{transform:none;opacity:1}
+
+/* Signing operations */
+.integration-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:20px}
+.integration-card{background:var(--surface);border:1px solid var(--line);padding:18px;min-height:112px}
+.integration-card strong{display:block;font-family:var(--display);font-size:1.15rem;margin:7px 0 4px}
+.integration-card small{display:block;color:var(--gray);font-family:var(--mono);font-size:.68rem;line-height:1.5}
+.status-line{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+.status-dot.healthy{background:var(--green);box-shadow:0 0 0 4px rgba(34,197,94,.1)}
+.status-dot.warning{background:var(--amber);box-shadow:0 0 0 4px rgba(234,179,8,.1)}
+.signing-actions{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0 26px}
+.signing-actions .btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;text-decoration:none}
+@media(min-width:900px){.integration-grid{grid-template-columns:repeat(4,1fr)}}
 </style>
 </head>
 <body>
@@ -186,6 +199,7 @@ tr:hover td{background:var(--surface);color:var(--white)}
     <button class="sidebar-link" data-page="themes" onclick="showPage('themes')">◈ Themes</button>
     <button class="sidebar-link" data-page="proposals" onclick="showPage('proposals')">⊞ Proposals</button>
     <button class="sidebar-link" data-page="campaigns" onclick="showPage('campaigns')">⋈ Campaigns</button>
+    <button class="sidebar-link" data-page="signing" onclick="showPage('signing')">Signing</button>
     <span class="sidebar-label">System</span>
     <button class="sidebar-link" data-page="webmail" onclick="showPage('webmail')">✉️ Webmail</button>
     <button class="sidebar-link" data-page="settings" onclick="showPage('settings')">⊡ Settings</button>
@@ -266,6 +280,29 @@ tr:hover td{background:var(--surface);color:var(--white)}
         <div style="flex:1;">
           <h3>Upcoming Schedule</h3>
           <div id="calendarList" class="grid" style="grid-template-columns: 1fr;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SIGNING -->
+    <div class="page" id="page-signing" style="display:none">
+      <h1 class="page-title">Signed, gi. Operations</h1>
+      <div class="panel">
+        <div class="panel-title">Webmail-authenticated workspace</div>
+        <p class="mono text-gray">Your current webmail session is the identity boundary. Opening the signing workspace uses a one-time server handoff; no second login or browser-visible password is involved.</p>
+        <div class="signing-actions">
+          <a class="btn" href="/api/admin/documenso/sso">Open signing workspace</a>
+          <button class="btn" type="button" onclick="loadDocumenso()">Refresh status</button>
+        </div>
+      </div>
+      <div class="integration-grid" id="documensoStatusGrid"></div>
+      <div class="panel">
+        <div class="panel-title">Recent signing documents</div>
+        <div class="table-wrap">
+          <table id="documensoDocuments">
+            <thead><tr><th>Document</th><th>Status</th><th>Created</th><th>Updated</th></tr></thead>
+            <tbody><tr><td colspan="4" class="text-faint">Loading signing documents</td></tr></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -571,6 +608,7 @@ function showPage(id) {
   if (id === 'themes') loadThemes();
   if (id === 'proposals') loadProposals();
   if (id === 'campaigns') loadCampaigns();
+  if (id === 'signing') loadDocumenso();
   if (id === 'webmail') loadWebmail();
   if (id === 'settings') loadSettings();
   if (id === 'logs') loadLogs();
@@ -789,6 +827,40 @@ async function deleteProposal(id) {
     toast('Proposal removed');
     loadProposals();
   } catch (e) { toast('Failed'); }
+}
+
+// ── Signed, gi. operations ──
+async function loadDocumenso() {
+  const grid = document.getElementById('documensoStatusGrid');
+  const tbody = document.querySelector('#documensoDocuments tbody');
+  grid.innerHTML = '<div class="integration-card"><span class="mono text-gray">Checking signing service</span></div>';
+
+  try {
+    const data = await api('/documenso');
+    const healthy = data.serviceStatus === 'healthy';
+    const checks = [
+      { label: 'Service', value: data.serviceStatus, ok: healthy, detail: data.serviceError || data.baseUrl || 'Not configured' },
+      { label: 'API', value: data.apiConfigured ? 'Connected' : 'Missing', ok: data.apiConfigured, detail: 'Document creation and status' },
+      { label: 'Webhook', value: data.webhookConfigured ? 'Verified' : 'Missing', ok: data.webhookConfigured, detail: 'Lifecycle event delivery' },
+      { label: 'Single sign-on', value: data.ssoConfigured ? 'Ready' : 'Missing', ok: data.ssoConfigured, detail: data.accountEmail || 'No account identity' },
+    ];
+
+    grid.innerHTML = checks.map(check => `<div class="integration-card">
+      <div class="status-line"><span class="status-dot ${check.ok ? 'healthy' : 'warning'}"></span>${escapeHtml(check.label)}</div>
+      <strong>${escapeHtml(check.value)}</strong>
+      <small>${escapeHtml(check.detail)}</small>
+    </div>`).join('');
+
+    tbody.innerHTML = (data.documents || []).map(document => `<tr>
+      <td><strong style="color:var(--white)">${escapeHtml(document.title || 'Untitled')}</strong><br><span class="mono text-faint">${escapeHtml(String(document.id || ''))}</span></td>
+      <td><span class="badge-pill ${document.status === 'COMPLETED' ? 'badge-green' : document.status === 'REJECTED' ? 'badge-red' : 'badge-amber'}">${escapeHtml(document.status || 'UNKNOWN')}</span></td>
+      <td class="mono">${fmtDate(document.createdAt)}</td>
+      <td class="mono">${fmtDate(document.updatedAt)}</td>
+    </tr>`).join('') || '<tr><td colspan="4" class="text-faint">No signing documents found.</td></tr>';
+  } catch (error) {
+    grid.innerHTML = `<div class="integration-card"><div class="status-line"><span class="status-dot warning"></span>Signing service</div><strong>Unavailable</strong><small>${escapeHtml(error.message)}</small></div>`;
+    tbody.innerHTML = '<tr><td colspan="4" class="text-faint">Could not load signing documents.</td></tr>';
+  }
 }
 
 // ── Settings ──
