@@ -13,6 +13,8 @@ rsync -avz --delete \
   --exclude '.git' \
   --exclude '.env' \
   --exclude '.agent' \
+  --exclude '.claude' \
+  --exclude '.theme-staging' \
   --exclude '.data/' \
   --exclude '/designs/' \
   --exclude 'vault/pages/skins/' \
@@ -21,10 +23,10 @@ rsync -avz --delete \
   --exclude '/dist/' \
   ./ root@138.197.199.217:/opt/portfolio-site/
 
-# 3. Restart PM2 with a strict timeout
-echo "🔄 Restarting PM2 on droplet (timeout 10s)..."
-if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@138.197.199.217 "pm2 restart portfolio"; then
-  echo "❌ CRITICAL: SSH or PM2 restart failed or timed out!"
+# 3. Reload PM2 with a strict timeout (zero downtime)
+echo "🔄 Reloading PM2 on droplet (timeout 10s)..."
+if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@138.197.199.217 "pm2 reload portfolio"; then
+  echo "❌ CRITICAL: SSH or PM2 reload failed or timed out!"
   echo "⚠️ The frontend might be out of sync with the backend."
   exit 1
 fi

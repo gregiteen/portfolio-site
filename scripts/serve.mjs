@@ -803,7 +803,8 @@ function geminiCall(apiKey, prompt, { json = true, tools = [] } = {}) {
     };
     if (tools && tools.length > 0) payload.tools = tools;
     const body = JSON.stringify(payload);
-    const url = new URL(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`);
+    const model = process.env.DEFAULT_MODEL || 'gemini-3.5-flash';
+    const url = new URL(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`);
     const options = {
       hostname: url.hostname,
       path: url.pathname + url.search,
@@ -2233,7 +2234,8 @@ If NOT complete, respond with just:
         generationConfig: { responseMimeType: 'application/json' },
       });
 
-      const apiUrl = new URL(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${GOOGLE_API_KEY}`);
+      const model = process.env.DEFAULT_MODEL || 'gemini-3.5-flash';
+      const apiUrl = new URL(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GOOGLE_API_KEY}`);
       const apiRes = await new Promise((resolve, reject) => {
         const req2 = https.request({
           hostname: apiUrl.hostname,
