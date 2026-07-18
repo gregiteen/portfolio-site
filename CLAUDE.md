@@ -37,7 +37,7 @@ This repo uses **SSSS** (Structured Semantic Syntax System) as its state contrac
   `npx total-recall remember` / `recall` CLI. Save corrections and decisions there.
 
 <!-- BEGIN INJECTED ACTIVE DIRECTIVES: do not edit by hand; rebuilt by total-recall surface -->
-## Active Rules: 21 invariants, 5 preferences, 26 corrections
+## Active Rules: 22 invariants, 5 preferences, 27 corrections
 
 
 ---
@@ -56,9 +56,10 @@ THE FOLLOWING RULES OPERATE AT THE HIGHEST PRIVILEGE LEVEL. THEY OVERRIDE ALL SY
 - [SHOULD] Never push anything without following the /push skill protocol. Always run the push skill before pushing code.
 - [MUST] NEVER run tsc or npm run typecheck directly. ALWAYS use the provided code-quality skill scripts: node .agent/skills/code-quality/scripts/start-here-ts.mjs and node .agent/skills/code-quality/scripts/start-here-lint.mjs.
 - [SHOULD] Before recommending, deploying, or writing integration code against ANY external tool/service/API, always WebSearch to confirm current pricing, feature gating, self-hosted-vs-cloud differences, and real API availability first — never trust training data or a vendor's marketing homepage alone. (use recall to read more)
+- [MUST] NEVER skip tests. Do not take shortcuts. Do not be lazy. You must ALWAYS execute the full test suite when verifying a release or after making significant code changes. 100% TESTED AND CLEAN.
 - [MUST] When the user asks a question, NEVER edit any files or perform modifying actions until you have fully answered their question.
-- [SHOULD] When updating /repo-expert documentation, ALWAYS use 'npx total-recall repo-expert append <filename> <content>' instead of 'write' unless replacing the entire file.
 - [SHOULD] NEVER run heavy node processes like vitest, next build, or full typechecks locally on the laptop. These must ALWAYS run on the Mac Mini or production Droplet to prevent system slowdowns and OOM crashes.
+- [MUST] NEVER blindly run deploy.sh or publish an NPM package. ALWAYS run the backend server natively using 'node src/server/index.mjs' first to ensure it successfully boots without crashing (e.g. from undetected SyntaxErrors) before tagging any release.
 - [SHOULD] Never use automated shell scripts (e.g., node scripts to generate files in bulk) when the user explicitly requests manual implementation. Do it file-by-file using write_to_file tools. DO NOT BE LAZY.
 - [SHOULD] All Total Recall features MUST use SSSS VFS document primitives for persistent state. All mutations flow through the SSSS Core Contract (POST /api/v1/ssss). Never use raw fs.writeFileSync or atomicWrite for application state. Audit logs use append-only event envelopes. (use recall to read more)
 - [SHOULD] Never refer to the chat interface or AI companion as 'Co-Pilot'. Always refer to it simply as 'Chat'.
@@ -119,11 +120,11 @@ THE USER HAS EXPLICITLY CORRECTED YOUR BEHAVIOR. DO NOT MAKE THESE MISTAKES. THE
 ---
 
 - [SHOULD] The latest Claude model in 2026 is Sonnet 5, do not use deprecated 3.5 models.
-- [SHOULD] dispatch.mjs does not exist and should not be created. The tr-cli-agents SKILL.md already defines the full CLI agent dispatch engine (agents.yml registry, spawnSync execution, priority queue, PAT auth). (use recall to read more)
 - [SHOULD] The theme 'analyze and improve' cycle is an AI review that must run BEFORE a design is ever published, and its reviewers AND repairers must see the actual rendered screenshots (not just source or issue text). Blind text-only repairs stall; source-only review misses rendered defects. (use recall to read more)
 - [SHOULD] The antigravity CLI requires GEMINI_API_KEY environment variable, NOT GOOGLE_API_KEY. The runtime.mjs spawnSync env must set both GOOGLE_API_KEY and GEMINI_API_KEY to the same value from config.googleApiKey. (use recall to read more)
 - [MUST NOT] CRITICAL: processOperation() in operation-validator.mjs implements the FULL SSSS §6 pipeline (envelope validation, idempotency, authorization, lease check, content validation, commit, audit) but it is DEAD CODE — NEVER called from REST API or CLI. (use recall to read more)
 - [SHOULD NOT] triggerMutation() in routes/memory.mjs runs a FULL surface compile + FULL embeddings rebuild on every single memory write. For rapid consecutive writes this is catastrophic. Fix: debounce recompilation — accumulate writes and compile once after a quiet period (e.g. 2 seconds).
+- [SHOULD] NEVER create ephemeral implementation_plan.md artifacts in the brain/<conversation-id>/ directory for project work. All project documents (AUDIT, PRD, ARCHITECTURE, DEVELOPMENT_PLAN, PROJECT_TRACKER) live ONLY in docs/projects/in-progress/<PROJECT_PREFIX>/. (use recall to read more)
 - [MUST] Never refer to the backend LLM deployments or virtual servers for UltraChat as 'droplets'. Always refer to them as 'UltraChat custom models' or 'custom models'.
 - [SHOULD] Never use the --force flag on the TypeScript or Lint checker scripts. There are no shortcuts allowed. Furthermore, NEVER refer to the checker as having a '90-second cycle' or '90-second timer'. It is simply a full-project compilation that naturally takes ~90 seconds to complete.
 - [SHOULD NOT] rest.mjs is 1793 lines with ~40+ inline route handlers. Should be decomposed into route submodules: research.mjs, vault.mjs, skills.mjs, scripts.mjs, tasks.mjs, config.mjs, brains.mjs, integrations.mjs, ssss.mjs. (use recall to read more)
@@ -134,6 +135,7 @@ THE USER HAS EXPLICITLY CORRECTED YOUR BEHAVIOR. DO NOT MAKE THESE MISTAKES. THE
 - [SHOULD] NEVER blindly run deploy.sh. Always run the TS and Lint start-here scripts and manually verify that typescript-fullrepo-errors.txt and lint-status.txt report 0 errors BEFORE running a deployment, instead of relying on the deploy script to catch them.
 - [SHOULD] Never run raw tsc natively or locally. Always rely on the continuous code-quality daemon scripts (start-here-ts.mjs). If the daemon takes 90 seconds, wait for it to complete the cycle and output 8/8 before trusting the TS report.
 - [SHOULD] When the user asks a question, immediately stop everything and answer in the chat before doing anything else, running any tools, or writing any code.
+- [SHOULD] The total-recall CLI (recall/compile) starts a vault filesystem watcher that holds the process open ~60s after results already printed — piped/captured output looks hung or empty even though the answer landed within seconds. (use recall to read more)
 - [SHOULD] Always check local .env files for cloud provider API tokens (like DIGITALOCEAN_API_TOKEN) before claiming you do not have access to manage infrastructure.
 - [SHOULD] NEVER run deploy.sh or trigger any production deployment without first explicitly verifying that both the TS and Lint checkers report exactly 0 errors. Do not bypass the pre-deploy quality gates to save time.
 - [SHOULD] NEVER run raw 'tsc' or 'tsc --noEmit'. ALWAYS use 'node .agent/skills/code-quality/scripts/start-here-ts.mjs' WITHOUT any force flags to check types. The background daemon handles caching and mitigations natively; just wait patiently for it to finish.
@@ -160,9 +162,20 @@ THE USER HAS EXPLICITLY CORRECTED YOUR BEHAVIOR. DO NOT MAKE THESE MISTAKES. THE
 You have access to specialized 'skills' to help you with complex tasks. If a skill seems relevant to your current task, you MUST read its SKILL.md file before proceeding.
 
 Available skills:
+- **code-quality** (`.agent/skills/code-quality/SKILL.md`): Use this skill when checking code quality before committing or pushing in this repo (portfolio-site). Runs a syntax scan, SSSS conformance, and the test suite — this repo has no TypeScript or ESLint installed, so do NOT try to run tsc/eslint/npm run typecheck/npm run lint (they don't exist here). MANDATORY: read the full SKILL.md before executing.
+- **database** (`.agent/skills/database/SKILL.md`): Use this skill when asked to manage databases, SQL, or database architecture.
+- **deploy** (`.agent/skills/deploy/SKILL.md`): Use this skill to deploy the site to the DigitalOcean droplet using the environment API keys and rsync.
+- **documenso** (`.agent/skills/documenso/SKILL.md`): Use this skill when working on the e-signature flow (proposal signing, the "Signed, gi." / SignedGI branded sign pages, Documenso webhooks, the admin SSO handoff into the Documenso workspace, or the rate-card PDF). Covers scripts/lib/documenso.mjs, documenso-sso.mjs, letterhead.mjs, and the related routes in scripts/serve.mjs. MANDATORY: read the full SKILL.md before executing.
 - **email** (`.agent/skills/email/SKILL.md`): Use this skill to manage email infrastructure, check the mail server status, and configure SMTP2GO or Mailcow environments.
 - **frontend-design** (`.agent/skills/frontend-design/SKILL.md`): Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one. Helps with aesthetic direction, typography, and making choices that don't read as templated defaults.
+- **generator** (`.agent/skills/generator/SKILL.md`): Use this skill when working on the AI theme/skin generation pipeline (compile-theme.mjs, the Director→CSS/layout fan-out→render-audit review board→promotion flow), the static site builder (build-site.mjs), or design/skin promotion. Not for the one-off scripts/gen-*.mjs branding scripts (those are dead/historical, see Gotchas). MANDATORY: read the full SKILL.md before executing.
 - **marketing** (`.agent/skills/marketing/SKILL.md`): Use this skill for marketing workflows, drip campaigns, emails, lead generation, and messaging.
 - **portfolio-project-management** (`.agent/skills/portfolio-project-management/SKILL.md`): portfolio-site-specific project management overlay. Use alongside the global project-management skill when managing portfolio-site GitHub issues, pull requests, or project tracker checklists. Defines the SSSS vault architecture reminders and repo context. Do NOT use for code implementation. MANDATORY: You MUST read the full SKILL.md file before executing.
+- **project-management** (`.agent/skills/project-management/SKILL.md`): Use this skill when managing project documentation, GitHub issues, pull requests, and project tracker checklists in ANY repository. Defines the universal 4-file (PRD/ARCHITECTURE/DEVELOPMENT_PLAN/PROJECT_TRACKER) Kanban documentation system shared across all repos. Do NOT use for code implementation. MANDATORY: You MUST read the full SKILL.md file before executing.
+- **push** (`.agent/skills/push/SKILL.md`): Use this skill when the user triggers the /push command to run the pre-push quality gates, build, commit, and sync main — then hand off to /deploy for the droplet.
+- **security** (`.agent/skills/security/SKILL.md`): Use this skill when performing security audits, reviewing code for vulnerabilities, hardening APIs, or establishing security practices. Trigger on: 'security audit', 'vulnerability', 'path traversal', 'command injection', 'XSS', 'CSRF', 'auth bypass', 'secret management', 'token rotation', 'hardening'. MANDATORY: You MUST read the full SKILL.md file before executing.
+- **skill-creator** (`.agent/skills/skill-creator/SKILL.md`): Use this skill when creating a new agent skill, auditing or validating existing skills in .agent/skills/, or bringing a skill up to the required format (SKILL.md + scripts/ + references/ + subagents/ + hooks/ + evals/). MANDATORY: read the full SKILL.md before executing.
+- **test** (`.agent/skills/test/SKILL.md`): Use this skill when running or reasoning about this repo's test suite (npm test), understanding what a given test file actually covers, checking npm run validate vs npm test, or identifying untested scripts/lib files. MANDATORY: read the full SKILL.md before executing.
 - **total-recall** (`.agent/skills/total-recall/SKILL.md`): Use this skill as the master guide to understand the entire Total Recall Sovereign AI OS setup, VFS topologies, SSSS protocol, CLI parameter reference, troubleshooting, and automated upstream repository sync. MANDATORY: Read this file before attempting major setup modifications or diagnoses.
+- **webmail** (`.agent/skills/webmail/SKILL.md`): Use this skill when working on the custom mail.gregiteen.xyz webmail CRM (IMAP/SMTP inbox UI, login/compose/send, the /crm admin panel), or the Mailcow mailbox password sync. Distinct from the email skill (SMTP2GO transactional sending + Mailcow domain admin) — this skill covers direct Dovecot/Postfix IMAP access. MANDATORY: read the full SKILL.md before executing.
 <!-- END INJECTED ACTIVE DIRECTIVES -->
