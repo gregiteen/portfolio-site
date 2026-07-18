@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Admin — Greg Iteen</title>
 <meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/gi-logo.png" type="image/png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -310,15 +311,16 @@ tr:hover td{background:var(--surface);color:var(--white)}
     <!-- SETTINGS -->
     <div class="page" id="page-settings" style="display:none">
       <h1 class="page-title">Settings</h1>
+      <form id="settingsForm" onsubmit="event.preventDefault(); saveSettings();">
       <div class="settings-group">
         <h3>AI Configuration</h3>
         <div class="field">
           <label for="settingApiKey">Google API Key</label>
-          <input type="password" id="settingApiKey" placeholder="••••••••••••••••••">
+          <input type="password" id="settingApiKey" name="api_key" autocomplete="off" placeholder="••••••••••••••••••">
         </div>
         <div class="field">
           <label for="settingModel">Default Model</label>
-          <select id="settingModel">
+          <select id="settingModel" name="model">
             <option value="gemini-3.5-flash">Gemini 3.5 Flash (fast)</option>
             <option value="gemini-3.1-pro">Gemini 3.1 Pro</option>
             <option value="gemini-3.5-pro">Gemini 3.5 Pro (highest quality)</option>
@@ -373,8 +375,9 @@ tr:hover td{background:var(--surface);color:var(--white)}
         </div>
       </div>
       <div class="btn-row">
-        <button class="btn" onclick="saveSettings()">Save Settings</button>
+        <button type="submit" class="btn">Save Settings</button>
       </div>
+      </form>
     </div>
 
     <!-- LOGS -->
@@ -505,7 +508,7 @@ async function loadWebmail() {
       `}).join('');
     }
   } catch (e) {
-    container.innerHTML = \`<div class="empty">Failed to load webmail: \${e.message}</div>\`;
+    container.innerHTML = `<div class="empty">Failed to load webmail: ${e.message}</div>`;
   }
   
   try {
