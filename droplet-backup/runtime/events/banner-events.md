@@ -2,7 +2,7 @@
 type: "banner_event_log"
 title: "Banner Events"
 description: "Append-only log of CNA banner impressions/clicks for A/B analysis."
-timestamp: "2026-07-17T08:57:04.466Z"
+timestamp: "2026-07-18T06:59:40.298Z"
 ---
 # Banner Events
 
@@ -149,4 +149,29 @@ timestamp: "2026-07-17T08:57:04.466Z"
 - 2026-07-17T06:37:31.873Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
 - 2026-07-17T06:37:34.422Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
 - 2026-07-17T08:57:04.466Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-18T06:55:21.517Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-18T06:55:34.797Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-18T06:55:48.776Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-18T06:55:54.028Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-18T06:56:12.034Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-18T06:56:40.489Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-18T06:57:00.607Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-18T06:57:32.386Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-18T06:57:53.045Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-18T06:57:58.209Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-18T06:58:07.652Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-18T06:58:18.372Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-18T06:58:24.195Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-18T06:58:48.302Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-18T06:58:58.749Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-18T06:59:02.645Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-18T06:59:11.196Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-18T06:59:14.042Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-18T06:59:17.162Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-18T06:59:20.500Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-18T06:59:23.471Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-18T06:59:25.545Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-18T06:59:28.234Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-18T06:59:31.082Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-18T06:59:40.298Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
 
