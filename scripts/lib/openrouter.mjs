@@ -26,7 +26,7 @@ export function buildOpenRouterBody({
   messages,
   schema = null,
   maxTokens = 32_768,
-  reasoningEffort = 'xhigh',
+  reasoningEffort = 'low',
 }) {
   const body = {
     model,
@@ -153,7 +153,7 @@ export async function callOpenRouter({
   model = DEEPSEEK_REPAIR_MODEL,
   schema = null,
   maxTokens = 32_768,
-  reasoningEffort = 'xhigh',
+  reasoningEffort = 'low',
   apiKey = null,
   requestRetries = 2,
 }) {

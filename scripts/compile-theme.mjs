@@ -303,7 +303,10 @@ async function deepSeekText(userPrompt, schema = null, maxOutputTokens = 32768, 
         prompt: userPrompt,
         schema,
         maxTokens: maxOutputTokens,
-        reasoningEffort: 'xhigh',
+        // xhigh consumes about 95% of max_tokens as hidden reasoning, leaving
+        // too little room for the actual CSS/layout JSON and taking many
+        // minutes per specialist. Low still reasons while preserving output.
+        reasoningEffort: 'low',
       });
       console.log(`  → OpenRouter ${DEEPSEEK_REPAIR_MODEL} ${label} response (${Math.round(raw.length / 1024)}KB)`);
       return raw;

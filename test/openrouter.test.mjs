@@ -27,7 +27,7 @@ test('OpenRouter normalizes Gemini-style schema type casing recursively', () => 
   });
 });
 
-test('repair requests target DeepSeek V4 Pro with xhigh reasoning and structured output', () => {
+test('repair requests target DeepSeek V4 Pro with bounded reasoning and structured output', () => {
   const messages = [{ role: 'user', content: 'repair this candidate' }];
   const body = buildOpenRouterBody({
     model: DEEPSEEK_REPAIR_MODEL,
@@ -37,12 +37,12 @@ test('repair requests target DeepSeek V4 Pro with xhigh reasoning and structured
       properties: { css: { type: 'STRING' } },
       required: ['css'],
     },
-    reasoningEffort: 'xhigh',
+    reasoningEffort: 'low',
   });
 
   assert.equal(body.model, 'deepseek/deepseek-v4-pro');
   assert.equal(body.messages, messages);
-  assert.deepEqual(body.reasoning, { effort: 'xhigh', exclude: true });
+  assert.deepEqual(body.reasoning, { effort: 'low', exclude: true });
   assert.equal(body.response_format.type, 'json_schema');
   assert.equal(body.response_format.json_schema.schema.type, 'object');
   assert.equal(body.response_format.json_schema.schema.properties.css.type, 'string');

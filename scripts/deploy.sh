@@ -28,8 +28,8 @@ rsync -avz --delete \
 # leave production executing an older package version than package-lock.json.
 echo "📦 Installing locked production dependencies..."
 if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 root@138.197.199.217 \
-  "cd /opt/portfolio-site && npm ci --include=dev --no-audit --no-fund"; then
-  echo "❌ CRITICAL: Production dependency install failed!"
+  "cd /opt/portfolio-site && npm ci --include=dev --no-audit --no-fund && npm run build"; then
+  echo "❌ CRITICAL: Production dependency install or build failed!"
   exit 1
 fi
 
