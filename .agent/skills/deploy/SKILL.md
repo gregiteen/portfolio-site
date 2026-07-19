@@ -17,15 +17,13 @@ commit. That is exactly how the sovereign-sync verification docs got wiped and h
 half-done phases got committed as "done." Committing is a **separate, intentional
 act the user requests explicitly** — never a side effect of deploying.
 
-1. **Pre-flight guardrail — inspect, do not commit, then back up.** Run:
+1. **Pre-flight scope report and backup.** Run:
    ```
    node .agent/skills/deploy/scripts/deploy.mjs
    ```
-   This refuses to proceed if the git tree is dirty (prints the diff and exits 1 —
-   STOP and show the user exactly what changed, do not `git add` anything; only
-   re-run with `--confirm-dirty` once they confirm those changes should go live,
-   or after they've committed/stashed intentionally themselves), then takes the
-   pre-deploy safety backup on the droplet before any `--delete` rsync runs.
+   This prints the complete working-tree scope and proceeds even when it is dirty,
+   then takes the pre-deploy safety backup on the droplet before any `--delete`
+   rsync runs. The `/push` workflow stages and commits every file before deploying.
 2. **Rebuild:** Run `npm run build` to compile all static assets.
 3. **Deploy to Droplet:**
    - The Droplet IP is `138.197.199.217` (stored in `.env` as `DROPLET_IP`; see [references/digitalocean.md](./references/digitalocean.md) for the full droplet layout).

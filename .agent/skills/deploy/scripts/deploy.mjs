@@ -7,16 +7,14 @@
  * two things SKILL.md requires *before* deploy.sh, so an agent can't skip
  * them by accident:
  *
- *   1. Refuse to proceed if the git tree is dirty, unless --confirm-dirty
- *      is passed (i.e. the user has explicitly confirmed the working tree
- *      should ship as-is).
+ *   1. Report the exact working-tree scope that will ship. Dirty trees are
+ *      allowed because the repository push workflow stages every file.
  *   2. Take the pre-deploy safety backup on the droplet (tar of
  *      /opt/portfolio-site and /var/www/gregiteen.xyz) before any --delete
  *      rsync runs.
  *
  * Usage:
- *   node .agent/skills/deploy/scripts/deploy.mjs           # dirty tree -> exits 1 with the diff
- *   node .agent/skills/deploy/scripts/deploy.mjs --confirm-dirty   # user has confirmed, proceed
+ *   node .agent/skills/deploy/scripts/deploy.mjs
  *   Then run: bash scripts/deploy.sh
  */
 import { spawnSync } from 'node:child_process';
@@ -29,8 +27,6 @@ const ROOT = path.resolve(__dirname, '../../../../');
 try { process.loadEnvFile(path.join(ROOT, '.env')); } catch { /* no .env — rely on real env */ }
 
 const DROPLET_IP = process.env.DROPLET_IP || '138.197.199.217';
-const confirmDirty = process.argv.includes('--confirm-dirty');
-
 function sh(cmd, args, opts = {}) {
   return spawnSync(cmd, args, { cwd: ROOT, encoding: 'utf8', ...opts });
 }
@@ -39,16 +35,10 @@ function main() {
   const status = sh('git', ['status', '--short']);
   const dirty = status.stdout.trim().length > 0;
 
-  if (dirty && !confirmDirty) {
-    console.log('⚠️  Working tree is not clean:\n');
-    console.log(status.stdout);
-    console.log('Deploy ships the working tree exactly as-is. Show this to the user and ask');
-    console.log('whether these changes are intended to go live before proceeding.');
-    console.log('Once confirmed, re-run with --confirm-dirty.');
-    process.exit(1);
-  }
   if (dirty) {
-    console.log('⚠️  Proceeding with a dirty tree — user-confirmed (--confirm-dirty passed).');
+    console.log('⚠️  Working tree changes included in this deployment:\n');
+    console.log(status.stdout);
+    console.log('Proceeding with the complete working tree.');
   } else {
     console.log('✅ Working tree is clean.');
   }

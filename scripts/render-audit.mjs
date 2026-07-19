@@ -24,12 +24,14 @@ import { fileURLToPath } from 'node:url';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
-import https from 'node:https';
 import { LAYOUT_SPECS, extractJson } from './lib/theme.mjs';
+import {
+  CLAUDE_VISION_MODEL,
+  callOpenRouter,
+} from './lib/openrouter.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_BASE_URL = process.env.RENDER_AUDIT_BASE_URL || 'http://127.0.0.1:4173';
-const AUDIT_MODEL = 'gemini-3.1-pro-preview';
 
 const RENDER_AUDIT_SCHEMA = {
   type: 'OBJECT',
@@ -55,43 +57,23 @@ const RENDER_AUDIT_SCHEMA = {
   required: ['approved', 'score', 'prompt_fidelity', 'distinctiveness', 'cohesion', 'issues'],
 };
 
-function geminiVision(parts) {
-  return new Promise((resolve, reject) => {
-    const key = process.env.GOOGLE_API_KEY || '';
-    if (!key) return reject(new Error('GOOGLE_API_KEY not set'));
-    const body = JSON.stringify({
-      contents: [{ parts }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: RENDER_AUDIT_SCHEMA,
-        maxOutputTokens: 16384,
-        thinkingConfig: { thinkingBudget: 8192 },
-      },
-    });
-    const req = https.request({
-      hostname: 'generativelanguage.googleapis.com',
-      path: `/v1beta/models/${AUDIT_MODEL}:generateContent?key=${key}`,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-    }, (res) => {
-      let data = '';
-      res.on('data', (chunk) => data += chunk);
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          if (!json.candidates?.[0]?.content?.parts) {
-            return reject(new Error(`Gemini API error: ${data.slice(0, 300)}`));
-          }
-          resolve(json.candidates[0].content.parts.map((p) => p.text || '').join(''));
-        } catch (/** @type {any} */ e) {
-          reject(new Error(`Failed to parse Gemini response: ${String(e)}`));
-        }
-      });
-    });
-    req.on('error', reject);
-    req.setTimeout(300_000, () => { req.destroy(); reject(new Error('Gemini API timeout')); });
-    req.write(body);
-    req.end();
+async function openRouterVision(parts) {
+  const content = parts.map((part) => {
+    if (typeof part?.text === 'string') return { type: 'text', text: part.text };
+    if (part?.inlineData?.data) {
+      return {
+        type: 'image_url',
+        image_url: { url: `data:${part.inlineData.mimeType || 'image/jpeg'};base64,${part.inlineData.data}` },
+      };
+    }
+    throw new Error('Unsupported render-audit content part');
+  });
+  return callOpenRouter({
+    model: process.env.OPENROUTER_VISION_MODEL || CLAUDE_VISION_MODEL,
+    content,
+    schema: RENDER_AUDIT_SCHEMA,
+    maxTokens: 16384,
+    reasoningEffort: 'high',
   });
 }
 
@@ -243,13 +225,8 @@ OUTPUT: exactly one JSON object: { "approved": true, "score": 9, "prompt_fidelit
     parts.push({ text: `Screenshot: ${label}` }, { inlineData: { mimeType: 'image/jpeg', data: buf.toString('base64') } });
   }
 
-  const audit = extractJson(await geminiVision(parts));
+  const audit = extractJson(await openRouterVision(parts));
   if (!Array.isArray(audit.issues)) audit.issues = [];
-  // Hand the evidence to the caller: repair models are multimodal too, and a
-  // blind repair loop has been observed to stall (3 blocking issues unchanged
-  // across 3 passes) because a textual defect description is not actionable
-  // without the pixels.
-  audit.screenshots = shots.map(([label, buf]) => [label, buf.toString('base64')]);
   return audit;
 }
 

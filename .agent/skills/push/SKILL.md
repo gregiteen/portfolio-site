@@ -17,9 +17,9 @@ Execute this sequence:
    ```
    This runs, in order: the `code-quality` syntax scan, `npm run validate` (SSSS conformance), `npm test`, then `npm run build`. It stops at the first failure. Fix whatever it reports before continuing — see the `code-quality` skill for how to resolve each gate's failures. Do not run `tsc`, `eslint`, or any raw equivalent directly; they don't exist in this repo (see `code-quality`).
 
-3. **Commit.** Stage and commit with a real, descriptive message (not a fixed generic string) that summarizes what's actually in the diff — follow the same commit-message discipline as any other commit in this repo (why, not just what; 1-2 sentences). Example:
+3. **Commit the complete tree.** Stage every modification, deletion, and new file, then commit with a real, descriptive message (not a fixed generic string) that summarizes what's actually in the diff — follow the same commit-message discipline as any other commit in this repo (why, not just what; 1-2 sentences). Example:
    ```bash
-   git add .
+   git add -A
    git commit -m "$(cat <<'EOF'
    <one-line summary of what this push actually contains>
 

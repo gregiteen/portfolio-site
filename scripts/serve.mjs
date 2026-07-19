@@ -16,6 +16,7 @@ import Stripe from 'stripe';
 // commas, then throws on total failure (callers wrap in try/catch → fallback).
 // Bare JSON.parse fails on fenced output, which the models emit constantly.
 import { extractJson } from './lib/theme.mjs';
+import { generationRetryDecision } from './lib/theme-release.mjs';
 import { buildLetterheadPdf, SIGNATURE_FIELD } from './lib/letterhead.mjs';
 import { createSigningRequest, signingStatusForEvent, verifyWebhookSecret, startDocumensoPoller } from './lib/documenso.mjs';
 import { advanceDripState, createUnsubscribeToken, enrollInCampaign, renderDripTemplate, verifyUnsubscribeToken } from './lib/drip.mjs';
@@ -250,10 +251,6 @@ function drainQueue() {
   if (next) startGeneration(next.prompt, next.email);
 }
 
-function retryDelay(attempt) {
-  return Math.min(60_000, 2_000 * (2 ** Math.min(Math.max(attempt - 1, 0), 5)));
-}
-
 function startGeneration(prompt, email = null, retry = null) {
   const runId = retry?.runId || randomBytes(8).toString('hex');
   const startedAt = retry?.startedAt || Date.now();
@@ -275,7 +272,7 @@ function startGeneration(prompt, email = null, retry = null) {
   // Argument array — the prompt never touches a shell.
   const child = spawn(process.execPath, [compileScript, prompt], {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: serializedThemeEnv,
+    env: { ...serializedThemeEnv, GENERATION_ATTEMPT: String(attempt) },
   });
   let stderrTail = '';
   let genSlug = null; // captured from compile-theme's "→ designs/<slug>" line
@@ -283,20 +280,25 @@ function startGeneration(prompt, email = null, retry = null) {
   const fail = (reason) => {
     if (settled) return;
     settled = true;
-    const detail = String(reason).slice(0, 300);
+    const detail = String(reason).replace(/^\[Failed\]\s*/, '').slice(0, 300);
+    const decision = generationRetryDecision(attempt, detail);
 
-    if (attempt >= 3) {
+    if (!decision.retry) {
       genJob.status = 'error';
       genJob.error = detail;
-      genJob.phase = 'Failed after 3 attempts. Please try again later.';
+      genJob.finishedAt = Date.now();
+      genJob.phase = decision.exhausted
+        ? 'Failed after ' + attempt + ' attempts: ' + detail
+        : 'Stopped after attempt ' + attempt + ': ' + detail;
       console.error(`[Generator] Attempt ${attempt} failed permanently: ${detail}`);
-      appendRun({ run_id: runId, prompt, status: 'error', startedAt, finishedAt: Date.now(), error: detail, attempt }).catch((e) => {
+      appendRun({ run_id: runId, prompt, status: 'error', startedAt, finishedAt: genJob.finishedAt, error: detail, attempt }).catch((e) => {
         console.error('[Runtime] Failed to persist generation error:', e.message);
       });
+      drainQueue();
       return;
     }
 
-    const delay = retryDelay(attempt);
+    const delay = decision.delayMs;
     genJob.status = 'running';
     genJob.error = detail;
     genJob.phase = `Recovering from a transient studio error; retrying in ${Math.ceil(delay / 1000)} seconds…`;
@@ -323,13 +325,13 @@ function startGeneration(prompt, email = null, retry = null) {
     if (detail) console.error(`[Generator] ${detail}`);
   });
   child.on('error', (err) => {
-    retryGeneration(err instanceof Error ? err.message : String(err));
+    fail(err instanceof Error ? err.message : String(err));
   });
   child.on('close', (code) => {
     if (settled) return;
     if (code === 0) {
       settled = true;
-      // compile-theme owns planning, screenshot review, bounded repair, and
+      // compile-theme owns planning, screenshot review, same-candidate repair, and
       // atomic publication. Never mutate an approved design with the legacy
       // source-only improver after that release decision.
       genJob.status = 'done';
@@ -348,7 +350,7 @@ function startGeneration(prompt, email = null, retry = null) {
       rebuild('generated theme');
       drainQueue();
     } else {
-      retryGeneration((stderrTail.trim().split('\n').pop() || `generator exited with code ${code}`).slice(0, 300));
+      fail((stderrTail.trim().split('\n').pop() || `generator exited with code ${code}`).slice(0, 300));
     }
   });
 }

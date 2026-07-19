@@ -26,10 +26,17 @@ import {
 } from './lib/theme.mjs';
 import {
   generationRetryDelay,
+  repairUntilApproved,
   renderedReviewState,
   requireApprovedVisualAudit,
   requireValidTheme,
 } from './lib/theme-release.mjs';
+import {
+  CLAUDE_VISION_MODEL,
+  DEEPSEEK_REPAIR_MODEL,
+  callOpenRouter,
+  isRetryableOpenRouterError,
+} from './lib/openrouter.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, '..');
@@ -38,7 +45,7 @@ const assetsDir = join(repoRoot, 'assets');
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
 let activeStagingRoot = null;
 
-// Response schemas for constrained decoding (see geminiText). Since the build
+// Response schemas for constrained decoding. Since the build
 // fans out into per-section CSS + per-layout specialists, each call returns one
 // small typed object — no monolithic full-payload schema is needed anymore.
 const ONE_LAYOUT_SCHEMA = {
@@ -240,7 +247,9 @@ function executeAgentCall(userPrompt) {
   throw new Error(lastError ? `All CLI agents failed. Last error: ${lastError}` : 'No CLI agents available.');
 }
 
-// ─── Gemini API (direct, no CLI overhead) ───────────────────────────────────
+// ─── Image synthesis API ────────────────────────────────────────────────────
+// Text planning, generation, review, and repair all use OpenRouter below.
+// This direct endpoint remains only for the image models that create pixels.
 
 function geminiApiCall(model, bodyObj) {
   return new Promise((resolve, reject) => {
@@ -286,50 +295,54 @@ function geminiApiCall(model, bodyObj) {
   });
 }
 
-async function geminiText(userPrompt, schema = null, maxOutputTokens = 65536, thinkingBudget = null, model = (process.env.DEFAULT_MODEL || 'gemini-3.5-flash'), allowNoThinkingRetry = true) {
-  // maxOutputTokens bounds thinking + output. It is per-call: specialist slots
-  // use a bounded ceiling so a flaky response cannot hold the parallel build.
-  const generationConfig = { responseMimeType: 'application/json', maxOutputTokens };
-  // Thinking tokens count against maxOutputTokens, so reserve room for the
-  // response while allowing the caller to choose the right reasoning depth.
-  // Gemini rejects a thinking budget larger than the call's total token cap.
-  // The planning director explicitly receives the larger Pro budget below;
-  // all other callers get a safe default that leaves room for structured output.
-  generationConfig.thinkingConfig = {
-    thinkingBudget: thinkingBudget ?? Math.min(8192, Math.max(0, maxOutputTokens - 1024)),
-  };
-  // A strict responseSchema puts Gemini into constrained decoding, which emits
-  // valid, properly-escaped JSON — the durable fix for the bad-escape failures
-  // that made theme generation die ~half the time (a `\` inside a CSS/HTML
-  // string value would break the whole payload).
-  if (schema) generationConfig.responseSchema = schema;
-  const request = { contents: [{ parts: [{ text: userPrompt }] }], generationConfig };
-  let parts;
-  try {
-    parts = await geminiApiCall(model, request);
-  } catch (err) {
-    const msg = String(err);
-    if (allowNoThinkingRetry && msg.includes('MAX_TOKENS') && generationConfig.thinkingConfig.thinkingBudget !== 0) {
-      // Specialists may retry without thinking if a constrained response reaches
-      // its shared cap. The planning director is deliberately excluded: it must
-      // never silently trade reasoning quality for speed.
-      console.warn('  ⚠ Gemini reached its thinking/output cap; retrying this structured call without thinking.');
-      parts = await geminiApiCall(model, {
-        ...request,
-        generationConfig: { ...generationConfig, thinkingConfig: { thinkingBudget: 0 } },
+async function deepSeekText(userPrompt, schema = null, maxOutputTokens = 32768, label = 'design') {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const raw = await callOpenRouter({
+        model: DEEPSEEK_REPAIR_MODEL,
+        prompt: userPrompt,
+        schema,
+        maxTokens: maxOutputTokens,
+        reasoningEffort: 'xhigh',
       });
-    } else if (/timeout|UNAVAILABLE|RESOURCE_EXHAUSTED|overloaded|"code":\s*(429|5\d\d)/i.test(msg)) {
-      // One retry for transient infra failures. A generation is a ~25-call
-      // chain over several minutes; without this, a single flaky request
-      // kills the whole build (seen live: one 300s timeout in a repair call
-      // discarded an otherwise-complete theme).
-      console.warn(`  ⚠ Transient Gemini failure (${msg.slice(0, 100)}); retrying this call once…`);
-      parts = await geminiApiCall(model, request);
-    } else {
-      throw err;
+      console.log(`  → OpenRouter ${DEEPSEEK_REPAIR_MODEL} ${label} response (${Math.round(raw.length / 1024)}KB)`);
+      return raw;
+    } catch (error) {
+      if (!isRetryableOpenRouterError(error)) throw error;
+      const delay = generationRetryDelay(attempt);
+      console.warn(`  ⚠ OpenRouter ${label} request failed transiently; retrying the same candidate in ${Math.ceil(delay / 1000)}s…`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
-  return parts.map(p => p.text || '').join('');
+}
+
+async function openRouterVision(parts, schema, label = 'visual review') {
+  const content = parts.map((part) => {
+    if (typeof part?.text === 'string') return { type: 'text', text: part.text };
+    if (part?.inlineData?.data) {
+      return {
+        type: 'image_url',
+        image_url: { url: `data:${part.inlineData.mimeType || 'image/jpeg'};base64,${part.inlineData.data}` },
+      };
+    }
+    throw new Error(`Unsupported ${label} content part`);
+  });
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await callOpenRouter({
+        model: CLAUDE_VISION_MODEL,
+        content,
+        schema,
+        maxTokens: 16384,
+        reasoningEffort: 'high',
+      });
+    } catch (error) {
+      if (!isRetryableOpenRouterError(error)) throw error;
+      const delay = generationRetryDelay(attempt);
+      console.warn(`  ⚠ OpenRouter ${label} failed transiently; retrying in ${Math.ceil(delay / 1000)}s…`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
 }
 
 // Logo/favicon stay on the full image model — it renders small legible text
@@ -485,19 +498,15 @@ ABSOLUTE SYSTEM RULE - STRICT AESTHETIC PROHIBITIONS:
 
 Execute this creative vision using the high-end mechanics from the Technical Toolkit. You are the Orchestrator; explicitly dictate WHICH mechanics will execute this creative springboard flawlessly.`;
 
-  async function callAgent(p, schema = null, maxOutputTokens = 16384, thinkingBudget = null, model = (process.env.DEFAULT_MODEL || 'gemini-3.5-flash'), allowNoThinkingRetry = true) {
-    if (GOOGLE_API_KEY) {
-      try {
-        const raw = await geminiText(p, schema, maxOutputTokens, thinkingBudget, model, allowNoThinkingRetry);
-        console.log(`  → API response (${Math.round(raw.length / 1024)}KB)`);
-        return raw;
-      } catch (err) {
-        console.error('Gemini call failed:', String(err));
-        if (process.env.ALLOW_CLI_THEME_FALLBACK !== '1') throw err;
-        console.warn('  ⚠ ALLOW_CLI_THEME_FALLBACK=1; attempting a local CLI agent.');
-      }
+  async function callAgent(p, schema = null, maxOutputTokens = 16384) {
+    try {
+      return await deepSeekText(p, schema, maxOutputTokens, 'generation');
+    } catch (err) {
+      console.error('OpenRouter DeepSeek call failed:', String(err));
+      if (process.env.ALLOW_CLI_THEME_FALLBACK !== '1') throw err;
+      console.warn('  ⚠ ALLOW_CLI_THEME_FALLBACK=1; attempting a local CLI agent.');
+      return executeAgentCall(p);
     }
-    return executeAgentCall(p);
   }
 
   console.log('  → Art Director: explore, critique, select, and lock the Design Constitution');
@@ -743,8 +752,9 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
 
   // The structural validator is deliberately stricter than an LLM: it catches
   // unbalanced markup, missing placeholders, and visible invented copy before
-  // any source document is written. Feed those concrete findings back to only
-  // the failing slot once, then run the same fail-closed gate again.
+  // any source document is written. Keep repairing the same candidate until
+  // the deterministic gate accepts it; validation rejection never starts a
+  // new design attempt.
   const repairStructuralViolations = async (candidate) => {
     // Keep the source contract absolute: a layout may carry data placeholders,
     // but model-authored words are never allowed to ship. Preserve placeholders
@@ -755,7 +765,7 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
       return /[A-Za-z0-9]/.test(remainder) ? `>${placeholders.join('')}<` : whole;
     });
 
-    for (let pass = 1; pass <= 2; pass++) {
+    for (let pass = 1; ; pass++) {
       for (const [key, html] of Object.entries(candidate.layouts || {})) {
         if (typeof html === 'string') candidate.layouts[key] = stripHardcodedTextNodes(html);
       }
@@ -765,7 +775,7 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
         requireHero: true,
         requireClassBindings: true,
         requireFontImport: true,
-      requireBrandLogo: true,
+        requireBrandLogo: true,
         requiredLayoutClasses,
       });
       if (verdict.theme) return;
@@ -779,8 +789,7 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
         }
       }
       if (!issuesByTarget.size) {
-        console.warn(`[Structural gate] Could not isolate a repair target: ${verdict.errors.join('; ')}. This attempt will be rejected and regenerated.`);
-        break;
+        issuesByTarget.set('css', verdict.errors);
       }
       
       try {
@@ -799,18 +808,15 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
             required: ["id", "symptom", "detector", "repair"]
           }
         };
-        const rawLearn = await geminiApiCall((process.env.DEFAULT_MODEL || 'gemini-3.5-flash'), {
-          contents: [{ parts: [{ text: `You are a meta-learning system managing the global pitfalls database for a UI generator.\n\nCURRENT PITFALLS:\n${currentPitfalls}\n\nThe generator just made the following HTML/CSS structural mistakes (missing placeholders, bad tags):\n${verdict.errors.join('\n')}\n\nREWRITE the entire pitfalls array. Incorporate a new rule for these failures, or modify an existing rule if it overlaps. Consolidate and rewrite the entire array to keep it concise, comprehensive, and perfectly accurate. Output the full JSON array.` }] }],
-          generationConfig: { responseMimeType: 'application/json', responseSchema: LEARNING_SCHEMA }
-        });
-        const rewrittenPitfalls = JSON.parse(rawLearn.map(p => p.text || '').join(''));
+        const rawLearn = await deepSeekText(`You are a meta-learning system managing the global pitfalls database for a UI generator.\n\nCURRENT PITFALLS:\n${currentPitfalls}\n\nThe generator just made the following HTML/CSS structural mistakes (missing placeholders, bad tags):\n${verdict.errors.join('\n')}\n\nREWRITE the entire pitfalls array. Incorporate a new rule for these failures, or modify an existing rule if it overlaps. Consolidate and rewrite the entire array to keep it concise, comprehensive, and perfectly accurate. Output the full JSON array.`, LEARNING_SCHEMA, 16384, 'structural learning');
+        const rewrittenPitfalls = JSON.parse(rawLearn);
         await writeFile(pitfallsPath, JSON.stringify(rewrittenPitfalls, null, 2), 'utf8');
         console.warn(`[Learning] Completely rewrote pitfalls.json based on structural mistakes (pass ${pass}). Now contains ${rewrittenPitfalls.length} rules.`);
       } catch (e) {
         console.warn(`[Learning Error] Failed to write to pitfalls.json:`, e);
       }
 
-      console.log(`  → Structural validation pass ${pass}/2 found ${issuesByTarget.size} repair target(s); repairing before review…`);
+      console.log(`  → Structural validation pass ${pass} found ${issuesByTarget.size} repair target(s); repairing the same candidate…`);
       const repairs = await Promise.all([...issuesByTarget.entries()].map(async ([target, issues]) => {
       const critique = issues.map((issue) => `- ${issue}`).join('\n');
       if (target === 'css') {
@@ -856,44 +862,6 @@ OUTPUT: exactly one JSON object: { "html": "complete repaired ${target} fragment
         else candidate.layouts[repair.target] = repair.value;
       }
     }
-    const finalVerdict = validateThemePayload(candidate, {
-      strict: true,
-      requireAllLayouts: true,
-      requireHero: true,
-      requireClassBindings: true,
-      requireFontImport: true,
-      requireBrandLogo: true,
-      requiredLayoutClasses,
-    });
-    if (finalVerdict.theme) return;
-    console.warn(`[Release Gate] Structural repair exhausted: ${finalVerdict.errors.join('; ')}`);
-    try {
-      const pitfallsPath = join(__dirname, 'lib', 'pitfalls.json');
-      const currentPitfalls = await readFile(pitfallsPath, 'utf8');
-      const LEARNING_SCHEMA = {
-        type: "ARRAY",
-        items: {
-          type: "OBJECT",
-          properties: {
-            id: { type: "STRING" },
-            symptom: { type: "STRING" },
-            detector: { type: "STRING" },
-            repair: { type: "STRING" }
-          },
-          required: ["id", "symptom", "detector", "repair"]
-        }
-      };
-      const rawLearn = await geminiApiCall((process.env.DEFAULT_MODEL || 'gemini-3.5-flash'), {
-        contents: [{ parts: [{ text: `You are a meta-learning system managing the global pitfalls database for a UI generator.\n\nCURRENT PITFALLS:\n${currentPitfalls}\n\nThe generator just failed the structural release gate with the following HTML layout issues:\n${finalVerdict.errors.join('\n')}\n\nREWRITE the entire pitfalls array. Incorporate a new rule for these failures, or modify an existing rule if it overlaps. Consolidate and rewrite the entire array to keep it concise, comprehensive, and perfectly accurate. Output the full JSON array.` }] }],
-        generationConfig: { responseMimeType: 'application/json', responseSchema: LEARNING_SCHEMA }
-      });
-      const rewrittenPitfalls = JSON.parse(rawLearn.map(p => p.text || '').join(''));
-      await writeFile(pitfallsPath, JSON.stringify(rewrittenPitfalls, null, 2), 'utf8');
-      console.warn(`[Learning] Completely rewrote pitfalls.json based on structural failure. Now contains ${rewrittenPitfalls.length} rules.`);
-    } catch (e) {
-      console.warn(`[Learning Error] Failed to write to pitfalls.json:`, e);
-    }
-    requireValidTheme(finalVerdict, 'Structural repair');
   };
 
   const auditForRelease = async (candidate, label) => {
@@ -957,20 +925,15 @@ OUTPUT: exactly one JSON object: { "approved": true, "issues": [] }`,
       }
       visualAuditParts.push({ text: `Image: ${label}` }, { inlineData: { mimeType, data: data.toString('base64') } });
     }
-    const visualParts = await geminiApiCall((process.env.DEFAULT_MODEL || 'gemini-3.1-pro'), {
-      contents: [{ parts: visualAuditParts }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: VISUAL_ASSET_AUDIT_SCHEMA,
-        maxOutputTokens: 16384,
-        thinkingConfig: { thinkingBudget: 8192 },
-      },
-    });
-    return extractJson(visualParts.map((part) => part.text || '').join(''));
+    return extractJson(await openRouterVision(
+      visualAuditParts,
+      VISUAL_ASSET_AUDIT_SCHEMA,
+      'asset review',
+    ));
   };
 
-  // Asset flow — wait for the generated images, audit them, regenerate any
-  // rejected asset once. Started here so it runs CONCURRENTLY with the first
+  // Asset flow — wait for the generated images, then keep repairing rejected
+  // assets on this candidate. Started here so it runs CONCURRENTLY with the first
   // review-board pass below instead of adding a serial vision round-trip.
   const IMAGE_LABELS = ['hero', 'logo', 'favicon', 'portrait'];
   const assetFlow = (async () => {
@@ -981,10 +944,15 @@ OUTPUT: exactly one JSON object: { "approved": true, "issues": [] }`,
       }
     }
     let visualAudit = await auditVisualAssets();
-    for (let correctionRound = 1; correctionRound <= 3 && !visualAudit.approved; correctionRound++) {
+    for (let correctionRound = 1; !visualAudit.approved; correctionRound++) {
       const issues = (visualAudit.issues || []).join('; ');
-      console.warn(`  ⚠ Visual asset review rejected (correction ${correctionRound}/3): ${issues}`);
+      console.warn(`  ⚠ Visual asset review rejected (correction ${correctionRound}): ${issues}`);
       const named = IMAGE_LABELS.filter((l) => issues.toLowerCase().includes(l));
+      if (correctionRound % 3 === 0) {
+        console.warn('  → Restoring verified brand marks before the next same-candidate asset review.');
+        if (!named.length || named.includes('logo')) await copyFile(logoSource, logoPath);
+        if (!named.length || named.includes('favicon')) await copyFile(faviconSource, faviconPath);
+      }
       const regen = named.length ? named : ['hero'];
       await Promise.allSettled(regen.map((asset) => {
         if (asset === 'hero') return withFallback(generateImage(`Subject: A visually explicit, recognizable editorial interpretation of the exact brief: "${prompt}".\nContext: Wide hero artwork for a premium portfolio website.\nStyle: ${planObj.image_prompts?.hero || planObj.imageTreatment || prompt}\n\nCRITICAL CORRECTIVE PASS: The Review Board rejected the previous generation for this exact reason: "${issues}". Fix it while keeping the requested subject clearly visible. Do not include text, watermarks, signatures, logos, interface overlays, or floating marks.`, heroPath, null, IMAGE_MODEL), heroFallback, heroPath);
@@ -992,14 +960,6 @@ OUTPUT: exactly one JSON object: { "approved": true, "issues": [] }`,
         if (asset === 'favicon') return withFallback(generateImage(`Subject: A single square app-icon glyph.\nContext: Favicon design, flat, perfectly centered, filling the square.\nStyle: ${logoPrompt}\n\nCRITICAL CORRECTIVE PASS: The Review Board rejected the previous generation for this exact reason: "${issues}". You MUST specifically address and fix this failure. The icon must clearly read exactly "GI" with perfect legibility. Do not add any extra words, mockups, or complex details that won't scale.`, faviconPath), faviconSource, faviconPath);
         return withFallback(generateImage(`Subject: Corrected editorial portrait of the supplied human with a recognizable "${prompt}" environment.\nStyle: ${portraitStyle}\n\nCRITICAL CORRECTIVE PASS: Fix this exact rejection: "${issues}". Preserve the person's face and likeness; correct all background anatomy and artifacts. Never transform the person into the requested subject.`, portraitPath, portraitSource, IMAGE_MODEL), portraitSource, portraitPath);
       }));
-      visualAudit = await auditVisualAssets();
-    }
-    if (!visualAudit.approved) {
-      const issues = (visualAudit.issues || []).join('; ');
-      const named = IMAGE_LABELS.filter((l) => issues.toLowerCase().includes(l));
-      console.warn(`  ⚠ Visual asset review still rejecting (${issues}) — replacing brand marks and re-auditing.`);
-      if (!named.length || named.includes('logo')) await copyFile(logoSource, logoPath);
-      if (!named.length || named.includes('favicon')) await copyFile(faviconSource, faviconPath);
       visualAudit = await auditVisualAssets();
     }
     requireApprovedVisualAudit(visualAudit);
@@ -1063,47 +1023,34 @@ ${blocks}
   };
   buildDesignLayer();
 
-  // ── Phase 5: Review board ── The source reviewer (pro, reads the ENTIRE
-  // css + every layout) and the rendered reviewer (vision model, reads real
-  // desktop + mobile screenshots of the built pages) run IN PARALLEL, and the
-  // asset audit joins the first pass. Their findings merge into one targeted
-  // repair pass; both reviewers must approve. Wall-clock per pass is the
-  // slowest reviewer, not the sum — this is what keeps a clean generation
-  // inside the ~2-minute budget while still gating on real pixels. Fail
-  // closed: any rejection or infra failure deletes everything unpublished.
-  console.log(`[5/5] Review board: source + rendered reviews in parallel…`);
+  // ── Phase 5: Review board ── Claude sees the rendered screenshots through
+  // OpenRouter. DeepSeek V4 Pro receives Claude's concrete findings plus the
+  // current source and repairs this exact candidate until it is approved.
+  console.log(`[5/5] Review board: rendered review + same-candidate repair loop…`);
   const { renderAudit } = await import('./render-audit.mjs');
   const allowedTargets = new Set(['css', ...Object.keys(LAYOUT_SPECS)]);
-  const maxRenderedReviewPasses = 3;
-  let renderedApproved = false;
   try {
-    for (let pass = 1; pass <= maxRenderedReviewPasses; pass++) {
-      const label = pass === 1 ? 'initial' : `repair ${pass - 1}`;
-      // Deterministic source validation already owns placeholders, DOM/CSS
-      // syntax, class linking, and constitution root classes. The old source
-      // LLM contradicted those facts (for example calling {{PREVIEW}}
-      // preformatted HTML and demanding forbidden dialog navigation), so the
-      // release decision now belongs to actual rendered evidence.
-      const [renderVerdict] = await Promise.all([
-        renderAudit(styleName, { siteRoot: reviewSiteRoot, brief: prompt, designPlan: plan }),
-        ...(pass === 1 ? [assetFlow] : []),
-      ]);
-      const renderState = renderedReviewState(renderVerdict);
-      const renderBlocking = renderState.blocking;
-      console.log(`  → Rendered review (${label}): ${renderState.score}/10 — ${renderState.approved ? 'approved' : 'repair required'} (${renderBlocking.length} blocking, ${renderState.issues.length - renderBlocking.length} minor)`);
-      for (const issue of renderState.issues) {
-        if (typeof issue?.target === 'string' && typeof issue?.issue === 'string') {
-          console.log(`    • [${issue.severity || 'blocking'}] ${issue.target}: ${issue.issue}`);
+    await repairUntilApproved(payload, {
+      review: async (_candidate, pass) => {
+        const label = pass === 1 ? 'initial' : `repair ${pass - 1}`;
+        const [renderVerdict] = await Promise.all([
+          renderAudit(styleName, { siteRoot: reviewSiteRoot, brief: prompt, designPlan: plan }),
+          ...(pass === 1 ? [assetFlow] : []),
+        ]);
+        const renderState = renderedReviewState(renderVerdict);
+        console.log(`  → Rendered review (${label}): ${renderState.score}/10 — ${renderState.approved ? 'approved' : 'repair required'} (${renderState.blocking.length} blocking, ${renderState.issues.length - renderState.blocking.length} minor)`);
+        for (const issue of renderState.issues) {
+          if (typeof issue?.target === 'string' && typeof issue?.issue === 'string') {
+            console.log(`    • [${issue.severity || 'blocking'}] ${issue.target}: ${issue.issue}`);
+          }
         }
-      }
-      if (renderState.approved) {
-        renderedApproved = true;
-        break;
-      }
-      if (pass === maxRenderedReviewPasses) {
-        throw new Error(`Rendered review rejected theme after ${pass} passes (${renderState.score}/10, ${renderBlocking.length} blocking issue(s))`);
-      }
-      if (renderBlocking.length > 0) {
+        return { ...renderState, renderVerdict };
+      },
+      repair: async (candidate, renderState, pass) => {
+        const repairIssues = renderState.blocking.length > 0
+          ? renderState.blocking
+          : renderState.issues;
+        if (repairIssues.length > 0) {
         try {
           const pitfallsPath = join(__dirname, 'lib', 'pitfalls.json');
           const currentPitfalls = await readFile(pitfallsPath, 'utf8');
@@ -1120,11 +1067,8 @@ ${blocks}
               required: ["id", "symptom", "detector", "repair"]
             }
           };
-          const rawLearn = await geminiApiCall((process.env.DEFAULT_MODEL || 'gemini-3.5-flash'), {
-            contents: [{ parts: [{ text: `You are a meta-learning system managing the global pitfalls database for a UI generator.\n\nCURRENT PITFALLS:\n${currentPitfalls}\n\nThe generator just failed the review board with the following blocking issues:\n${renderBlocking.map(i => i.issue).join('\n')}\n\nREWRITE the entire pitfalls array. Incorporate a new rule for these failures, or modify an existing rule if it overlaps. Consolidate and rewrite the entire array to keep it concise, comprehensive, and perfectly accurate. Output the full JSON array.` }] }],
-            generationConfig: { responseMimeType: 'application/json', responseSchema: LEARNING_SCHEMA }
-          });
-          const rewrittenPitfalls = JSON.parse(rawLearn.map(p => p.text || '').join(''));
+          const rawLearn = await deepSeekText(`You are a meta-learning system managing the global pitfalls database for a UI generator.\n\nCURRENT PITFALLS:\n${currentPitfalls}\n\nThe generator just failed the review board with the following issues:\n${repairIssues.map((issue) => issue.issue).join('\n')}\n\nREWRITE the entire pitfalls array. Incorporate a new rule for these failures, or modify an existing rule if it overlaps. Consolidate and rewrite the entire array to keep it concise, comprehensive, and perfectly accurate. Output the full JSON array.`, LEARNING_SCHEMA, 16384, 'review learning');
+          const rewrittenPitfalls = JSON.parse(rawLearn);
           await writeFile(pitfallsPath, JSON.stringify(rewrittenPitfalls, null, 2), 'utf8');
           console.warn(`[Learning] Completely rewrote pitfalls.json based on new failures. Now contains ${rewrittenPitfalls.length} rules.`);
         } catch (e) {
@@ -1132,8 +1076,8 @@ ${blocks}
         }
       }
 
-      const issuesByTarget = new Map();
-      for (const issue of renderBlocking) {
+        const issuesByTarget = new Map();
+        for (const issue of repairIssues) {
         const target = typeof issue?.target === 'string' ? issue.target : '';
         const detail = typeof issue?.issue === 'string' ? issue.issue.trim() : '';
         if (allowedTargets.has(target) && detail) {
@@ -1141,49 +1085,12 @@ ${blocks}
         }
       }
       if (!issuesByTarget.size) {
-        throw new Error('Rendered review rejected theme without actionable repair targets');
+          issuesByTarget.set('css', [
+            `The rendered result scored ${renderState.score}/10 and did not pass the release threshold. Improve prompt fidelity, distinctiveness, cohesion, hierarchy, and production polish while preserving the design contract.`,
+          ]);
       }
 
-      console.log(`  → Repairing ${issuesByTarget.size} review-board target(s) in one bounded parallel pass…`);
-      // Repairs see the SAME screenshots the rendered reviewer saw. A blind
-      // repair loop stalls (observed: 3 blocking issues unchanged across 3
-      // passes) because "container clipped on the right" is not actionable
-      // without the pixels; the repair model is multimodal, so show it.
-      const evidenceParts = (renderVerdict.screenshots || []).flatMap(([shotLabel, b64]) => ([
-        { text: `Screenshot: ${shotLabel}` },
-        { inlineData: { mimeType: 'image/jpeg', data: b64 } },
-      ]));
-      const visionRepair = async (promptText, schema) => {
-        const request = {
-          contents: [{ parts: [{ text: promptText }] }],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            responseSchema: schema,
-            maxOutputTokens: 32768,
-            thinkingConfig: { thinkingBudget: 4096 },
-          },
-        };
-        let parts;
-        try {
-          parts = await geminiApiCall((process.env.DEFAULT_MODEL || 'gemini-3.5-flash'), request);
-        } catch (err) {
-          // The screenshot payload is what makes these calls slow enough to
-          // time out — a same-payload retry has been observed to time out
-          // twice in a row and kill the build. Retry BLIND (text only):
-          // a less-informed repair beats a dead generation.
-          console.warn(`  ⚠ Vision repair failed (${String(err).slice(0, 100)}); retrying without screenshots…`);
-          parts = await geminiApiCall((process.env.DEFAULT_MODEL || 'gemini-3.5-flash'), {
-            ...request,
-            contents: [{ parts: [request.contents[0].parts[0]] }],
-            generationConfig: {
-              ...request.generationConfig,
-              maxOutputTokens: 32768,
-              thinkingConfig: { thinkingBudget: 0 },
-            },
-          });
-        }
-        return parts.map((p) => p.text || '').join('');
-      };
+        console.log(`  → DeepSeek V4 Pro repairing ${issuesByTarget.size} target(s) on the same candidate (pass ${pass})…`);
       const repairs = await Promise.all([...issuesByTarget.entries()].map(async ([target, issues]) => {
         const critique = issues.map((issue) => `- ${issue}`).join('\n');
         if (target === 'css') {
@@ -1193,7 +1100,7 @@ ${blocks}
           // issues. Override rules appended after the stylesheet can only
           // patch the named defects — the cascade gives them priority and the
           // rest of the design is untouchable.
-          const raw = await visionRepair(`${baseContext}
+          const raw = await deepSeekText(`${baseContext}
 
 You are writing a CSS FIX LAYER after a release review board. Do NOT rewrite or re-emit the existing stylesheet. Output ONLY new override rules that will be APPENDED after it — use the same selectors (or more specific ones) and write only as many rules as the issues below require. Fix every issue; change nothing else.
 
@@ -1203,11 +1110,14 @@ ${critique}
 SHARED DESIGN CONTRACT (use its existing selectors; do not invent a second vocabulary):
 ${styleSpec}
 
-OUTPUT: exactly one JSON object: { "css": "…ONLY the appended fix-layer override rules…" }`, CSS_SECTION_SCHEMA);
+CURRENT COMPLETE CSS:
+${candidate.css}
+
+OUTPUT: exactly one JSON object: { "css": "…ONLY the appended fix-layer override rules…" }`, CSS_SECTION_SCHEMA, 32768, 'CSS repair');
           return { target, value: extractJson(raw).css, mode: 'patch' };
         }
         const spec = LAYOUT_SPECS[target];
-        const raw = await visionRepair(`${baseContext}
+        const raw = await deepSeekText(`${baseContext}
 
 You are repairing ONLY the "${target}" HTML layout after a release review board. Keep the approved visual language and preserve these exact required placeholder(s): ${spec.required.join(', ')}. Do not add hardcoded copy, document wrappers, or scripts.
 
@@ -1218,9 +1128,9 @@ SHARED DESIGN CONTRACT:
 ${styleSpec}
 
 CURRENT COMPLETE "${target}" HTML:
-${payload.layouts[target]}
+${candidate.layouts[target]}
 
-OUTPUT: exactly one JSON object: { "html": "…complete repaired ${target} layout…" }`, ONE_LAYOUT_SCHEMA);
+OUTPUT: exactly one JSON object: { "html": "…complete repaired ${target} layout…" }`, ONE_LAYOUT_SCHEMA, 16384, `${target} repair`);
         return { target, value: extractJson(raw).html };
       }));
 
@@ -1229,24 +1139,36 @@ OUTPUT: exactly one JSON object: { "html": "…complete repaired ${target} layou
           throw new Error(`Review-board repair for "${repair.target}" returned no content`);
         }
         if (repair.target === 'css') {
-          payload.css = `${payload.css}\n\n/* review-board fix layer (pass ${pass}) */\n${repair.value}`;
+          candidate.css = `${candidate.css}\n\n/* review-board fix layer (pass ${pass}) */\n${repair.value}`;
         } else {
-          payload.layouts[repair.target] = repair.value;
+          candidate.layouts[repair.target] = repair.value;
         }
       }
-      // Repairs are model output too: same structural gate, then rebuild so
-      // the next rendered pass screenshots the repaired pages. A CSS-only
-      // patch keeps a prior source approval; any layout rewrite re-reviews.
-      await repairStructuralViolations(payload);
-      theme = validateForRelease(payload);
+      },
+      validate: async (candidate) => {
+        await repairStructuralViolations(candidate);
+        theme = validateForRelease(candidate);
+      },
+      afterRepair: async () => {
       await writeDesignMd(theme);
       buildDesignLayer();
-    }
-    if (!renderedApproved) throw new Error('Rendered review ended without approval');
+      },
+      isRetryableError: isRetryableOpenRouterError,
+      onRetryableError: async (error, { pass, phase }) => {
+        const delay = generationRetryDelay(pass);
+        console.warn(`  ⚠ ${phase} provider failure on repair pass ${pass}; retaining the candidate and retrying in ${Math.ceil(delay / 1000)}s (${String(error).slice(0, 120)})`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      },
+      onRejectedRepair: async (error, { candidate, pass }) => {
+        console.warn(`  ⚠ Repair pass ${pass} was invalid; rolled back to the prior candidate (${String(error).slice(0, 160)}).`);
+        theme = validateForRelease(candidate);
+        await writeDesignMd(theme);
+        buildDesignLayer();
+      },
+    });
   } catch (err) {
-    // Rejected work exists only in the ignored staging root. Previously the
-    // review build wrote into public dist/site before approval, so visitors
-    // could briefly reach a design that was later rejected.
+    // Only unrecoverable infrastructure/configuration errors leave this loop.
+    // Aesthetic and validation rejection always retain and repair the candidate.
     await rm(stagingRoot, { recursive: true, force: true }).catch(() => {});
     throw err;
   }
@@ -1354,27 +1276,26 @@ OUTPUT: exactly one JSON object: { "html": "…complete repaired ${target} layou
   console.log(`[Success] "${theme.name}" → designs/${styleName} [${elapsed}s]`);
 }
 
-async function runUntilApproved() {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      console.log(`[Attempt ${attempt}] Generating a reviewable design…`);
-      await run();
-      return;
-    } catch (error) {
-      if (activeStagingRoot) {
-        await rm(activeStagingRoot, { recursive: true, force: true }).catch(() => {});
-        activeStagingRoot = null;
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      const delay = generationRetryDelay(attempt);
-      console.error(`[Attempt ${attempt}] Rejected: ${message}`);
-      console.log(`[Retry] Attempt ${attempt} did not pass review; regenerating from scratch in ${Math.ceil(delay / 1000)}s…`);
-      await new Promise((resolve) => setTimeout(resolve, delay));
+async function runGenerationAttempt() {
+  const requestedAttempt = Number(process.env.GENERATION_ATTEMPT || 1);
+  const attempt = Number.isFinite(requestedAttempt) && requestedAttempt > 0
+    ? Math.floor(requestedAttempt)
+    : 1;
+  console.log(`[Attempt ${attempt}] Generating a reviewable design…`);
+  try {
+    await run();
+  } catch (error) {
+    if (activeStagingRoot) {
+      await rm(activeStagingRoot, { recursive: true, force: true }).catch(() => {});
+      activeStagingRoot = null;
     }
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[Attempt ${attempt}] Failed: ${message}`);
+    throw error;
   }
 }
 
-runUntilApproved().catch((error) => {
+runGenerationAttempt().catch((error) => {
   console.error(`[Failed] ${error instanceof Error ? error.message : String(error)}`);
-  process.exit(1);
+  process.exitCode = 1;
 });
