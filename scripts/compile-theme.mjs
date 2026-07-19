@@ -13,10 +13,9 @@
 import { writeFile, mkdir, copyFile, readFile, rm, rename } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { join, dirname, delimiter } from 'node:path';
+import { join, dirname, delimiter, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
-import https from 'node:https';
 import {
   LAYOUT_SPECS,
   extractJson,
@@ -34,7 +33,10 @@ import {
 import {
   CLAUDE_VISION_MODEL,
   DEEPSEEK_REPAIR_MODEL,
+  IMAGE_MODEL,
+  IMAGE_MODEL_LITE,
   callOpenRouter,
+  callOpenRouterImage,
   isRetryableOpenRouterError,
 } from './lib/openrouter.mjs';
 
@@ -42,7 +44,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, '..');
 const vaultDir = join(repoRoot, 'vault');
 const assetsDir = join(repoRoot, 'assets');
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
 let activeStagingRoot = null;
 
 // Response schemas for constrained decoding. Since the build
@@ -247,53 +248,7 @@ function executeAgentCall(userPrompt) {
   throw new Error(lastError ? `All CLI agents failed. Last error: ${lastError}` : 'No CLI agents available.');
 }
 
-// ─── Image synthesis API ────────────────────────────────────────────────────
-// Text planning, generation, review, and repair all use OpenRouter below.
-// This direct endpoint remains only for the image models that create pixels.
-
-function geminiApiCall(model, bodyObj) {
-  return new Promise((resolve, reject) => {
-    if (!GOOGLE_API_KEY) return reject(new Error('GOOGLE_API_KEY not set'));
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GOOGLE_API_KEY}`;
-    const body = JSON.stringify(bodyObj);
-    const parsed = new URL(url);
-    const options = {
-      hostname: parsed.hostname,
-      path: parsed.pathname + parsed.search,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-    };
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', (chunk) => data += chunk);
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          const cand = json.candidates?.[0];
-          if (!cand?.content?.parts) {
-            return reject(new Error(`Gemini API error: ${data.slice(0, 300)}`));
-          }
-          // A MAX_TOKENS finish means the payload was truncated mid-string —
-          // with a responseSchema that yields unterminated JSON downstream.
-          // Fail loudly so the caller retries/falls back instead of parsing
-          // a half-written CSS blob.
-          if (cand.finishReason === 'MAX_TOKENS') {
-            return reject(new Error('Gemini response truncated (MAX_TOKENS) — raise maxOutputTokens or split the payload'));
-          }
-          resolve(cand.content.parts);
-        } catch (e) {
-          reject(new Error(`Failed to parse Gemini response: ${String(e)}`));
-        }
-      });
-    });
-    req.on('error', reject);
-    // Individual specialists are intentionally small. A 90s ceiling prevents
-    // one stalled model call from holding the entire parallel generation open.
-    req.setTimeout(90_000, () => { req.destroy(); reject(new Error('Gemini API timeout')); });
-    req.write(body);
-    req.end();
-  });
-}
+// ─── OpenRouter model APIs ─────────────────────────────────────────────────
 
 async function deepSeekText(userPrompt, schema = null, maxOutputTokens = 32768, label = 'design') {
   for (let attempt = 1; ; attempt++) {
@@ -348,40 +303,42 @@ async function openRouterVision(parts, schema, label = 'visual review') {
   }
 }
 
-// Logo/favicon stay on the full image model — it renders small legible text
+// Logo/favicon stay on the full OpenRouter image model — it renders small legible text
 // far more reliably, and that's exactly the defect ("garbled letterforms",
 // "GI" reading as "CII") that's been triggering repair passes and re-rolls.
 // Hero/portrait have no text to render, so they get the ~4x faster Lite
 // model (Nano Banana 2 Lite) with no observed quality tradeoff.
-const IMAGE_MODEL = 'gemini-3.1-flash-image';
-const IMAGE_MODEL_LITE = 'gemini-3.1-flash-lite-image';
-
 async function generateImage(imagePrompt, outputPath, baseImagePath = null, model = IMAGE_MODEL) {
-  const parts = [];
+  const inputReferences = [];
   if (baseImagePath) {
-    const { readFile: rf } = await import('node:fs/promises');
-    const data = (await rf(baseImagePath)).toString('base64');
-    parts.push({ inlineData: { mimeType: 'image/jpeg', data } });
+    const mimeType = /\.png$/i.test(baseImagePath) ? 'image/png' : 'image/jpeg';
+    const data = (await readFile(baseImagePath)).toString('base64');
+    inputReferences.push({
+      type: 'image_url',
+      image_url: { url: `data:${mimeType};base64,${data}` },
+    });
   }
-  parts.push({ text: imagePrompt });
-  return generateImageParts(parts, outputPath, imagePrompt, model);
-}
-
-async function generateImageParts(requestParts, outputPath, label, model = IMAGE_MODEL) {
-  const parts = await geminiApiCall(model, {
-    contents: [{ parts: requestParts }],
-    generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+  const filename = outputPath.split('/').pop() || '';
+  const aspectRatio = filename.startsWith('hero') || filename.startsWith('logo') || filename.startsWith('brandkit')
+    ? '16:9'
+    : filename.startsWith('portrait') ? '3:4' : '1:1';
+  const result = await callOpenRouterImage({
+    model,
+    prompt: imagePrompt,
+    inputReferences,
+    resolution: '1K',
+    aspectRatio,
   });
-  for (const part of parts) {
-    if (part.inlineData?.data && part.inlineData?.mimeType) {
-      const buf = Buffer.from(part.inlineData.data, 'base64');
-      await writeFile(outputPath, buf);
-      console.log(`  → saved ${outputPath} (${Math.round(buf.length / 1024)}KB)`);
-      return true;
-    }
+  const sharp = (await import('sharp')).default;
+  let output = result.buffer;
+  if (/\.jpe?g$/i.test(extname(outputPath))) {
+    output = await sharp(output).jpeg({ quality: 90 }).toBuffer();
+  } else if (/\.png$/i.test(extname(outputPath))) {
+    output = await sharp(output).png().toBuffer();
   }
-  console.warn(`  ⚠ No image data for: ${label.slice(0, 80)}`);
-  return false;
+  await writeFile(outputPath, output);
+  console.log(`  → OpenRouter ${model} saved ${outputPath} (${Math.round(output.length / 1024)}KB)`);
+  return true;
 }
 
 // ─── Prompts ─────────────────────────────────────────────────────────────────
@@ -575,8 +532,7 @@ Return exactly the DIRECTOR_SCHEMA JSON object.`, DIRECTOR_SCHEMA, 32768, 8192, 
   const withFallback = (promise, fallbackSource, targetPath) => promise
     .then(async (ok) => { if (!ok) await copyFile(fallbackSource, targetPath); return ok; })
     .catch(async () => { await copyFile(fallbackSource, targetPath); return false; });
-  const imagePromise = GOOGLE_API_KEY
-    ? (async () => {
+  const imagePromise = (async () => {
         const p1 = withFallback(generateImage(`Subject: A visually explicit, recognizable editorial interpretation of the user's exact brief: "${prompt}".\nContext: Wide hero artwork for a premium portfolio website; the requested subject must be clearly present, not reduced to an abstract palette or texture.\nStyle: ${planObj.image_prompts?.hero || planObj.imageTreatment || 'High-end editorial art direction'}\n\nCRITICAL CONSTRAINTS: Do not include text, watermarks, signatures, logos, interface overlays, or nonsensical symbols. Leave usable contrast for real page content.`, heroPath, null, IMAGE_MODEL), heroFallback, heroPath);
         const p2 = withFallback(generateImage(`Subject: Editorial portrait photograph of the supplied human, surrounded by a visually recognizable interpretation of the exact brief: "${prompt}".\nContext: Portfolio bio picture. Keep the person's face and body credible while incorporating the requested subject into the environment, backdrop, lighting, wardrobe detail, or surrounding scene.\nStyle: ${portraitStyle}\n\nHARD CONSTRAINT: this is the same person — identical face and likeness. Never transform the person into the requested animal, object, or character. Do not include text, distortion, extra limbs, or low-quality artifacts.`, portraitPath, portraitSource, IMAGE_MODEL), portraitSource, portraitPath);
 
@@ -621,8 +577,7 @@ Return exactly the DIRECTOR_SCHEMA JSON object.`, DIRECTOR_SCHEMA, 32768, 8192, 
           console.warn('Sharp module failed to load', err.message);
         }
         return true;
-      })()
-    : (console.warn('  ⚠ GOOGLE_API_KEY not set — skipping images'), Promise.resolve([]));
+      })();
   // Images continue in parallel while one CSS owner and the layout-family
   // workers execute the locked constitution.
   const layoutKeys = Object.keys(LAYOUT_SPECS);

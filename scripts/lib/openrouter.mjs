@@ -5,6 +5,8 @@ import { getSecret } from 'total-recall-brain/src/core/secrets-store.mjs';
 
 export const DEEPSEEK_REPAIR_MODEL = 'deepseek/deepseek-v4-pro';
 export const CLAUDE_VISION_MODEL = 'anthropic/claude-sonnet-5';
+export const IMAGE_MODEL = 'google/gemini-3.1-flash-image';
+export const IMAGE_MODEL_LITE = 'google/gemini-3.1-flash-lite-image';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_RECALL_DIR = join(__dirname, '..', '..', '.agent', 'skills', 'total-recall');
@@ -45,6 +47,24 @@ export function buildOpenRouterBody({
       },
     };
   }
+  return body;
+}
+
+export function buildOpenRouterImageBody({
+  model = IMAGE_MODEL,
+  prompt,
+  inputReferences = [],
+  resolution = '1K',
+  aspectRatio = '1:1',
+}) {
+  const body = {
+    model,
+    prompt,
+    n: 1,
+    resolution,
+    aspect_ratio: aspectRatio,
+  };
+  if (inputReferences.length) body.input_references = inputReferences;
   return body;
 }
 
@@ -138,6 +158,66 @@ function requestOnce({ apiKey, body, timeoutMs = 300_000 }) {
   });
 }
 
+function requestImageOnce({ apiKey, body, timeoutMs = 300_000 }) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const req = https.request({
+      hostname: 'openrouter.ai',
+      path: '/api/v1/images',
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        'HTTP-Referer': 'https://gregiteen.xyz',
+        'X-OpenRouter-Title': 'Greg Iteen Portfolio',
+      },
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        let json;
+        try {
+          json = JSON.parse(data);
+        } catch (error) {
+          const malformed = new Error(`OpenRouter image API returned invalid JSON: ${String(error)}`);
+          malformed.status = res.statusCode || 0;
+          reject(malformed);
+          return;
+        }
+        if ((res.statusCode || 500) >= 400 || json?.error) {
+          const failure = new Error(`OpenRouter image error ${res.statusCode || 0}: ${JSON.stringify(json?.error || json).slice(0, 300)}`);
+          failure.status = res.statusCode || Number(json?.error?.code) || 0;
+          const retryAfter = Number(res.headers['retry-after']);
+          if (Number.isFinite(retryAfter) && retryAfter > 0) {
+            failure.retryAfterMs = Math.min(60_000, retryAfter * 1000);
+          }
+          reject(failure);
+          return;
+        }
+        const image = json?.data?.[0];
+        if (!image?.b64_json) {
+          const missing = new Error(`OpenRouter image API returned no image data: ${JSON.stringify(json).slice(0, 300)}`);
+          missing.status = res.statusCode || 0;
+          reject(missing);
+          return;
+        }
+        resolve({
+          buffer: Buffer.from(image.b64_json, 'base64'),
+          mediaType: image.media_type || 'image/png',
+          usage: json.usage || null,
+        });
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error('OpenRouter image request timed out'));
+    });
+    req.write(payload);
+    req.end();
+  });
+}
+
 export function isRetryableOpenRouterError(error) {
   const status = Number(error?.status) || 0;
   if (status === 408 || status === 409 || status === 429 || status >= 500) return true;
@@ -173,6 +253,37 @@ export async function callOpenRouter({
   for (let attempt = 0; attempt <= requestRetries; attempt++) {
     try {
       return await requestOnce({ apiKey: resolvedKey, body });
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableOpenRouterError(error) || attempt === requestRetries) throw error;
+      const delay = error.retryAfterMs || Math.min(8_000, 1_000 * (2 ** attempt));
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError;
+}
+
+export async function callOpenRouterImage({
+  model = IMAGE_MODEL,
+  prompt,
+  inputReferences = [],
+  resolution = '1K',
+  aspectRatio = '1:1',
+  apiKey = null,
+  requestRetries = 2,
+}) {
+  const resolvedKey = await resolveOpenRouterApiKey({ apiKey: apiKey || undefined });
+  const body = buildOpenRouterImageBody({
+    model,
+    prompt,
+    inputReferences,
+    resolution,
+    aspectRatio,
+  });
+  let lastError;
+  for (let attempt = 0; attempt <= requestRetries; attempt++) {
+    try {
+      return await requestImageOnce({ apiKey: resolvedKey, body });
     } catch (error) {
       lastError = error;
       if (!isRetryableOpenRouterError(error) || attempt === requestRetries) throw error;
