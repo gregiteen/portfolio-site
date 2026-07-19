@@ -23,7 +23,17 @@ rsync -avz --delete \
   --exclude '/dist/' \
   ./ root@138.197.199.217:/opt/portfolio-site/
 
-# 3. Reload PM2 with a strict timeout (zero downtime)
+# 3. Install the exact locked dependency tree before reloading the server.
+# node_modules is intentionally excluded from rsync, so skipping this step can
+# leave production executing an older package version than package-lock.json.
+echo "📦 Installing locked production dependencies..."
+if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 root@138.197.199.217 \
+  "cd /opt/portfolio-site && npm ci --include=dev --no-audit --no-fund"; then
+  echo "❌ CRITICAL: Production dependency install failed!"
+  exit 1
+fi
+
+# 4. Reload PM2 with a strict timeout (zero downtime)
 echo "🔄 Reloading PM2 on droplet (timeout 10s)..."
 if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@138.197.199.217 "pm2 reload portfolio"; then
   echo "❌ CRITICAL: SSH or PM2 reload failed or timed out!"
@@ -31,7 +41,7 @@ if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@138.197.199.217 "p
   exit 1
 fi
 
-# 4. Verify Site Health
+# 5. Verify Site Health
 echo "🏥 Verifying live site health..."
 sleep 2
 HTTP_STATUS=$(curl -o /dev/null -s -w "%{http_code}\n" https://gregiteen.xyz/splash.html)
