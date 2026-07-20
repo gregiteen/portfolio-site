@@ -61,6 +61,7 @@ let activeStagingRoot = null;
 // no blocking issues) or fails it so the outer retry starts a FRESH one.
 const MAX_REPAIR_PASSES = Math.max(1, Number(process.env.THEME_MAX_REPAIR_PASSES) || 5);
 const PROMOTE_THRESHOLD = Math.min(10, Math.max(1, Number(process.env.THEME_PROMOTE_THRESHOLD) || 7));
+const MAX_STRUCTURAL_PASSES = Math.max(1, Number(process.env.THEME_MAX_STRUCTURAL_PASSES) || 4);
 
 // Response schemas for constrained decoding. Since the build
 // fans out into per-section CSS + per-layout specialists, each call returns one
@@ -805,6 +806,13 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
         requiredLayoutClasses,
       });
       if (verdict.theme) return;
+      // Bounded like the review board: an unfixable structural defect must
+      // fail this candidate (outer retry generates a fresh one), not spin the
+      // repair model forever. The generator skill always documented this loop
+      // as bounded; the code never actually was.
+      if (pass > MAX_STRUCTURAL_PASSES) {
+        throw new Error(`Structural repair did not converge after ${MAX_STRUCTURAL_PASSES} pass(es): ${verdict.errors.slice(0, 3).join('; ')}`);
+      }
       const issuesByTarget = new Map();
       for (const error of verdict.errors) {
         const layoutMatch = error.match(/^layout "([a-z_]+)"/);
