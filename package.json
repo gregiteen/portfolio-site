@@ -28,7 +28,7 @@
   "devDependencies": {
     "@types/node": "^26.1.0",
     "better-sqlite3": "^12.11.1",
-    "total-recall-brain": "^3.18.2"
+    "total-recall-brain": "^3.18.3"
   },
   "overrides": {
     "total-recall-brain": {

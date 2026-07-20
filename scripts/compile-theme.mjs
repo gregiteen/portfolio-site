@@ -24,12 +24,21 @@ import {
   enforceBrandAssetContract,
 } from './lib/theme.mjs';
 import {
+  createIssueLedger,
+  decideAtCap,
   generationRetryDelay,
   repairUntilApproved,
   renderedReviewState,
   requireApprovedVisualAudit,
   requireValidTheme,
 } from './lib/theme-release.mjs';
+import { scanLayoutSources, scanBuiltHtml } from './lib/artifact-gate.mjs';
+import {
+  createRunLessonRecorder,
+  formatLessonPack,
+  recallLessons,
+  rememberLesson,
+} from './lib/review-memory.mjs';
 import {
   CLAUDE_VISION_MODEL,
   DEEPSEEK_REPAIR_MODEL,
@@ -45,6 +54,13 @@ const repoRoot = join(__dirname, '..');
 const vaultDir = join(repoRoot, 'vault');
 const assetsDir = join(repoRoot, 'assets');
 let activeStagingRoot = null;
+
+// Review-board bounds. The same-candidate repair loop once ran 21 passes /
+// 3h38m on a single prompt; these keep any candidate's cost finite. At the
+// cap, decideAtCap() promotes a clean-enough candidate (score >= threshold,
+// no blocking issues) or fails it so the outer retry starts a FRESH one.
+const MAX_REPAIR_PASSES = Math.max(1, Number(process.env.THEME_MAX_REPAIR_PASSES) || 5);
+const PROMOTE_THRESHOLD = Math.min(10, Math.max(1, Number(process.env.THEME_PROMOTE_THRESHOLD) || 7));
 
 // Response schemas for constrained decoding. Since the build
 // fans out into per-section CSS + per-layout specialists, each call returns one
@@ -391,13 +407,65 @@ async function run() {
   const frontendSkillPath = join(__dirname, '..', '.agent', 'skills', 'frontend-design', 'SKILL.md');
   const frontendSkill = await import('node:fs/promises').then(m => m.readFile(frontendSkillPath, 'utf8')).catch(() => '');
 
+  // pitfalls.json is now a READ-ONLY curated seed — the old meta-learning
+  // rewrote it wholesale mid-run (20 rules → 0 in one observed run). Durable
+  // lessons live in Total Recall; recalled here once and frozen for the run.
   const pitfallsPath = join(__dirname, 'lib', 'pitfalls.json');
-  const pitfalls = JSON.parse(await readFile(pitfallsPath, 'utf8'));
-  const pitfallsDoc = pitfalls.map((rule) => [
+  const pitfalls = JSON.parse(await readFile(pitfallsPath, 'utf8').catch(() => '[]'));
+  const seedPitfallsDoc = pitfalls.map((rule) => [
     `- [${rule.id}] ${rule.symptom}`,
     `  Detector: ${rule.detector}`,
     `  Repair: ${rule.repair}`,
   ].join('\n')).join('\n');
+  const recalledLessons = await recallLessons({
+    query: `theme generation design pitfalls and repair lessons for brief: ${prompt}`,
+    topK: 8,
+  });
+  if (recalledLessons.length) {
+    console.log(`[Memory] Recalled ${recalledLessons.length} lesson(s) from Total Recall for this brief.`);
+  }
+  const pitfallsDoc = `${seedPitfallsDoc}${formatLessonPack(recalledLessons)}`;
+  const lessonRecorder = createRunLessonRecorder({ runId: styleName, prompt });
+  const reviewHistory = [];
+
+  // Run-end distillation: one model call over the whole review history →
+  // at most 3 transferable lessons into the project brain. Fires on success
+  // AND terminal failure (failures teach the most). Best-effort only.
+  const summarizeRunLessons = async (outcome) => {
+    try {
+      if (!reviewHistory.length) return;
+      const SUMMARY_SCHEMA = {
+        type: 'OBJECT',
+        properties: { lessons: { type: 'ARRAY', items: { type: 'STRING' } } },
+        required: ['lessons'],
+      };
+      const historyDoc = reviewHistory.map((entry) => [
+        `pass ${entry.pass}: score ${entry.score}/10, ${entry.blocking} blocking, ${entry.resolved} resolved since prior pass`,
+        ...entry.issues.map((text) => `  - ${text}`),
+      ].join('\n')).join('\n');
+      const raw = await deepSeekText(`You are distilling durable lessons from one AI theme-generation run so FUTURE runs avoid repeating its failures.
+
+BRIEF: "${prompt}"
+OUTCOME: ${outcome}
+REVIEW HISTORY:
+${historyDoc}
+
+Output at most 3 short, generalizable lessons (imperative, one sentence each) about generating or repairing portfolio theme designs. Only include lessons that transfer to OTHER briefs — skip anything tied to this brief's subject matter.
+
+OUTPUT: exactly one JSON object: { "lessons": ["…"] }`, SUMMARY_SCHEMA, 2048, 'lesson distillation');
+      const lessons = (extractJson(raw).lessons || []).slice(0, 3);
+      for (const lesson of lessons) {
+        await rememberLesson({
+          category: 'pattern',
+          content: `${lesson} (distilled from run "${styleName}", outcome: ${outcome})`,
+          tags: ['generator', 'review-board', 'distilled'],
+        });
+      }
+      if (lessons.length) console.log(`[Memory] Distilled ${lessons.length} lesson(s) into Total Recall.`);
+    } catch (error) {
+      console.warn(`[Memory] Lesson distillation skipped: ${String(error).slice(0, 120)}`);
+    }
+  };
 
   // Production workers receive a compact contract. The former prompt repeated
   // the entire frontend skill, toolbox, examples, and an ever-growing memory
@@ -750,28 +818,11 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
         issuesByTarget.set('css', verdict.errors);
       }
       
-      try {
-        const pitfallsPath = join(__dirname, 'lib', 'pitfalls.json');
-        const currentPitfalls = await readFile(pitfallsPath, 'utf8');
-        const LEARNING_SCHEMA = {
-          type: "ARRAY",
-          items: {
-            type: "OBJECT",
-            properties: {
-              id: { type: "STRING" },
-              symptom: { type: "STRING" },
-              detector: { type: "STRING" },
-              repair: { type: "STRING" }
-            },
-            required: ["id", "symptom", "detector", "repair"]
-          }
-        };
-        const rawLearn = await deepSeekText(`You are a meta-learning system managing the global pitfalls database for a UI generator.\n\nCURRENT PITFALLS:\n${currentPitfalls}\n\nThe generator just made the following HTML/CSS structural mistakes (missing placeholders, bad tags):\n${verdict.errors.join('\n')}\n\nREWRITE the entire pitfalls array. Incorporate a new rule for these failures, or modify an existing rule if it overlaps. Consolidate and rewrite the entire array to keep it concise, comprehensive, and perfectly accurate. Output the full JSON array.`, LEARNING_SCHEMA, 16384, 'structural learning');
-        const rewrittenPitfalls = JSON.parse(rawLearn);
-        await writeFile(pitfallsPath, JSON.stringify(rewrittenPitfalls, null, 2), 'utf8');
-        console.warn(`[Learning] Completely rewrote pitfalls.json based on structural mistakes (pass ${pass}). Now contains ${rewrittenPitfalls.length} rules.`);
-      } catch (e) {
-        console.warn(`[Learning Error] Failed to write to pitfalls.json:`, e);
+      // Append-only learning: each structural failure class is recorded once
+      // per run to Total Recall (fire-and-forget, deduped, capped). The old
+      // destructive pitfalls.json rewrite lived here.
+      for (const error of verdict.errors.slice(0, 3)) {
+        lessonRecorder.record('anti-pattern', `Structural validation failure in generated theme: ${String(error).slice(0, 300)}`, ['structural']);
       }
 
       console.log(`  → Structural validation pass ${pass} found ${issuesByTarget.size} repair target(s); repairing the same candidate…`);
@@ -987,59 +1038,90 @@ ${blocks}
   console.log(`[5/5] Review board: rendered review + same-candidate repair loop…`);
   const { renderAudit } = await import('./render-audit.mjs');
   const allowedTargets = new Set(['css', ...Object.keys(LAYOUT_SPECS)]);
+  // Built pages the mechanical gate scans, mapped to the layout slot a repair
+  // should aim at (same pages the render audit screenshots).
+  const GATE_PAGES = [
+    ['index.html', 'home'],
+    ['projects.html', 'projects_index'],
+    ['designs.html', 'designs_index'],
+    ['contact.html', 'page'],
+  ];
+  const issueLedger = createIssueLedger();
+  let assetFlowAwaited = false;
+  let noProgressPasses = 0;
+  let priorReviewIssues = [];
+  let capResult;
   try {
-    await repairUntilApproved(payload, {
-      review: async (_candidate, pass) => {
+    capResult = await repairUntilApproved(payload, {
+      maxPasses: MAX_REPAIR_PASSES,
+      capDecider: (verdict) => decideAtCap(verdict, { threshold: PROMOTE_THRESHOLD }),
+      review: async (candidate, pass) => {
         const label = pass === 1 ? 'initial' : `repair ${pass - 1}`;
+        // Mechanical gate: deterministic scan for leaked template/JSON syntax
+        // in the candidate's templates and the built pages. Costs nothing and
+        // short-circuits the screenshot+vision spend when it hits.
+        const gateIssues = [...scanLayoutSources(candidate.layouts || {})];
+        for (const [file, target] of GATE_PAGES) {
+          const html = await readFile(join(reviewOutDir, file), 'utf8').catch(() => '');
+          gateIssues.push(...scanBuiltHtml(html, target, file));
+        }
+        if (gateIssues.length) {
+          console.log(`  → Mechanical gate (${label}): ${gateIssues.length} artifact(s) found — skipping screenshot review this pass`);
+          for (const issue of gateIssues) console.log(`    • [blocking] ${issue.target}: ${issue.issue}`);
+          for (const issue of gateIssues.slice(0, 2)) {
+            lessonRecorder.record('anti-pattern', `Layout specialist emitted template/JSON debris that the mechanical gate caught: ${issue.issue.slice(0, 240)}`, [`slot:${issue.target}`, 'mechanical-gate']);
+          }
+          return { approved: false, mechanical: true, score: 0, blocking: gateIssues, issues: gateIssues };
+        }
         const [renderVerdict] = await Promise.all([
-          renderAudit(styleName, { siteRoot: reviewSiteRoot, brief: prompt, designPlan: plan }),
-          ...(pass === 1 ? [assetFlow] : []),
+          renderAudit(styleName, {
+            siteRoot: reviewSiteRoot,
+            brief: prompt,
+            designPlan: plan,
+            priorIssues: priorReviewIssues,
+          }),
+          ...(assetFlowAwaited ? [] : [assetFlow]),
         ]);
+        assetFlowAwaited = true;
         const renderState = renderedReviewState(renderVerdict);
+        priorReviewIssues = renderState.issues;
+        for (const resolved of renderVerdict.resolved_since_last_pass || []) {
+          console.log(`    ✓ resolved since last pass: ${String(resolved).slice(0, 120)}`);
+        }
         console.log(`  → Rendered review (${label}): ${renderState.score}/10 — ${renderState.approved ? 'approved' : 'repair required'} (${renderState.blocking.length} blocking, ${renderState.issues.length - renderState.blocking.length} minor)`);
         for (const issue of renderState.issues) {
           if (typeof issue?.target === 'string' && typeof issue?.issue === 'string') {
             console.log(`    • [${issue.severity || 'blocking'}] ${issue.target}: ${issue.issue}`);
           }
         }
-        return { ...renderState, renderVerdict };
+        // Issues the repair model has repeatedly failed to clear stop blocking
+        // the loop — the cap decision or a fresh candidate handles them.
+        const { repairable, suppressed } = issueLedger.observe(renderState.blocking);
+        for (const issue of suppressed) {
+          console.warn(`  ⚠ Dropping issue from blocking after repeated failed repairs (unfixable by this loop): [${issue.target}] ${String(issue.issue).slice(0, 140)}`);
+          lessonRecorder.record('anti-pattern', `Repair loop repeatedly failed to fix: [${issue.target}] ${String(issue.issue).slice(0, 240)}`, [`slot:${issue.target}`, 'unfixable']);
+        }
+        reviewHistory.push({
+          pass,
+          score: renderState.score,
+          blocking: repairable.length,
+          resolved: (renderVerdict.resolved_since_last_pass || []).length,
+          issues: renderState.blocking.map((issue) => `[${issue.target}] ${String(issue.issue).slice(0, 200)}`),
+        });
+        return { ...renderState, blocking: repairable, renderVerdict };
       },
       repair: async (candidate, renderState, pass) => {
         const repairIssues = renderState.blocking.length > 0
           ? renderState.blocking
           : renderState.issues;
-        if (repairIssues.length > 0) {
-        try {
-          const pitfallsPath = join(__dirname, 'lib', 'pitfalls.json');
-          const currentPitfalls = await readFile(pitfallsPath, 'utf8');
-          const LEARNING_SCHEMA = {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                id: { type: "STRING" },
-                symptom: { type: "STRING" },
-                detector: { type: "STRING" },
-                repair: { type: "STRING" }
-              },
-              required: ["id", "symptom", "detector", "repair"]
-            }
-          };
-          const rawLearn = await deepSeekText(`You are a meta-learning system managing the global pitfalls database for a UI generator.\n\nCURRENT PITFALLS:\n${currentPitfalls}\n\nThe generator just failed the review board with the following issues:\n${repairIssues.map((issue) => issue.issue).join('\n')}\n\nREWRITE the entire pitfalls array. Incorporate a new rule for these failures, or modify an existing rule if it overlaps. Consolidate and rewrite the entire array to keep it concise, comprehensive, and perfectly accurate. Output the full JSON array.`, LEARNING_SCHEMA, 16384, 'review learning');
-          const rewrittenPitfalls = JSON.parse(rawLearn);
-          await writeFile(pitfallsPath, JSON.stringify(rewrittenPitfalls, null, 2), 'utf8');
-          console.warn(`[Learning] Completely rewrote pitfalls.json based on new failures. Now contains ${rewrittenPitfalls.length} rules.`);
-        } catch (e) {
-          console.warn(`[Learning Error] Failed to write to pitfalls.json:`, e);
-        }
-      }
-
         const issuesByTarget = new Map();
+        const escalatedTargets = new Set();
         for (const issue of repairIssues) {
         const target = typeof issue?.target === 'string' ? issue.target : '';
         const detail = typeof issue?.issue === 'string' ? issue.issue.trim() : '';
         if (allowedTargets.has(target) && detail) {
           issuesByTarget.set(target, [...(issuesByTarget.get(target) || []), detail]);
+          if (issue?.escalate) escalatedTargets.add(target);
         }
       }
       if (!issuesByTarget.size) {
@@ -1047,6 +1129,28 @@ ${blocks}
             `The rendered result scored ${renderState.score}/10 and did not pass the release threshold. Improve prompt fidelity, distinctiveness, cohesion, hierarchy, and production polish while preserving the design contract.`,
           ]);
       }
+
+        // An empty or unparsable repair response used to throw, roll back, and
+        // silently burn a full rebuild+review cycle on an unchanged candidate
+        // (observed ~half of all passes in the 21-pass incident). Now: one
+        // rephrased retry, then the target is skipped and the miss is counted.
+        const requestRepair = async (target, buildPrompt) => {
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+              const value = await buildPrompt(attempt === 2
+                ? '\n\nIMPORTANT: Your previous response was empty or unparsable. You MUST output the complete JSON object exactly as specified — never an empty response.'
+                : '');
+              if (typeof value === 'string' && value.trim()) return value;
+            } catch (error) {
+              console.warn(`  ⚠ ${target} repair attempt ${attempt} failed to parse (${String(error).slice(0, 100)})`);
+            }
+            console.warn(`  ⚠ ${target} repair response EMPTY (attempt ${attempt}${attempt === 1 ? ', retrying with rephrased prompt' : ', skipping target this pass'})`);
+          }
+          return null;
+        };
+        const escalationNote = (target) => (escalatedTargets.has(target)
+          ? '\n\nESCALATION: previous targeted repairs failed to clear these exact issues on earlier passes. Take a structurally different approach — rethink the section\'s composition rather than re-patching the previous attempt — while still honoring the design contract and required placeholders.'
+          : '');
 
         console.log(`  → DeepSeek V4 Pro repairing ${issuesByTarget.size} target(s) on the same candidate (pass ${pass})…`);
       const repairs = await Promise.all([...issuesByTarget.entries()].map(async ([target, issues]) => {
@@ -1058,9 +1162,10 @@ ${blocks}
           // issues. Override rules appended after the stylesheet can only
           // patch the named defects — the cascade gives them priority and the
           // rest of the design is untouchable.
-          const raw = await deepSeekText(`${baseContext}
+          const value = await requestRepair(target, async (retryNote) => {
+            const raw = await deepSeekText(`${baseContext}
 
-You are writing a CSS FIX LAYER after a release review board. Do NOT rewrite or re-emit the existing stylesheet. Output ONLY new override rules that will be APPENDED after it — use the same selectors (or more specific ones) and write only as many rules as the issues below require. Fix every issue; change nothing else.
+You are writing a CSS FIX LAYER after a release review board. Do NOT rewrite or re-emit the existing stylesheet. Output ONLY new override rules that will be APPENDED after it — use the same selectors (or more specific ones) and write only as many rules as the issues below require. Fix every issue; change nothing else.${escalationNote(target)}
 
 REVIEW ISSUES:
 ${critique}
@@ -1071,13 +1176,16 @@ ${styleSpec}
 CURRENT COMPLETE CSS:
 ${candidate.css}
 
-OUTPUT: exactly one JSON object: { "css": "…ONLY the appended fix-layer override rules…" }`, CSS_SECTION_SCHEMA, 32768, 'CSS repair');
-          return { target, value: extractJson(raw).css, mode: 'patch' };
+OUTPUT: exactly one JSON object: { "css": "…ONLY the appended fix-layer override rules…" }${retryNote}`, CSS_SECTION_SCHEMA, 32768, 'CSS repair');
+            return extractJson(raw).css;
+          });
+          return value === null ? null : { target, value, mode: 'patch' };
         }
         const spec = LAYOUT_SPECS[target];
-        const raw = await deepSeekText(`${baseContext}
+        const value = await requestRepair(target, async (retryNote) => {
+          const raw = await deepSeekText(`${baseContext}
 
-You are repairing ONLY the "${target}" HTML layout after a release review board. Keep the approved visual language and preserve these exact required placeholder(s): ${spec.required.join(', ')}. Do not add hardcoded copy, document wrappers, or scripts.
+You are repairing ONLY the "${target}" HTML layout after a release review board. Keep the approved visual language and preserve these exact required placeholder(s): ${spec.required.join(', ')}. Do not add hardcoded copy, document wrappers, or scripts.${escalationNote(target)}
 
 REVIEW ISSUES:
 ${critique}
@@ -1088,14 +1196,26 @@ ${styleSpec}
 CURRENT COMPLETE "${target}" HTML:
 ${candidate.layouts[target]}
 
-OUTPUT: exactly one JSON object: { "html": "…complete repaired ${target} layout…" }`, ONE_LAYOUT_SCHEMA, 16384, `${target} repair`);
-        return { target, value: extractJson(raw).html };
+OUTPUT: exactly one JSON object: { "html": "…complete repaired ${target} layout…" }${retryNote}`, ONE_LAYOUT_SCHEMA, 16384, `${target} repair`);
+          return extractJson(raw).html;
+        });
+        return value === null ? null : { target, value };
       }));
 
-      for (const repair of repairs) {
-        if (typeof repair.value !== 'string' || !repair.value.trim()) {
-          throw new Error(`Review-board repair for "${repair.target}" returned no content`);
+      const applied = repairs.filter(Boolean);
+      if (!applied.length) {
+        noProgressPasses += 1;
+        const message = `Review-board repair produced no usable output for any target (pass ${pass})`;
+        if (noProgressPasses >= 2) {
+          // Two consecutive all-empty passes: the repair model is not going to
+          // move this candidate. End the loop now via the cap decision instead
+          // of burning the remaining passes on rebuilds of an unchanged page.
+          throw Object.assign(new Error(`${message}; ${noProgressPasses} consecutive no-progress passes`), { terminal: true });
         }
+        throw new Error(message);
+      }
+      noProgressPasses = 0;
+      for (const repair of applied) {
         if (repair.target === 'css') {
           candidate.css = `${candidate.css}\n\n/* review-board fix layer (pass ${pass}) */\n${repair.value}`;
         } else {
@@ -1125,11 +1245,19 @@ OUTPUT: exactly one JSON object: { "html": "…complete repaired ${target} layou
       },
     });
   } catch (err) {
-    // Only unrecoverable infrastructure/configuration errors leave this loop.
-    // Aesthetic and validation rejection always retain and repair the candidate.
+    // Only unrecoverable infrastructure errors or a cap-failed candidate leave
+    // this loop. Distill what the run taught before the evidence is torn down;
+    // the outer retry starts a FRESH candidate that recalls these lessons.
+    await summarizeRunLessons(`terminal failure: ${String(err?.message || err).slice(0, 160)}`);
+    await lessonRecorder.flush();
     await rm(stagingRoot, { recursive: true, force: true }).catch(() => {});
     throw err;
   }
+  if (capResult?.cappedPromotion) {
+    console.warn(`  ⚠ Promoted at the ${MAX_REPAIR_PASSES}-pass cap (clean but not reviewer-approved): ${capResult.capReason}`);
+  }
+  await summarizeRunLessons(capResult?.cappedPromotion ? 'promoted at pass cap' : 'approved by review board');
+  await lessonRecorder.flush();
 
   // Register the skin only now — the flipper and main site must never list a
   // design that has not passed the rendered gate.

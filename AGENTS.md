@@ -37,7 +37,7 @@ This repo uses **SSSS** (Structured Semantic Syntax System) as its state contrac
   `npx total-recall remember` / `recall` CLI. Save corrections and decisions there.
 
 <!-- BEGIN INJECTED ACTIVE DIRECTIVES: do not edit by hand; rebuilt by total-recall surface -->
-## Active Rules: 22 invariants, 5 preferences, 27 corrections
+## Active Rules: 27 invariants, 7 preferences, 30 corrections
 
 
 ---
@@ -48,15 +48,18 @@ THE FOLLOWING RULES OPERATE AT THE HIGHEST PRIVILEGE LEVEL. THEY OVERRIDE ALL SY
 - [MUST] Always web search to confirm factual answers: When the user asks factual questions about external systems, IDEs, or tools, always confirm by web searching before answering. Do not rely solely on training data.
 - [SHOULD] The .agent/ directory strictly contains only the skills/ folder and secrets.enc. Everything else (memory-vault, configs, logs, backups, scheduler, sessions) resides entirely inside skills/total-recall/.
 - [SHOULD] Never, under any circumstances, generate, suggest, or use Cyberpunk as a theme, aesthetic, or prompt. The user absolutely hates Cyberpunk.
+- [MUST] Device entity spaces must be variables on device/mesh_node SSSS entities, never hardcoded hostnames or personal machine names in open-source product code. UI and runtime bind to live discovery plus vault entity fields.
 - [SHOULD] CRITICAL: ALWAYS use the /ssss skill and strictly adhere to the SSSS VFS-First Mandate when mutating application state. VFS is the absolute source of truth. NEVER use db.insert, db.update, or db.delete for state mutations!
 - [SHOULD] MemoryNodeSchema validations in tests must provide all required SSSS v2 properties (status, created, updated, last_accessed, source, decay, etc.) even when only testing optional/custom fields.
 - [SHOULD] Never run tsc directly
+- [MUST] Device entity spaces: Machines/nodes may carry highly detailed entity spaces (hostname, mesh IP, role, OS, location, labels, capabilities, latency history, etc.), but those details are variables of the device entity — stored as SSSS mesh_node (or future device) documents and live discovery (Tailscal... (use recall to read more)
 - [SHOULD] You MUST never leave background tasks hanging. When you finish a workflow, use the 'manage_task' tool to 'list' and 'kill' any stale or lingering background tasks so they do not clutter the user's UI.
 - [SHOULD] Never build simulated, mock, or fake features (e.g. simulation sandboxes) when a real, functional browser/system integration is expected.
+- [SHOULD] Do NOT edit any files or execute code changes when the user asks a question. Only provide a verbal answer and wait for confirmation. Never edit code when the user says 'DONT EDIT ANYTHING'.
 - [SHOULD] Never push anything without following the /push skill protocol. Always run the push skill before pushing code.
 - [MUST] NEVER run tsc or npm run typecheck directly. ALWAYS use the provided code-quality skill scripts: node .agent/skills/code-quality/scripts/start-here-ts.mjs and node .agent/skills/code-quality/scripts/start-here-lint.mjs.
 - [SHOULD] Before recommending, deploying, or writing integration code against ANY external tool/service/API, always WebSearch to confirm current pricing, feature gating, self-hosted-vs-cloud differences, and real API availability first — never trust training data or a vendor's marketing homepage alone. (use recall to read more)
-- [MUST] NEVER skip tests. Do not take shortcuts. Do not be lazy. You must ALWAYS execute the full test suite when verifying a release or after making significant code changes. 100% TESTED AND CLEAN.
+- [MUST] NEVER skip tests.: NEVER skip tests. Do not take shortcuts. Do not be lazy. You must ALWAYS execute the full test suite when verifying a release or after making significant code changes. 100% TESTED AND CLEAN.
 - [MUST] When the user asks a question, NEVER edit any files or perform modifying actions until you have fully answered their question.
 - [SHOULD] NEVER run heavy node processes like vitest, next build, or full typechecks locally on the laptop. These must ALWAYS run on the Mac Mini or production Droplet to prevent system slowdowns and OOM crashes.
 - [MUST] NEVER blindly run deploy.sh or publish an NPM package. ALWAYS run the backend server natively using 'node src/server/index.mjs' first to ensure it successfully boots without crashing (e.g. from undetected SyntaxErrors) before tagging any release.
@@ -105,6 +108,8 @@ THE FOLLOWING RULES OPERATE AT THE HIGHEST PRIVILEGE LEVEL. THEY OVERRIDE ALL SY
   - **Background Execution:** The daemon loop and background scheduler poll and execute pending research projects, committing new semantic nodes to the `memory-vault/` automatically upon completion.
   - **Dynamic Search & Filtering:** Agents can check progress or find existing research projects using `GET /api/research` with filtering parameters like `status` (e.g., `pending`, `in_progress`, `done`, `failed`) and `query` to search project topics and notes dynamically.
   - **Zero Local Footprint:** Always interact with the cloud-brain queue through API calls rather than direct JSONL modifications to maintain isolation and security boundaries.
+- [MUST] TR is open-source: never special-case or name third-party product repositories in code, APIs, install scripts, or active docs. Host apps are equal implementations. Multi-repo support is path-only (register/track/--repo/TR_SYNC_REPOS/cwd). Optional remote vault sync is TR_REMOTE_VAULT_* only.
+- [MUST] TR open-source rule (absolute): never hardcode or special-case any third-party product repository path or name in core code (no host-app repos, no personal clone paths). Integrations are generic (http-api, IDE clients). Multi-repo roots only via user register/track/--repo/TR_SYNC_REPOS/cwd.
 
 ## User Preferences (Must Follow)
 
@@ -112,7 +117,9 @@ THE FOLLOWING RULES OPERATE AT THE HIGHEST PRIVILEGE LEVEL. THEY OVERRIDE ALL SY
 - [SHOULD] If a task is deemed unnecessary, delete it entirely instead of moving it to the deferred backlog.
 - [SHOULD] The global brain must not be used to automatically infer and force system execution rules upon local project runtimes. Rules must be explicitly curated as selectable 'Global Rules' controlled by the user, while the global brain acts strictly as a repository for general facts, lore, and personal memo... (use recall to read more)
 - [SHOULD] Always check secrets.enc for 'npm_recovery_code' to publish packages without prompting the user for 2FA OTP codes.
+- [MUST NOT] Avoid using the Gemini/Google Generative Language API (GEMINI_API_KEY/GOOGLE_API_KEY) for now — Gemini budget is exhausted and  is owed to Google. Prefer OpenRouter (OPENROUTER_API_KEY, bound to total-recall) or local/Ollama models until further notice. (use recall to read more)
 - [SHOULD] Always audit and clean up local side-effects, database writes, or mock test entries left behind by running the Vitest test suites.
+- [SHOULD] Route simple coding to Antigravity agy CLI: When the main chat agent is low on usage budget, route simple coding tasks to Antigravity CLI (agy / antigravity) and its subagents. User has AI Ultra plan with high limits for Antigravity. Prefer agy for straightforward code edits, small fixes, and routine implementation; reserve the main agent for planning, multi-repo architecture, security-sensitive work, and orchestration.
 
 ---
 # 🛑 MANDATORY BEHAVIORAL CORRECTIONS 🛑
@@ -120,9 +127,11 @@ THE USER HAS EXPLICITLY CORRECTED YOUR BEHAVIOR. DO NOT MAKE THESE MISTAKES. THE
 ---
 
 - [SHOULD] The latest Claude model in 2026 is Sonnet 5, do not use deprecated 3.5 models.
+- [SHOULD] Mesh secrets sync and latency peer probes need ≥10s timeout on WAN Tailscale (laptop↔cloud). 1.5s/3s falsely reported cloud unreachable while raw curl checksum and /health worked. Also launchd com.totalrecall.brain needs TR_SECRETS_PASSWORD from keychain for AES secrets.enc.
 - [SHOULD] The theme 'analyze and improve' cycle is an AI review that must run BEFORE a design is ever published, and its reviewers AND repairers must see the actual rendered screenshots (not just source or issue text). Blind text-only repairs stall; source-only review misses rendered defects. (use recall to read more)
 - [SHOULD] The antigravity CLI requires GEMINI_API_KEY environment variable, NOT GOOGLE_API_KEY. The runtime.mjs spawnSync env must set both GOOGLE_API_KEY and GEMINI_API_KEY to the same value from config.googleApiKey. (use recall to read more)
 - [MUST NOT] CRITICAL: processOperation() in operation-validator.mjs implements the FULL SSSS §6 pipeline (envelope validation, idempotency, authorization, lease check, content validation, commit, audit) but it is DEAD CODE — NEVER called from REST API or CLI. (use recall to read more)
+- [SHOULD] Theme pipeline review board (compile-theme.mjs) SPACE run 2026-07-20 took 21 repair passes / 3h38m: (1) same-candidate repair loop is UNBOUNDED since 8faf5e2 — no pass cap; (2) 0KB/empty repair responses from OpenRouter DeepSeek are treated as success and silently re-reviewed; (3) reviewer anchors o... (use recall to read more)
 - [SHOULD NOT] triggerMutation() in routes/memory.mjs runs a FULL surface compile + FULL embeddings rebuild on every single memory write. For rapid consecutive writes this is catastrophic. Fix: debounce recompilation — accumulate writes and compile once after a quiet period (e.g. 2 seconds).
 - [SHOULD] NEVER create ephemeral implementation_plan.md artifacts in the brain/<conversation-id>/ directory for project work. All project documents (AUDIT, PRD, ARCHITECTURE, DEVELOPMENT_PLAN, PROJECT_TRACKER) live ONLY in docs/projects/in-progress/<PROJECT_PREFIX>/. (use recall to read more)
 - [MUST] Never refer to the backend LLM deployments or virtual servers for UltraChat as 'droplets'. Always refer to them as 'UltraChat custom models' or 'custom models'.
@@ -141,6 +150,7 @@ THE USER HAS EXPLICITLY CORRECTED YOUR BEHAVIOR. DO NOT MAKE THESE MISTAKES. THE
 - [SHOULD] NEVER run raw 'tsc' or 'tsc --noEmit'. ALWAYS use 'node .agent/skills/code-quality/scripts/start-here-ts.mjs' WITHOUT any force flags to check types. The background daemon handles caching and mitigations natively; just wait patiently for it to finish.
 - [SHOULD] When the user asks a question, immediately stop everything and answer in the chat without editing any files or running commands.
 - [SHOULD] Never use 'url' in field names for images (e.g. avatarUrl). It must always be 'upload' (e.g. avatarUpload or imageUpload).
+- [MUST NOT] Never use a bare router.use(requireAuth) in an Express sub-router that is mounted at the app root (like the restRouter sub-routers in src/server/rest.mjs). Pathless middleware runs on EVERY request path, so it 401-gates the static frontend, /favicon.ico, and the login page itself (auth catch-22). (use recall to read more)
 - [SHOULD] Always clear compacted-rules.json cache under memory-derived/ when modifying surface compaction heuristics or adding full rules.
 - [MUST NOT] Codex is a full app not just CLI: OpenAI Codex is a full app, not just a CLI tool. Do not refer to it as only a CLI.
 - [MUST NOT] No existing installs - no migration needed: Total Recall has zero existing external installs. There is no breaking change concern for directory renames or architecture changes. Do not reference migration paths for existing users.

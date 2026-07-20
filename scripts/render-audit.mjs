@@ -49,13 +49,69 @@ const RENDER_AUDIT_SCHEMA = {
           target: { type: 'STRING' },
           issue: { type: 'STRING' },
           severity: { type: 'STRING', enum: ['blocking', 'minor'] },
+          evidence: { type: 'STRING' },
         },
-        required: ['target', 'issue', 'severity'],
+        required: ['target', 'issue', 'severity', 'evidence'],
       },
     },
+    resolved_since_last_pass: { type: 'ARRAY', items: { type: 'STRING' } },
   },
-  required: ['approved', 'score', 'prompt_fidelity', 'distinctiveness', 'cohesion', 'issues'],
+  required: ['approved', 'score', 'prompt_fidelity', 'distinctiveness', 'cohesion', 'issues', 'resolved_since_last_pass'],
 };
+
+// Subjects the reviewer must never block on: fixed site facts, not defects of
+// the design under review. The prompt says so; this regex backstop enforces it
+// mechanically because the 21-pass incident proved prompt-only contracts leak.
+const OUT_OF_SCOPE_BLOCKING = [
+  // "only two cards", "only shows two design cards", "displays only 2 projects"
+  /only\s+(?:\w+\s+){0,2}(?:one|two|three|\d+)\s+(?:\w+\s+)?(?:cards?|designs?|projects?|items?)/i,
+  /(?:number|count|amount)\s+of\s+(?:cards?|designs?|projects?)/i,
+  /(?:few|too few|sparse|not enough)\s+(?:\w+\s+)?(?:cards?|designs?|projects?|items?)/i,
+  /prev\s*design|next\s*design|design.switcher|start\s*a\s*project/i,
+  /cna\s*banner|consent\s*banner|cookie\s*banner/i,
+];
+
+const FILLER_ISSUE = /^\s*(?:placeholder|todo|n\/?a|none|tbd)[\s.!]*$/i;
+
+/**
+ * Mechanically enforce the review contract on a raw model verdict:
+ * - drop filler/empty issues outright;
+ * - demote blocking issues whose evidence names no known screenshot;
+ * - demote blocking issues about out-of-scope subjects (content volume,
+ *   injected site chrome).
+ * Pure and exported for unit tests. Demotions annotate the issue text so the
+ * repair prompt and logs show why severity changed.
+ */
+export function sanitizeAuditVerdict(audit, { screenshotLabels = [] } = {}) {
+  const pageWords = new Set(screenshotLabels
+    .map((label) => String(label).split(/\s+/)[0].toLowerCase())
+    .filter(Boolean));
+  const issues = [];
+  for (const raw of Array.isArray(audit?.issues) ? audit.issues : []) {
+    const text = typeof raw?.issue === 'string' ? raw.issue.trim() : '';
+    if (!text || text.length < 12 || FILLER_ISSUE.test(text)) continue;
+    const issue = { ...raw, issue: text };
+    if (issue.severity !== 'minor') {
+      const evidence = typeof issue.evidence === 'string' ? issue.evidence.toLowerCase() : '';
+      const evidenced = [...pageWords].some((word) => evidence.includes(word));
+      if (pageWords.size && !evidenced) {
+        issue.severity = 'minor';
+        issue.issue = `${text} [demoted: no screenshot evidence was cited]`;
+      } else if (OUT_OF_SCOPE_BLOCKING.some((pattern) => pattern.test(text))) {
+        issue.severity = 'minor';
+        issue.issue = `${text} [demoted: out-of-scope subject — content volume and injected site chrome cannot block]`;
+      }
+    }
+    issues.push(issue);
+  }
+  return {
+    ...audit,
+    issues,
+    resolved_since_last_pass: Array.isArray(audit?.resolved_since_last_pass)
+      ? audit.resolved_since_last_pass
+      : [],
+  };
+}
 
 async function openRouterVision(parts) {
   const content = parts.map((part) => {
@@ -151,6 +207,7 @@ export async function renderAudit(slug, {
   siteRoot = null,
   brief = '',
   designPlan = '',
+  priorIssues = [],
 } = {}) {
   let chromium;
   try {
@@ -189,11 +246,18 @@ export async function renderAudit(slug, {
   }
 
   const layoutKeys = Object.keys(LAYOUT_SPECS).join(', ');
+  const screenshotLabels = shots.map(([label]) => label);
+  const reverificationSection = priorIssues.length ? `
+
+PRIOR ISSUES FROM THE PREVIOUS PASS — for re-verification only; the site has been REBUILT since these were written:
+${priorIssues.map((issue, i) => `${i + 1}. [${issue?.severity || 'blocking'}] ${issue?.target}: ${issue?.issue}`).join('\n')}
+
+For EACH prior issue, look at the CURRENT screenshots and decide: still present, or resolved. Put the resolved ones (quote them by number and a short description) in "resolved_since_last_pass". NEVER copy a prior issue into "issues" from memory — report it only if you can SEE it in the current screenshots at a location you cite in its "evidence". Reporting a fixed defect as still present wastes an entire repair cycle.` : '';
   const parts = [{
     text: `You are the rendered-page release inspector for an AI-generated portfolio skin. Below are full-page screenshots of the ACTUAL rendered site. Judge the pixels, not intent or source-code promises.
 
 USER BRIEF: ${brief || '(not supplied)'}
-ART DIRECTION PLAN: ${designPlan || '(not supplied)'}
+ART DIRECTION PLAN: ${designPlan || '(not supplied)'}${reverificationSection}
 
 Score the complete result 1-10 on prompt fidelity, distinctiveness, cohesion, hierarchy, typography, composition, image integration, and production polish. A technically valid but basic/template-like design MUST score below 8. Reject if the same hierarchy and layout could serve an unrelated prompt after merely changing colors or images. When the brief names a recognizable subject, that subject must be unmistakable in the hero and supporting imagery without sacrificing Greg's human likeness in the contact portrait.
 
@@ -215,11 +279,18 @@ Classify every defect you find with a severity:
 
 Do not inflate a small spacing nit to blocking; do not downgrade generic composition, prompt failure, or genuine breakage to minor.
 
+OUT OF SCOPE — never raise these as blocking; they are fixed site facts, not defects of this design:
+- The NUMBER of project or design cards. This portfolio genuinely has only a few items; a sparse grid is content reality, not a bug. Judge how well the layout treats the real count; a composition suggestion for handling few items is at most "minor" with target "css".
+- The top utility bar ("← Prev Design … Next Design →", "START A PROJECT") and any CNA/consent banner. These are permanent, mechanically injected site chrome that appears on every page of every design — never "leftover debug elements".
+- Anything fixable only by ADDING content (more projects, more designs, more copy).
+
+EVIDENCE — every issue MUST include an "evidence" field naming the exact screenshot it is visible in (one of: ${screenshotLabels.join('; ')}) and where on it (e.g. "projects desktop 1440px — right of the second card"). An issue you cannot point to in a specific current screenshot does not exist; do not report it. Never output filler text like "placeholder" — every issue must be a complete, specific defect description.
+
 When rejecting, each issue's target MUST be exactly "css" or one of: ${layoutKeys}. Describe each defect concretely enough that a repair model that CANNOT see the screenshots can fix it (name the element, the page, and what is visually wrong).
 
 Target routing: spacing, sizing, color, contrast, overlap, and overflow defects are almost always STYLESHEET problems — target "css" for those (e.g. tags/chips/metadata running together without separation, text colliding, containers overflowing). Target a layout only when the DOM structure itself is wrong (missing section, wrong nesting, element in the wrong place).
 
-OUTPUT: exactly one JSON object: { "approved": true, "score": 9, "prompt_fidelity": 9, "distinctiveness": 9, "cohesion": 9, "issues": [] }`,
+OUTPUT: exactly one JSON object: { "approved": true, "score": 9, "prompt_fidelity": 9, "distinctiveness": 9, "cohesion": 9, "issues": [], "resolved_since_last_pass": [] }`,
   }];
   for (const [label, buf] of shots) {
     parts.push({ text: `Screenshot: ${label}` }, { inlineData: { mimeType: 'image/jpeg', data: buf.toString('base64') } });
@@ -227,7 +298,7 @@ OUTPUT: exactly one JSON object: { "approved": true, "score": 9, "prompt_fidelit
 
   const audit = extractJson(await openRouterVision(parts));
   if (!Array.isArray(audit.issues)) audit.issues = [];
-  return audit;
+  return sanitizeAuditVerdict(audit, { screenshotLabels });
 }
 
 // ── CLI ──

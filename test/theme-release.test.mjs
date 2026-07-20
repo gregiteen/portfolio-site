@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  createIssueLedger,
+  decideAtCap,
   generationRetryDecision,
   generationRetryDelay,
   isRetryableGenerationFailure,
@@ -141,4 +143,108 @@ test('retryable review errors retain the same candidate and same pass', async ()
   assert.equal(result.candidate, candidate);
   assert.equal(reviewCalls, 2);
   assert.equal(retryCalls, 1);
+});
+
+test('decideAtCap promotes a clean candidate at threshold and rejects everything else', () => {
+  assert.equal(decideAtCap({ score: 7, blocking: [] }).promote, true);
+  assert.equal(decideAtCap({ score: 8, blocking: [] }).promote, true);
+  assert.equal(decideAtCap({ score: 6, blocking: [] }).promote, false);
+  assert.equal(decideAtCap({ score: 9, blocking: [{ target: 'home', issue: 'broken' }] }).promote, false);
+  assert.equal(decideAtCap({}).promote, false);
+  assert.equal(decideAtCap({ score: 6, blocking: [] }, { threshold: 6 }).promote, true);
+});
+
+test('repair loop caps passes and promotes a clean-enough candidate', async () => {
+  const reviews = [];
+  const result = await repairUntilApproved({ id: 'capped' }, {
+    maxPasses: 3,
+    review(_c, pass) {
+      reviews.push(pass);
+      // Never approved by the reviewer, but clean and high-scoring.
+      return { approved: false, score: 8, blocking: [], issues: [] };
+    },
+    repair() {},
+  });
+  assert.deepEqual(reviews, [1, 2, 3]);
+  assert.equal(result.cappedPromotion, true);
+  assert.equal(result.pass, 3);
+});
+
+test('repair loop caps passes and fails a candidate with blocking issues', async () => {
+  await assert.rejects(
+    repairUntilApproved({ id: 'doomed' }, {
+      maxPasses: 2,
+      review: () => ({ approved: false, score: 4, blocking: [{ target: 'home', issue: 'stray "}' }], issues: [] }),
+      repair() {},
+    }),
+    /Repair loop ended after 2 pass\(es\)/,
+  );
+});
+
+test('a terminal repair error ends the loop immediately via the cap decision', async () => {
+  let reviewCalls = 0;
+  const result = await repairUntilApproved({ id: 'no-progress' }, {
+    maxPasses: 10,
+    review() {
+      reviewCalls += 1;
+      return { approved: false, score: 7, blocking: [], issues: [] };
+    },
+    repair() {
+      throw Object.assign(new Error('no usable repair output'), { terminal: true });
+    },
+  });
+  // Clean + at threshold → terminal error promotes instead of burning passes.
+  assert.equal(result.cappedPromotion, true);
+  assert.equal(reviewCalls, 1);
+});
+
+test('a terminal repair error fails a dirty candidate immediately', async () => {
+  await assert.rejects(
+    repairUntilApproved({ id: 'no-progress-dirty' }, {
+      maxPasses: 10,
+      review: () => ({ approved: false, score: 3, blocking: [{ target: 'css', issue: 'bad' }], issues: [] }),
+      repair() {
+        throw Object.assign(new Error('no usable repair output'), { terminal: true });
+      },
+    }),
+    /no usable repair output/,
+  );
+});
+
+test('issue ledger escalates a persistent issue, then suppresses it, despite paraphrasing', () => {
+  const ledger = createIssueLedger();
+  const phrasings = [
+    'Stray literal text fragments reading " } appear floating next to each project card on the home page feed',
+    'The same stray " } text artifact appears floating next to every project card, appearing as leftover template syntax',
+    'Stray raw text fragments reading exactly " } appear next to the project cards and read as leaked template syntax',
+  ];
+
+  const first = ledger.observe([{ target: 'home', issue: phrasings[0] }]);
+  assert.equal(first.repairable.length, 1);
+  assert.equal(first.repairable[0].escalate, undefined);
+  assert.equal(first.suppressed.length, 0);
+
+  const second = ledger.observe([{ target: 'home', issue: phrasings[1] }]);
+  assert.equal(second.repairable.length, 1);
+  assert.equal(second.repairable[0].escalate, true);
+
+  const third = ledger.observe([{ target: 'home', issue: phrasings[2] }]);
+  assert.equal(third.repairable.length, 0);
+  assert.equal(third.suppressed.length, 1);
+});
+
+test('issue ledger keeps distinct issues and targets independent', () => {
+  const ledger = createIssueLedger();
+  const cardIssue = { target: 'home', issue: 'Stray template syntax floating next to project cards on the home feed' };
+  const navIssue = { target: 'css', issue: 'Primary navigation wraps awkwardly on mobile leaving CONTACT isolated on its own line' };
+
+  const first = ledger.observe([cardIssue, navIssue]);
+  assert.equal(first.repairable.length, 2);
+  assert.equal(first.suppressed.length, 0);
+
+  // Same nav issue again, but the card issue was fixed: only nav escalates.
+  const second = ledger.observe([navIssue]);
+  assert.equal(second.repairable.length, 1);
+  assert.equal(second.repairable[0].escalate, true);
+  assert.equal(second.repairable[0].target, 'css');
 });

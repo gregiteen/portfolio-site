@@ -71,8 +71,88 @@ function restoreCandidate(candidate, snapshot) {
 }
 
 /**
+ * Decide whether a candidate that hit the repair-pass cap ships anyway.
+ * The reviewer's own approval bar stays higher (renderedReviewState's
+ * minimumScore); this is the explicit "good enough after bounded effort"
+ * escape hatch that keeps one candidate from looping for hours.
+ */
+export function decideAtCap(state = {}, { threshold = 7 } = {}) {
+  const score = Number(state?.score) || 0;
+  const blocking = Array.isArray(state?.blocking) ? state.blocking : [];
+  if (blocking.length > 0) {
+    return { promote: false, reason: `${blocking.length} blocking issue(s) remain` };
+  }
+  if (score < threshold) {
+    return { promote: false, reason: `score ${score}/10 below promotion threshold ${threshold}` };
+  }
+  return { promote: true, reason: `score ${score}/10 with no blocking issues` };
+}
+
+// Trailing-s strip is deliberate: the reviewer paraphrases each pass
+// ("fragment appears" / "fragments appear"), and plural drift alone was
+// enough to break exact-token matching.
+const tokenizeIssue = (text) => new Set(
+  (String(text || '').toLowerCase().match(/[a-z0-9]{4,}/g) || [])
+    .map((token) => token.replace(/s$/, '')),
+);
+
+// Overlap coefficient (not Jaccard): heavy paraphrasing inflates the union
+// and under-counts genuinely identical defects.
+function issueSimilarity(a, b) {
+  if (!a.size || !b.size) return 0;
+  let overlap = 0;
+  for (const token of a) if (b.has(token)) overlap += 1;
+  return overlap / Math.min(a.size, b.size);
+}
+
+/**
+ * Track blocking issues across repair passes. The reviewer paraphrases the
+ * same defect differently each pass, so matching is fuzzy (token overlap per
+ * target). An issue surviving `escalateAt` observations gets one escalated
+ * (structurally different) repair attempt; surviving `suppressAt` observations
+ * proves it unfixable by this repair loop and stops it from blocking — the cap
+ * decision or a fresh candidate handles it from there.
+ */
+export function createIssueLedger({ escalateAt = 2, suppressAt = 3, similarityThreshold = 0.4 } = {}) {
+  const entries = [];
+  return {
+    observe(issues = []) {
+      const repairable = [];
+      const suppressed = [];
+      for (const issue of issues) {
+        const target = typeof issue?.target === 'string' ? issue.target : '';
+        const tokens = tokenizeIssue(issue?.issue);
+        let entry = entries.find((e) => e.target === target
+          && issueSimilarity(e.tokens, tokens) >= similarityThreshold);
+        if (entry) {
+          entry.count += 1;
+          entry.tokens = tokens;
+        } else {
+          entry = { target, tokens, count: 1 };
+          entries.push(entry);
+        }
+        if (entry.count >= suppressAt) {
+          suppressed.push(issue);
+        } else if (entry.count >= escalateAt) {
+          repairable.push({ ...issue, escalate: true });
+        } else {
+          repairable.push(issue);
+        }
+      }
+      return { repairable, suppressed };
+    },
+  };
+}
+
+/**
  * Keep one generated candidate alive until the rendered review approves it.
  * A rejected repair is rolled back in place, preserving candidate identity.
+ *
+ * The loop is bounded: after `maxPasses` failed reviews (or a repair error
+ * marked `terminal: true`, e.g. the repair model producing nothing on
+ * consecutive passes), `capDecider` chooses promote-vs-fail. Failure throws,
+ * which the caller's outer retry turns into a FRESH candidate — the one thing
+ * 21 passes on the same candidate proved this loop must never do again.
  */
 export async function repairUntilApproved(candidate, {
   review,
@@ -82,10 +162,21 @@ export async function repairUntilApproved(candidate, {
   isRetryableError = () => false,
   onRetryableError = async () => {},
   onRejectedRepair = async () => {},
+  maxPasses = Number.POSITIVE_INFINITY,
+  capDecider = decideAtCap,
 } = {}) {
   if (!candidate || typeof candidate !== 'object') throw new TypeError('candidate is required');
   if (typeof review !== 'function') throw new TypeError('review callback is required');
   if (typeof repair !== 'function') throw new TypeError('repair callback is required');
+
+  const finishAtCap = (verdict, pass, cause) => {
+    const decision = capDecider ? capDecider(verdict, pass) : { promote: false, reason: 'no cap decider' };
+    if (decision?.promote) {
+      return { candidate, verdict, pass, cappedPromotion: true, capReason: decision.reason };
+    }
+    const causeDetail = cause ? ` [${cause}]` : '';
+    throw new Error(`Repair loop ended after ${pass} pass(es) without approval${causeDetail}: ${decision?.reason || 'not promotable'}`);
+  };
 
   for (let pass = 1; ; pass++) {
     let verdict;
@@ -98,6 +189,7 @@ export async function repairUntilApproved(candidate, {
       continue;
     }
     if (verdict?.approved === true) return { candidate, verdict, pass };
+    if (pass >= maxPasses) return finishAtCap(verdict, pass, 'pass cap reached');
 
     const snapshot = structuredClone(candidate);
     try {
@@ -106,6 +198,7 @@ export async function repairUntilApproved(candidate, {
       await afterRepair(candidate, verdict, pass);
     } catch (error) {
       restoreCandidate(candidate, snapshot);
+      if (error?.terminal) return finishAtCap(verdict, pass, error.message);
       if (isRetryableError(error)) {
         await onRetryableError(error, { candidate, pass, phase: 'repair' });
       } else {

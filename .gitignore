@@ -43,3 +43,7 @@ dist/
 .data/
 vault/runtime/
 vault/.events/
+
+# Total Recall secrets projections
+.env.local
+.env.*.local
