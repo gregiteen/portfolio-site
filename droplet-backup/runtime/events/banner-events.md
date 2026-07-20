@@ -2,7 +2,7 @@
 type: "banner_event_log"
 title: "Banner Events"
 description: "Append-only log of CNA banner impressions/clicks for A/B analysis."
-timestamp: "2026-07-19T23:09:19.750Z"
+timestamp: "2026-07-20T06:11:18.512Z"
 ---
 # Banner Events
 
@@ -182,4 +182,37 @@ timestamp: "2026-07-19T23:09:19.750Z"
 - 2026-07-19T23:08:58.030Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
 - 2026-07-19T23:09:11.651Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
 - 2026-07-19T23:09:19.750Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T03:16:27.800Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-20T05:23:45.361Z event=shown variant=price-lock trigger=dwell email=gregiteen@gmail.com
+- 2026-07-20T06:04:52.761Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-20T06:04:56.912Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-20T06:05:01.413Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-20T06:05:04.447Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-20T06:05:07.362Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-20T06:05:32.506Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-20T06:05:47.597Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:06:00.469Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:06:32.722Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:06:47.595Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:07:09.455Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-20T06:07:11.465Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:07:25.363Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:07:44.446Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:08:06.248Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:08:14.214Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:08:26.964Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:08:33.964Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:08:46.909Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-20T06:08:49.190Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-20T06:08:50.237Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:08:59.583Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:09:13.665Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:09:25.429Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-20T06:10:10.596Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:10:23.095Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:10:36.798Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-20T06:10:38.349Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-20T06:10:51.713Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:10:51.722Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-20T06:11:18.512Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
 
