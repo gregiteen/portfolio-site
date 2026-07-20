@@ -62,6 +62,14 @@ let activeStagingRoot = null;
 const MAX_REPAIR_PASSES = Math.max(1, Number(process.env.THEME_MAX_REPAIR_PASSES) || 5);
 const PROMOTE_THRESHOLD = Math.min(10, Math.max(1, Number(process.env.THEME_PROMOTE_THRESHOLD) || 7));
 const MAX_STRUCTURAL_PASSES = Math.max(1, Number(process.env.THEME_MAX_STRUCTURAL_PASSES) || 4);
+// Review-board repairs are ANALYZE-AND-IMPROVE passes on a vision-capable
+// model: the repairer receives the SAME screenshots the reviewer judged and
+// must locate each defect in the pixels before fixing it. Text-only repairs
+// were observed to stall for 19 passes on a defect any vision model could
+// see. Generation fan-out, structural fixes, and distillation stay on the
+// cheaper text model — repairs are bounded, so the premium model's cost is
+// bounded too.
+const REPAIR_MODEL = process.env.THEME_REPAIR_MODEL || 'anthropic/claude-fable-5';
 
 // Response schemas for constrained decoding. Since the build
 // fans out into per-section CSS + per-layout specialists, each call returns one
@@ -291,7 +299,7 @@ async function deepSeekText(userPrompt, schema = null, maxOutputTokens = 32768, 
   }
 }
 
-async function openRouterVision(parts, schema, label = 'visual review') {
+async function openRouterVision(parts, schema, label = 'visual review', model = CLAUDE_VISION_MODEL, maxTokens = 16384) {
   const content = parts.map((part) => {
     if (typeof part?.text === 'string') return { type: 'text', text: part.text };
     if (part?.inlineData?.data) {
@@ -305,10 +313,10 @@ async function openRouterVision(parts, schema, label = 'visual review') {
   for (let attempt = 1; ; attempt++) {
     try {
       return await callOpenRouter({
-        model: CLAUDE_VISION_MODEL,
+        model,
         content,
         schema,
-        maxTokens: 16384,
+        maxTokens,
         reasoningEffort: 'high',
       });
     } catch (error) {
@@ -1160,7 +1168,30 @@ ${blocks}
           ? '\n\nESCALATION: previous targeted repairs failed to clear these exact issues on earlier passes. Take a structurally different approach — rethink the section\'s composition rather than re-patching the previous attempt — while still honoring the design contract and required placeholders.'
           : '');
 
-        console.log(`  → DeepSeek V4 Pro repairing ${issuesByTarget.size} target(s) on the same candidate (pass ${pass})…`);
+        // Analyze-and-improve: the repairer gets the reviewer's screenshots
+        // and must locate each defect in the pixels before writing the fix.
+        // On mechanical-gate passes there are no screenshots; the exact-string
+        // evidence in the issue text stands in for them.
+        const screenshotParts = (renderState.renderVerdict?.screenshots || []).flatMap((shot) => ([
+          { text: `Screenshot: ${shot.label}` },
+          { inlineData: { mimeType: shot.mimeType, data: shot.data } },
+        ]));
+        const analyzeAndImprove = async (promptText, schema, label, maxTokens) => {
+          const raw = await openRouterVision(
+            [...screenshotParts, { text: promptText }],
+            schema,
+            label,
+            REPAIR_MODEL,
+            maxTokens,
+          );
+          console.log(`  → OpenRouter ${REPAIR_MODEL} ${label} response (${Math.round(raw.length / 1024)}KB)`);
+          return raw;
+        };
+        const analyzePreamble = screenshotParts.length
+          ? 'ANALYZE AND IMPROVE: the screenshots above are the CURRENT rendered pages of this candidate, exactly as the review board saw them. First ANALYZE — locate each review issue in the screenshots and identify its root cause in the source below. Then IMPROVE — write the fix.\n\n'
+          : 'ANALYZE AND IMPROVE: a deterministic scan found the exact defects quoted below in the source. First ANALYZE their root cause, then IMPROVE — write the fix.\n\n';
+
+        console.log(`  → ${REPAIR_MODEL} analyze-and-improve on ${issuesByTarget.size} target(s), same candidate (pass ${pass})…`);
       const repairs = await Promise.all([...issuesByTarget.entries()].map(async ([target, issues]) => {
         const critique = issues.map((issue) => `- ${issue}`).join('\n');
         if (target === 'css') {
@@ -1171,9 +1202,9 @@ ${blocks}
           // patch the named defects — the cascade gives them priority and the
           // rest of the design is untouchable.
           const value = await requestRepair(target, async (retryNote) => {
-            const raw = await deepSeekText(`${baseContext}
+            const raw = await analyzeAndImprove(`${baseContext}
 
-You are writing a CSS FIX LAYER after a release review board. Do NOT rewrite or re-emit the existing stylesheet. Output ONLY new override rules that will be APPENDED after it — use the same selectors (or more specific ones) and write only as many rules as the issues below require. Fix every issue; change nothing else.${escalationNote(target)}
+${analyzePreamble}You are writing a CSS FIX LAYER after a release review board. Do NOT rewrite or re-emit the existing stylesheet. Output ONLY new override rules that will be APPENDED after it — use the same selectors (or more specific ones) and write only as many rules as the issues below require. Fix every issue; change nothing else.${escalationNote(target)}
 
 REVIEW ISSUES:
 ${critique}
@@ -1184,16 +1215,16 @@ ${styleSpec}
 CURRENT COMPLETE CSS:
 ${candidate.css}
 
-OUTPUT: exactly one JSON object: { "css": "…ONLY the appended fix-layer override rules…" }${retryNote}`, CSS_SECTION_SCHEMA, 32768, 'CSS repair');
+OUTPUT: exactly one JSON object: { "css": "…ONLY the appended fix-layer override rules…" }${retryNote}`, CSS_SECTION_SCHEMA, 'CSS repair', 32768);
             return extractJson(raw).css;
           });
           return value === null ? null : { target, value, mode: 'patch' };
         }
         const spec = LAYOUT_SPECS[target];
         const value = await requestRepair(target, async (retryNote) => {
-          const raw = await deepSeekText(`${baseContext}
+          const raw = await analyzeAndImprove(`${baseContext}
 
-You are repairing ONLY the "${target}" HTML layout after a release review board. Keep the approved visual language and preserve these exact required placeholder(s): ${spec.required.join(', ')}. Do not add hardcoded copy, document wrappers, or scripts.${escalationNote(target)}
+${analyzePreamble}You are repairing ONLY the "${target}" HTML layout after a release review board. Keep the approved visual language and preserve these exact required placeholder(s): ${spec.required.join(', ')}. Do not add hardcoded copy, document wrappers, or scripts.${escalationNote(target)}
 
 REVIEW ISSUES:
 ${critique}
@@ -1204,7 +1235,7 @@ ${styleSpec}
 CURRENT COMPLETE "${target}" HTML:
 ${candidate.layouts[target]}
 
-OUTPUT: exactly one JSON object: { "html": "…complete repaired ${target} layout…" }${retryNote}`, ONE_LAYOUT_SCHEMA, 16384, `${target} repair`);
+OUTPUT: exactly one JSON object: { "html": "…complete repaired ${target} layout…" }${retryNote}`, ONE_LAYOUT_SCHEMA, `${target} repair`, 16384);
           return extractJson(raw).html;
         });
         return value === null ? null : { target, value };

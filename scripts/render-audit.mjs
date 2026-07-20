@@ -298,7 +298,17 @@ OUTPUT: exactly one JSON object: { "approved": true, "score": 9, "prompt_fidelit
 
   const audit = extractJson(await openRouterVision(parts));
   if (!Array.isArray(audit.issues)) audit.issues = [];
-  return sanitizeAuditVerdict(audit, { screenshotLabels });
+  const sanitized = sanitizeAuditVerdict(audit, { screenshotLabels });
+  // Ship the evidence with the verdict so a vision-capable repair model can
+  // analyze the SAME pixels the reviewer judged (text-only repairs stall —
+  // see the generator skill's gotchas). Base64 JPEG, ~600KB per pass, held
+  // in memory only for the life of the pass.
+  sanitized.screenshots = shots.map(([label, buf]) => ({
+    label,
+    mimeType: 'image/jpeg',
+    data: buf.toString('base64'),
+  }));
+  return sanitized;
 }
 
 // ── CLI ──
