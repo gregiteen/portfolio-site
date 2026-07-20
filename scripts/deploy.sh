@@ -41,7 +41,7 @@ fi
 MAXWAIT="${DEPLOY_GENERATION_WAIT:-900}"
 WAITED=0
 while ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 root@138.197.199.217 \
-  "pgrep -f 'scripts/compile-theme.mjs' >/dev/null" 2>/dev/null; do
+  "pgrep -f 'scripts/compile-theme[.]mjs' >/dev/null" 2>/dev/null; do
   if [ "$WAITED" -ge "$MAXWAIT" ]; then
     echo "⚠️ Generation still running after ${MAXWAIT}s — reloading anyway; boot requeue will recover it."
     break
