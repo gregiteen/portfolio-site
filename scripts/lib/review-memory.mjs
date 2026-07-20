@@ -62,9 +62,29 @@ export function runTotalRecall(args, { timeoutMs = CLI_TIMEOUT_MS, spawnImpl = s
   });
 }
 
-/** First JSON array/object embedded in CLI output (the CLI logs around it). */
+// A parsed object that is one of the CLI's JSONL diagnostic log records, not
+// the result payload (verified against the real CLI output on the droplet:
+// it prints {"timestamp","level","subsystem",...} lines, then the result).
+const isLogRecord = (value) => Boolean(value)
+  && typeof value === 'object'
+  && !Array.isArray(value)
+  && 'timestamp' in value
+  && 'level' in value;
+
+/** JSON result payload embedded in noisy CLI output. */
 export function extractJsonPayload(text) {
   const source = String(text || '');
+  // The CLI emits JSONL diagnostics first and the result last — prefer the
+  // last parseable non-log line.
+  const lines = source.split('\n').map((line) => line.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!/^[[{]/.test(lines[i])) continue;
+    try {
+      const parsed = JSON.parse(lines[i]);
+      if (!isLogRecord(parsed)) return parsed;
+    } catch { /* not this line */ }
+  }
+  // Fallback for multi-line pretty-printed payloads.
   const candidates = [['[', ']'], ['{', '}']]
     .map(([open, close]) => ({ close, start: source.indexOf(open) }))
     .filter((candidate) => candidate.start !== -1)
@@ -73,7 +93,8 @@ export function extractJsonPayload(text) {
     const end = source.lastIndexOf(close);
     if (end <= start) continue;
     try {
-      return JSON.parse(source.slice(start, end + 1));
+      const parsed = JSON.parse(source.slice(start, end + 1));
+      if (!isLogRecord(parsed)) return parsed;
     } catch { /* keep trying */ }
   }
   return null;

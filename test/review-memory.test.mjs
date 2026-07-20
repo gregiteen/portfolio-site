@@ -24,6 +24,24 @@ test('extractJsonPayload finds JSON embedded in noisy CLI output', () => {
   assert.equal(extractJsonPayload(''), null);
 });
 
+test('extractJsonPayload skips the real CLI JSONL diagnostic preamble (droplet output shape)', () => {
+  // Near-verbatim shape from the droplet: JSONL log records (some containing
+  // brackets inside strings), then the result as the final line.
+  const output = [
+    '{"timestamp":"2026-07-20T04:32:03.922Z","level":"info","subsystem":"Vault cache miss","message":{"vaultDir":"/opt/x"}}',
+    '{"timestamp":"2026-07-20T04:32:03.933Z","level":"warn","subsystem":"vault","message":"Failed to parse ... tags: [\\"ssss\\",\\"memory\\"] ..."}',
+    '[{"content":"Always bound repair passes"}]',
+  ].join('\n');
+  assert.deepEqual(extractJsonPayload(output), [{ content: 'Always bound repair passes' }]);
+
+  // Empty result after log lines must yield [] (not a log record object).
+  const empty = [
+    '{"timestamp":"2026-07-20T04:32:03.922Z","level":"info","subsystem":"watcher","message":"starting"}',
+    '[]',
+  ].join('\n');
+  assert.deepEqual(extractJsonPayload(empty), []);
+});
+
 test('recallLessons normalizes result rows and never throws', async () => {
   const lessons = await recallLessons({
     query: 'theme pitfalls',
