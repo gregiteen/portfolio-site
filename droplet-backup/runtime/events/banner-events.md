@@ -2,7 +2,7 @@
 type: "banner_event_log"
 title: "Banner Events"
 description: "Append-only log of CNA banner impressions/clicks for A/B analysis."
-timestamp: "2026-07-18T06:59:40.298Z"
+timestamp: "2026-07-19T23:09:19.750Z"
 ---
 # Banner Events
 
@@ -174,4 +174,12 @@ timestamp: "2026-07-18T06:59:40.298Z"
 - 2026-07-18T06:59:28.234Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
 - 2026-07-18T06:59:31.082Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
 - 2026-07-18T06:59:40.298Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-19T23:08:26.165Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-19T23:08:30.216Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-19T23:08:35.991Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-19T23:08:39.722Z event=shown variant=free-support-30 trigger=dwell email=gregiteen@gmail.com
+- 2026-07-19T23:08:41.752Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-19T23:08:58.030Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-19T23:09:11.651Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
+- 2026-07-19T23:09:19.750Z event=shown variant=free-support-30 trigger=scroll-30 email=gregiteen@gmail.com
 
