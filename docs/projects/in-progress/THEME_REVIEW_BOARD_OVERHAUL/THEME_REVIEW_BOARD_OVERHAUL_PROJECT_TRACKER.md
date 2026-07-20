@@ -38,6 +38,15 @@ Goal: lessons persist append-only across runs and are recalled into prompts; des
 - [x] Both destructive pitfalls.json full-rewrite blocks removed (they lived inline in [compile-theme.mjs](../../../../scripts/compile-theme.mjs), structural loop + review loop; orchestrator-brain.mjs was a static catalog and needed no change)
 - [x] Run-end summarizer `summarizeRunLessons()`: ≤3 transferable lessons distilled from the full review history, written on approval, capped promotion, AND terminal failure (before staging teardown)
 
+## ✅ Phase 3.5: Vision analyze-and-improve repair (scope added by Greg mid-project)
+
+Goal: the repairer sees the same screenshots the reviewer judged, per the documented "analyze and improve" contract.
+
+- [x] Structural repair loop bounded too (`THEME_MAX_STRUCTURAL_PASSES`, default 4) — found unbounded during live run 1, contradicting the generator skill's "bounded 2-pass" description
+- [x] `renderAudit()` returns the pass's screenshots (base64, in-memory) with the verdict
+- [x] Review-board repairs moved to a vision model (`THEME_REPAIR_MODEL`, default `anthropic/claude-fable-5`) with explicit ANALYZE (locate defect in pixels) → IMPROVE (write fix) prompt; mechanical-gate passes fall back to exact-string evidence
+- [x] DeepSeek retained for generation fan-out, structural fixes, and lesson distillation (unbounded-volume, cheap work)
+
 ## ⏳ Phase 4: Verification & release
 
 Goal: proven on live droplet runs, docs synced. (Required before moving to `completed/`.)

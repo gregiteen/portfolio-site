@@ -72,6 +72,7 @@ import {
   upsertProposal,
   deleteProposal,
   appendRun,
+  listRuns,
   pendingNotifications,
   getRateCard,
   ensureRateCardSeeded,
@@ -237,18 +238,18 @@ function slugForPrompt(prompt) {
 const genQueue = [];
 
 /** Start now if idle, otherwise queue — nothing gets silently dropped. */
-function requestGeneration(prompt, email = null) {
+function requestGeneration(prompt, email = null, retry = null) {
   if (genJob.status === 'running') {
-    genQueue.push({ prompt, email });
+    genQueue.push({ prompt, email, retry });
     console.log(`[Generator] Queued "${prompt}" for ${email} (${genQueue.length} waiting)`);
     return;
   }
-  startGeneration(prompt, email);
+  startGeneration(prompt, email, retry);
 }
 
 function drainQueue() {
   const next = genQueue.shift();
-  if (next) startGeneration(next.prompt, next.email);
+  if (next) startGeneration(next.prompt, next.email, next.retry || null);
 }
 
 function startGeneration(prompt, email = null, retry = null) {
@@ -291,7 +292,10 @@ function startGeneration(prompt, email = null, retry = null) {
         ? 'Failed after ' + attempt + ' attempts: ' + detail
         : 'Stopped after attempt ' + attempt + ': ' + detail;
       console.error(`[Generator] Attempt ${attempt} failed permanently: ${detail}`);
-      appendRun({ run_id: runId, prompt, status: 'error', startedAt, finishedAt: genJob.finishedAt, error: detail, attempt }).catch((e) => {
+      // 'failed' is the store's valid terminal status — 'error' was rejected
+      // by its validator, which left every failed run's doc stuck on
+      // "running" and its wait page counting forever.
+      appendRun({ run_id: runId, prompt, status: 'failed', startedAt, finishedAt: genJob.finishedAt, error: detail, attempt }).catch((e) => {
         console.error('[Runtime] Failed to persist generation error:', e.message);
       });
       drainQueue();
@@ -429,6 +433,28 @@ for (const pending of pendingNotifications()) {
   pendingVisitEmails.set(token, { sessionInfo, cnaData: pending.pending_notification.cnaData || null, timer });
 }
 console.log(`[Runtime] Hydrated ${runtimeCounts.visitors} visitor profiles, ${runtimeCounts.proposals} proposals, ${pendingVisitEmails.size} pending notifications`);
+
+// Recover generations interrupted by a server restart: a PM2 reload kills the
+// compile-theme child, so any run doc still marked running/retrying at boot
+// has no surviving process. Recent ones requeue under their original run_id
+// (the visitor's wait page keeps working); older ones are closed out as
+// failed so they can never haunt a future boot.
+const STALE_RUN_REQUEUE_WINDOW_MS = 6 * 60 * 60 * 1000;
+try {
+  const staleRuns = (await listRuns()).filter((run) => run.status === 'running' || run.status === 'retrying');
+  for (const run of staleRuns) {
+    const startedAt = Date.parse(run.started_at) || 0;
+    if (run.prompt && Date.now() - startedAt <= STALE_RUN_REQUEUE_WINDOW_MS) {
+      console.warn(`[Generator] Requeuing "${run.prompt}" (run ${run.run_id}) — interrupted by server restart`);
+      requestGeneration(run.prompt, run.email || null, { runId: run.run_id, startedAt: startedAt || Date.now(), attempt: 1 });
+    } else {
+      console.warn(`[Generator] Closing stale run ${run.run_id} ("${run.prompt}") as failed — too old to requeue`);
+      appendRun({ run_id: run.run_id, prompt: run.prompt || '', status: 'failed', startedAt: startedAt || Date.now(), finishedAt: Date.now(), error: 'abandoned: interrupted and past the requeue window at server restart' }).catch(() => {});
+    }
+  }
+} catch (err) {
+  console.warn('[Generator] Stale-run recovery skipped:', err instanceof Error ? err.message : String(err));
+}
 
 /** SMTP transporter */
 const smtpTransport = createTransport({

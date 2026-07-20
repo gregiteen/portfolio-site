@@ -33,7 +33,25 @@ if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 root@138.197.199.217 \
   exit 1
 fi
 
-# 4. Reload PM2 with a strict timeout (zero downtime)
+# 4. Never reload out from under an in-flight theme generation: the reload
+# kills serve.mjs's compile-theme child mid-run (observed live 2026-07-20 —
+# two visitor runs silently died this way). Repair passes are now capped, so
+# a bounded wait is enough; if it still hasn't finished, reload anyway — the
+# server's boot-time stale-run sweep requeues it under the same run_id.
+MAXWAIT="${DEPLOY_GENERATION_WAIT:-900}"
+WAITED=0
+while ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 root@138.197.199.217 \
+  "pgrep -f 'scripts/compile-theme.mjs' >/dev/null" 2>/dev/null; do
+  if [ "$WAITED" -ge "$MAXWAIT" ]; then
+    echo "⚠️ Generation still running after ${MAXWAIT}s — reloading anyway; boot requeue will recover it."
+    break
+  fi
+  echo "⏳ Theme generation in flight — waiting 30s before reload (${WAITED}/${MAXWAIT}s)..."
+  sleep 30
+  WAITED=$((WAITED+30))
+done
+
+# 5. Reload PM2 with a strict timeout (zero downtime)
 echo "🔄 Reloading PM2 on droplet (timeout 10s)..."
 if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@138.197.199.217 "pm2 reload portfolio"; then
   echo "❌ CRITICAL: SSH or PM2 reload failed or timed out!"

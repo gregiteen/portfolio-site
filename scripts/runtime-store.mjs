@@ -509,6 +509,23 @@ export async function appendRun(run) {
   return { id, ...fm };
 }
 
+/** All generation_run docs (frontmatter only). Used by the boot-time sweep
+ * that recovers runs interrupted by a server restart. */
+export async function listRuns() {
+  if (!initialized) await initRuntimeStore();
+  const out = [];
+  try {
+    const files = await readdir(dirs.runs);
+    for (const file of files.filter((f) => f.endsWith('.md'))) {
+      try {
+        const { data } = parseDocument(await readFile(join(dirs.runs, file), 'utf8'));
+        if (data?.type === 'generation_run') out.push(data);
+      } catch { /* unreadable run doc — skip */ }
+    }
+  } catch { /* runs dir missing — no runs */ }
+  return out;
+}
+
 export function pendingNotifications() {
   return [...visitorCache.values()].filter((v) => v.pending_notification);
 }
