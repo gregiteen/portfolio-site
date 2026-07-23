@@ -50,6 +50,26 @@ This is the repo’s main durability mechanism. The server keeps in-memory cache
 
 `scripts/lib/theme.mjs` is the contract layer for generated theme docs. It contains the template and CSS-scoping logic that the build and runtime generator both rely on.
 
+### Image generation
+
+`scripts/lib/openrouter.mjs` contains `callFalImage()` — all image generation uses Fal.ai:
+
+- **FLUX Pro v1.1** (`fal-ai/flux-pro/v1.1`): hero images and portraits
+- **Ideogram v4** (`fal-ai/ideogram/v4`): logos, brandkits, favicons (crisp text rendering)
+
+API keys are resolved from the Total Recall secrets store (`FAL_KEY`), never hardcoded.
+
+### Signing and proposals
+
+`scripts/lib/documenso.mjs` — Documenso API client for e-signature (create document, upload PDF, place fields, send). `scripts/lib/documenso-sso.mjs` — one-time SSO handoff to the "Signed, gi." branded signing pages. `scripts/lib/letterhead.mjs` — rate-card PDF generation.
+
+### CRM, drip, and calendar
+
+- `scripts/lib/drip.mjs` — campaign sequencer; reads `vault/campaigns/*.md`
+- `scripts/lib/imap.mjs` — IMAP poller with out-of-office loop prevention (`repliedTo` set)
+- `scripts/lib/webmail.mjs` / `scripts/lib/webmail-ui.mjs` — CRM-aware webmail
+- `scripts/lib/calendar.mjs` — CalDAV calendar sync, availability, client booking
+
 ## Data flow
 
 The simplest path is:
@@ -72,6 +92,10 @@ The richer visitor flow is:
 - `scripts/runtime-store.mjs`
 - `scripts/sync-registry.mjs`
 - `scripts/lib/theme.mjs`
+- `scripts/lib/openrouter.mjs` (Fal.ai image generation)
+- `scripts/lib/documenso.mjs` (e-signature)
+- `scripts/lib/drip.mjs` (campaigns)
+- `scripts/lib/imap.mjs` (IMAP/OOO)
+- `scripts/lib/calendar.mjs` (CalDAV)
 - `vault-registry/core.json`
 - `vault/pages/home.md`
-- `docs/projects/in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/PORTFOLIO_VISITOR_FUNNEL_RECOVERY_ARCHITECTURE.md`
