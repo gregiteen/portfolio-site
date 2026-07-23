@@ -237,6 +237,13 @@ function slugForPrompt(prompt) {
 }
 const genQueue = [];
 
+// Hard ceiling on fresh-candidate retries for one prompt. The default was
+// unbounded, so a run could only ever end in success or a server restart —
+// "Woods" and "Hindu" each spun ~10h and were closed out as
+// "abandoned: interrupted and past the requeue window at server restart",
+// never as an honest failure the visitor could see.
+const MAX_GENERATION_ATTEMPTS = Math.max(1, Number(process.env.THEME_MAX_ATTEMPTS) || 5);
+
 /** Start now if idle, otherwise queue — nothing gets silently dropped. */
 function requestGeneration(prompt, email = null, retry = null) {
   if (genJob.status === 'running') {
@@ -282,7 +289,9 @@ function startGeneration(prompt, email = null, retry = null) {
     if (settled) return;
     settled = true;
     const detail = String(reason).replace(/^\[Failed\]\s*/, '').slice(0, 300);
-    const decision = generationRetryDecision(attempt, detail);
+    const decision = generationRetryDecision(attempt, detail, {
+      maxAttempts: MAX_GENERATION_ATTEMPTS,
+    });
 
     if (!decision.retry) {
       genJob.status = 'error';

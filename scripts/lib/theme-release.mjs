@@ -34,7 +34,13 @@ export function generationRetryDelay(attempt, { baseMs = 2_000, maxMs = 60_000 }
 const NON_RETRYABLE_GENERATION_FAILURES = [
   /\b(?:OPENROUTER_API_KEY|GOOGLE_API_KEY|GEMINI_API_KEY)\b.*\b(?:not found|not set|missing)\b/i,
   /\b(?:API_KEY_INVALID|INVALID_ARGUMENT|PERMISSION_DENIED|UNAUTHENTICATED)\b/,
-  /"code"\s*:\s*(?:400|401|403|404)\b/,
+  // 402 (payment/credits) belongs here with the other hard refusals: an
+  // exhausted balance never heals on its own. Omitting it is what let two runs
+  // burn 705 and 715 retries across ~10h each, re-sending a request the
+  // provider had already refused for lack of credits.
+  /"code"\s*:\s*(?:400|401|402|403|404)\b/,
+  /\brequires more credits\b/i,
+  /\b(?:insufficient|negative)\s+credits?\b/i,
   /\bCannot find module\b/i,
   /\b(?:SyntaxError|ReferenceError)\b/,
   /\bENOENT\b/,
@@ -63,6 +69,44 @@ export function generationRetryDecision(
     exhausted,
     delayMs: retry ? generationRetryDelay(safeAttempt, { baseMs, maxMs }) : 0,
   };
+}
+
+/**
+ * Route structural validator errors to the slot whose repair can actually fix
+ * them. Two rules earn their place here:
+ *
+ *  - A class-binding error names a layout ("layout \"shell\" uses CSS class(es)
+ *    with no matching selector: ...") but the missing thing is a SELECTOR. Sent
+ *    to the layout owner it is unfixable: the layout is using the contract's
+ *    class vocabulary, so the only "fix" available to it is deleting classes the
+ *    contract re-mandates on the next pass. Sent to CSS it always converges.
+ *  - An error naming no slot at all (e.g. missing "name") used to be dropped
+ *    whenever any other error routed successfully, so it blocked the gate
+ *    forever while the loop repaired unrelated slots.
+ *
+ * @returns {Map<string, string[]>} target -> errors, targets limited to
+ *          'css' and known layout keys.
+ */
+export function routeStructuralErrors(errors = [], layoutKeys = []) {
+  const known = new Set(layoutKeys);
+  const byTarget = new Map();
+  const add = (target, error) => {
+    byTarget.set(target, [...(byTarget.get(target) || []), error]);
+  };
+  const unrouted = [];
+  for (const error of errors) {
+    const text = String(error);
+    if (/uses CSS class\(es\) with no matching selector/.test(text)) {
+      add('css', text);
+      continue;
+    }
+    const layoutMatch = text.match(/^layout "([a-z_]+)"/);
+    const target = layoutMatch?.[1] || (/^("css"|stylesheet)/.test(text) ? 'css' : null);
+    if (target === 'css' || (target && known.has(target))) add(target, text);
+    else unrouted.push(text);
+  }
+  for (const error of unrouted) add('css', error);
+  return { byTarget, unrouted };
 }
 
 function restoreCandidate(candidate, snapshot) {

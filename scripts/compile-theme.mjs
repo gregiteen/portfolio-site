@@ -31,8 +31,10 @@ import {
   renderedReviewState,
   requireApprovedVisualAudit,
   requireValidTheme,
+  routeStructuralErrors,
 } from './lib/theme-release.mjs';
 import { scanLayoutSources, scanBuiltHtml } from './lib/artifact-gate.mjs';
+import { buildTransparentMark } from './lib/logo-transparency.mjs';
 import {
   createRunLessonRecorder,
   formatLessonPack,
@@ -41,11 +43,12 @@ import {
 } from './lib/review-memory.mjs';
 import {
   CLAUDE_VISION_MODEL,
-  DEEPSEEK_REPAIR_MODEL,
+  TEXT_MODEL,
   IMAGE_MODEL,
   IMAGE_MODEL_LITE,
   callOpenRouter,
   callOpenRouterImage,
+  callFalImage,
   isRetryableOpenRouterError,
 } from './lib/openrouter.mjs';
 
@@ -275,11 +278,16 @@ function executeAgentCall(userPrompt) {
 
 // ─── OpenRouter model APIs ─────────────────────────────────────────────────
 
-async function deepSeekText(userPrompt, schema = null, maxOutputTokens = 32768, label = 'design') {
+// Bounded even for genuinely transient errors: a sustained 429/5xx from the
+// provider is indistinguishable from an outage, and an unbounded loop here
+// would stall the run for hours exactly the way the 402 loop did.
+const TEXT_REQUEST_ATTEMPTS = Math.max(1, Number(process.env.THEME_TEXT_ATTEMPTS) || 6);
+
+async function generateText(userPrompt, schema = null, maxOutputTokens = 32768, label = 'design') {
   for (let attempt = 1; ; attempt++) {
     try {
       const raw = await callOpenRouter({
-        model: DEEPSEEK_REPAIR_MODEL,
+        model: TEXT_MODEL,
         prompt: userPrompt,
         schema,
         maxTokens: maxOutputTokens,
@@ -288,12 +296,12 @@ async function deepSeekText(userPrompt, schema = null, maxOutputTokens = 32768, 
         // minutes per specialist. Low still reasons while preserving output.
         reasoningEffort: 'low',
       });
-      console.log(`  → OpenRouter ${DEEPSEEK_REPAIR_MODEL} ${label} response (${Math.round(raw.length / 1024)}KB)`);
+      console.log(`  → OpenRouter ${TEXT_MODEL} ${label} response (${Math.round(raw.length / 1024)}KB)`);
       return raw;
     } catch (error) {
-      if (!isRetryableOpenRouterError(error)) throw error;
+      if (!isRetryableOpenRouterError(error) || attempt >= TEXT_REQUEST_ATTEMPTS) throw error;
       const delay = generationRetryDelay(attempt);
-      console.warn(`  ⚠ OpenRouter ${label} request failed transiently; retrying the same candidate in ${Math.ceil(delay / 1000)}s…`);
+      console.warn(`  ⚠ OpenRouter ${label} request failed transiently (attempt ${attempt}/${TEXT_REQUEST_ATTEMPTS}); retrying the same candidate in ${Math.ceil(delay / 1000)}s…`);
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
@@ -334,24 +342,21 @@ async function openRouterVision(parts, schema, label = 'visual review', model = 
 // Hero/portrait have no text to render, so they get the ~4x faster Lite
 // model (Nano Banana 2 Lite) with no observed quality tradeoff.
 async function generateImage(imagePrompt, outputPath, baseImagePath = null, model = IMAGE_MODEL) {
-  const inputReferences = [];
+  let imageUrl = null;
   if (baseImagePath) {
+    // Fal accepts data URIs for image_url
     const mimeType = /\.png$/i.test(baseImagePath) ? 'image/png' : 'image/jpeg';
     const data = (await readFile(baseImagePath)).toString('base64');
-    inputReferences.push({
-      type: 'image_url',
-      image_url: { url: `data:${mimeType};base64,${data}` },
-    });
+    imageUrl = `data:${mimeType};base64,${data}`;
   }
   const filename = outputPath.split('/').pop() || '';
   const aspectRatio = filename.startsWith('hero') || filename.startsWith('logo') || filename.startsWith('brandkit')
     ? '16:9'
     : filename.startsWith('portrait') ? '3:4' : '1:1';
-  const result = await callOpenRouterImage({
+  const result = await callFalImage({
     model,
     prompt: imagePrompt,
-    inputReferences,
-    resolution: '1K',
+    imageUrl,
     aspectRatio,
   });
   const sharp = (await import('sharp')).default;
@@ -362,7 +367,7 @@ async function generateImage(imagePrompt, outputPath, baseImagePath = null, mode
     output = await sharp(output).png().toBuffer();
   }
   await writeFile(outputPath, output);
-  console.log(`  → OpenRouter ${model} saved ${outputPath} (${Math.round(output.length / 1024)}KB)`);
+  console.log(`  → Fal ${model} saved ${outputPath} (${Math.round(output.length / 1024)}KB)`);
   return true;
 }
 
@@ -452,7 +457,7 @@ async function run() {
         `pass ${entry.pass}: score ${entry.score}/10, ${entry.blocking} blocking, ${entry.resolved} resolved since prior pass`,
         ...entry.issues.map((text) => `  - ${text}`),
       ].join('\n')).join('\n');
-      const raw = await deepSeekText(`You are distilling durable lessons from one AI theme-generation run so FUTURE runs avoid repeating its failures.
+      const raw = await generateText(`You are distilling durable lessons from one AI theme-generation run so FUTURE runs avoid repeating its failures.
 
 BRIEF: "${prompt}"
 OUTCOME: ${outcome}
@@ -537,9 +542,9 @@ Execute this creative vision using the high-end mechanics from the Technical Too
 
   async function callAgent(p, schema = null, maxOutputTokens = 16384) {
     try {
-      return await deepSeekText(p, schema, maxOutputTokens, 'generation');
+      return await generateText(p, schema, maxOutputTokens, 'generation');
     } catch (err) {
-      console.error('OpenRouter DeepSeek call failed:', String(err));
+      console.error(`OpenRouter ${TEXT_MODEL} call failed:`, String(err));
       if (process.env.ALLOW_CLI_THEME_FALLBACK !== '1') throw err;
       console.warn('  ⚠ ALLOW_CLI_THEME_FALLBACK=1; attempting a local CLI agent.');
       return executeAgentCall(p);
@@ -566,7 +571,7 @@ The constitution is a production contract, not inspirational prose:
 - The home blueprint must apply exactly one named hero class that the stylesheet will give background-image: url(assets/hero.jpg).
 - The selected composition must contain one justified visual risk that makes it impossible to mistake for an unrelated prompt, while keeping the actual portfolio content legible.
 
-Return exactly the DIRECTOR_SCHEMA JSON object.`, DIRECTOR_SCHEMA, 32768, 8192, (process.env.DEFAULT_MODEL || 'gemini-3.1-pro'), false);
+Return exactly the DIRECTOR_SCHEMA JSON object.`, DIRECTOR_SCHEMA, 32768);
 
   const planObj = extractJson(rawDirector);
   const plan = planObj.plan || 'No plan provided.';
@@ -585,8 +590,32 @@ Return exactly the DIRECTOR_SCHEMA JSON object.`, DIRECTOR_SCHEMA, 32768, 8192, 
       .map(([key, blueprint]) => [key, blueprint?.rootClass])
       .filter(([, rootClass]) => typeof rootClass === 'string' && rootClass.trim())
   );
+  // `name` comes only from the Director call, and NOTHING downstream can add
+  // it: the structural repair loop rewrites `css` and `layouts` and nothing
+  // else, so a Director that omitted `name` produced a candidate that failed
+  // `missing "name"` on every pass until the loop gave up — observed burning a
+  // full hour of repair calls on a field no repair prompt can reach. Backfill
+  // it deterministically, the same mechanical-safety-net pattern as
+  // enforceBrandAssetContract: the model gets to name the theme, but never
+  // gets to block the release by declining to.
+  // The prompt guard above only enforces non-empty and <=500 chars, so a
+  // punctuation-only prompt ("!!!") reaches here and must not throw.
+  const fallbackName = prompt
+    .replace(/[^A-Za-z0-9 ]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 4)
+    .map((word) => word[0].toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+    .slice(0, 60) || 'Custom Skin';
+  const resolvedName = typeof planObj.name === 'string' && planObj.name.trim()
+    ? planObj.name.trim().slice(0, 60)
+    : fallbackName;
+  if (resolvedName === fallbackName && planObj.name !== resolvedName) {
+    console.warn(`  ⚠ Director returned no theme name; backfilling "${fallbackName}" from the prompt.`);
+  }
   let payload = {
-    name: planObj.name,
+    name: resolvedName,
     accent: planObj.accent,
     designSpec: planObj.designSpec,
     layouts: {},
@@ -616,43 +645,84 @@ Return exactly the DIRECTOR_SCHEMA JSON object.`, DIRECTOR_SCHEMA, 32768, 8192, 
         const brandKitPath = logoPath.replace('logo.png', 'brandkit.png');
         const kitSuccess = await generateImage(`Subject: A flat, 2D digital graphic on a perfectly solid #FFFFFF white background. It must contain TWO completely separate designs on the same canvas: a Logo and a Favicon.\nContext: Digital asset.\nStyle: THE THEME IS "${prompt}". EMBRACE THE THEME FULLY, BUT EXECUTE IT WITH A HIGH-END, PREMIUM ARTISTIC VISION. Pick a primary and accent color that perfectly match the "${prompt}" theme. Design it like a world-class agency. NO 2008 DESIGNS. NO BASIC SHIT.\n\nCRITICAL LAYOUT INSTRUCTION: You must draw TWO separate items:\n1. THE LOGO: A highly creative graphic emblem (fitting the "${prompt}" theme) placed next to the exact words "GREG ITEEN". Do NOT put the letters "GI" inside this graphic emblem.\n2. THE FAVICON: A completely separate, standalone square icon spelling exactly "GI".\nDO NOT combine the Favicon text into the Logo's graphic emblem. Keep them distinct.\n\nHARD CONSTRAINT: This must be a strictly 2D FLAT vector style graphic. DO NOT use 3D effects, bevels, embossing, drop shadows, or gloss. DO NOT generate physical objects. NO CLIP-ART. NO GENERIC AI SHAPES. The background MUST be perfectly solid #FFFFFF white.`, brandKitPath, null, IMAGE_MODEL_LITE).catch(() => false);
 
-        const p3 = withFallback(generateImage(`Subject: A flat, 2D digital graphic on a perfectly solid #FFFFFF white background. It is a single logo extracted from the provided Brand Kit image in 1200x630 size.\nContext: Digital asset.\nStyle: EMBRACE THE THEME FULLY, BUT EXECUTE IT WITH A HIGH-END, PREMIUM ARTISTIC VISION. Extract the main logo wordmark ("GREG ITEEN") ALONG WITH its integrated graphic emblem or icon. The text "GREG ITEEN" and the thematic graphic elements must remain together as one unified logo. Do not isolate the text. MATCH THE AESTHETIC OF THE BASE IMAGE PERFECTLY.\n\nHARD CONSTRAINT: This must be a strictly 2D FLAT vector style graphic. DO NOT use 3D effects, bevels, embossing, drop shadows, or gloss. DO NOT generate physical objects. The background MUST be perfectly solid #FFFFFF white.`, logoPath, kitSuccess ? brandKitPath : logoSource), logoSource, logoPath);
-        const p4 = withFallback(generateImage(`Subject: A flat, 2D digital graphic on a perfectly solid #FFFFFF white background. It is a single square favicon extracted from the provided Brand Kit image in 512x512 size.\nContext: Digital asset.\nStyle: EMBRACE THE THEME FULLY, BUT EXECUTE IT WITH A HIGH-END, PREMIUM ARTISTIC VISION. Extract the favicon typography ("GI") ALONG WITH its integrated graphic emblem or icon. The text "GI" and the thematic graphic elements must remain together as one unified icon. Do not isolate the text. MATCH THE AESTHETIC OF THE BASE IMAGE PERFECTLY.\n\nHARD CONSTRAINT: This must be a strictly 2D FLAT vector style graphic. DO NOT use 3D effects, bevels, embossing, drop shadows, or gloss. DO NOT generate physical objects. The background MUST be perfectly solid #FFFFFF white.`, faviconPath, kitSuccess ? brandKitPath : faviconSource), faviconSource, faviconPath);
+        // Brand marks need a real alpha channel, and Google's image models
+        // cannot emit one — verified against the current docs: the whole Nano
+        // Banana family (including 3.1 Flash Image, used here) returns flat RGB.
+        // So each mark is rendered TWICE from the same brand kit, once over
+        // white and once over black, and the true alpha is recovered by
+        // difference matting: Cw - Cb = (1-a)*255. That solves anti-aliased
+        // edges exactly, where colour keying can only guess at them.
+        const markPrompt = (subject, size, extraction, background) => `Subject: A flat, 2D digital graphic on a perfectly solid ${background} background. It is ${subject} extracted from the provided Brand Kit image in ${size} size.\nContext: Digital asset.\nStyle: EMBRACE THE THEME FULLY, BUT EXECUTE IT WITH A HIGH-END, PREMIUM ARTISTIC VISION. ${extraction} MATCH THE AESTHETIC OF THE BASE IMAGE PERFECTLY.\n\nCOMPOSITION: Draw the mark large, filling the canvas edge to edge with only a small even margin. Do not centre a small mark in a large empty field.\n\nHARD CONSTRAINT: This must be a strictly 2D FLAT vector style graphic. DO NOT use 3D effects, bevels, embossing, drop shadows, or gloss. DO NOT generate physical objects. The background MUST be perfectly solid ${background}, edge to edge, with nothing else on it. Render the artwork itself IDENTICALLY regardless of the background colour.`;
+
+        // Green, not white. Keying against white pits the key colour against
+        // the artwork — logo art is frequently white, cream or pale, and that
+        // collision is what erased the "GREG ITEEN" wordmark. Logo art is
+        // essentially never pure green, so the key and the mark cannot be
+        // confused, and the despill pass removes the rim it leaves behind.
+        const KEY_BACKGROUND = '#00FF00 pure green (chroma key green screen)';
+
+        const LOGO_SUBJECT = 'a single logo';
+        // "Do not return the standalone GI monogram" is load-bearing: the SPACE
+        // skin shipped with the FAVICON ("GI") sitting in the logo slot, which
+        // is why its brand mark was a bare monogram instead of the wordmark.
+        const LOGO_EXTRACTION = 'Extract the main logo wordmark ("GREG ITEEN") ALONG WITH its integrated graphic emblem or icon. The text "GREG ITEEN" and the thematic graphic elements must remain together as one unified logo. Do not isolate the text. DO NOT return the standalone square "GI" monogram — that is the separate favicon, not this asset. The words "GREG ITEEN" MUST be present and legible.';
+        const FAVICON_SUBJECT = 'a single square favicon';
+        const FAVICON_EXTRACTION = 'Extract the favicon typography ("GI") ALONG WITH its integrated graphic emblem or icon. The text "GI" and the thematic graphic elements must remain together as one unified icon. Do not isolate the text.';
+
+        // Renders the white/black pair, mattes them, and writes the result.
+        // Every step is awaited — the previous implementation fired the
+        // write-back as a floating promise, so the transparent version raced
+        // the pipeline and the opaque original sometimes won (SPACE shipped
+        // with no alpha channel at all).
+        const buildMark = async (targetPath, subject, size, extraction, sourceFallback) => {
+          const whitePath = `${targetPath}.white.png`;
+          const blackPath = `${targetPath}.black.png`;
+          const base = kitSuccess ? brandKitPath : sourceFallback;
+          const label = targetPath.split('/').pop();
+          try {
+            await generateImage(markPrompt(subject, size, extraction, KEY_BACKGROUND), whitePath, base);
+            // Second render only when matting is explicitly enabled: the image
+            // model redraws the mark at a different position/scale between
+            // runs, so the pair usually cannot be subtracted (measured: a
+            // double-exposure ghost). Keying the green screen is the reliable
+            // path; matting stays available behind a flag.
+            let blackOk = false;
+            if (process.env.THEME_MARK_MATTE === '1') {
+              try {
+                await generateImage(markPrompt(subject, size, extraction, '#000000 black'), blackPath, base);
+                blackOk = true;
+              } catch (error) {
+                console.warn(`  ⚠ ${label}: black-background render failed (${error.message}); keying instead.`);
+              }
+            }
+            const sharp = (await import('sharp')).default;
+            const result = await buildTransparentMark(
+              await readFile(whitePath),
+              blackOk ? await readFile(blackPath) : null,
+              sharp,
+            );
+            if (!result.buffer) {
+              console.warn(`  ⚠ ${label}: could not build a transparent mark (${result.reason}); keeping the verified brand asset.`);
+              await copyFile(sourceFallback, targetPath);
+              return false;
+            }
+            await writeFile(targetPath, result.buffer);
+            console.log(`  → ${label}: transparent via ${result.method} (${Math.round(result.buffer.length / 1024)}KB)`);
+            return true;
+          } catch (error) {
+            console.warn(`  ⚠ ${label}: generation failed (${error.message}); keeping the verified brand asset.`);
+            await copyFile(sourceFallback, targetPath).catch(() => {});
+            return false;
+          } finally {
+            await rm(whitePath, { force: true }).catch(() => {});
+            await rm(blackPath, { force: true }).catch(() => {});
+          }
+        };
+
+        const p3 = buildMark(logoPath, LOGO_SUBJECT, '1200x630', LOGO_EXTRACTION, logoSource);
+        const p4 = buildMark(faviconPath, FAVICON_SUBJECT, '512x512', FAVICON_EXTRACTION, faviconSource);
 
         await Promise.allSettled([p1, p2, p3, p4]);
-        try {
-          const sharp = (await import('sharp')).default;
-          async function dropWhite(img) {
-            try {
-              const { data, info } = await sharp(img).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-              for (let i = 0; i < data.length; i += 4) {
-                const r = data[i], g = data[i+1], b = data[i+2];
-                const minVal = Math.min(r, g, b);
-                const A = 255 - minVal;
-                if (A === 0) {
-                  data[i] = 0; data[i+1] = 0; data[i+2] = 0; data[i+3] = 0;
-                } else {
-                  const a = A / 255;
-                  data[i] = Math.max(0, Math.min(255, Math.round((r - 255 * (1 - a)) / a)));
-                  data[i+1] = Math.max(0, Math.min(255, Math.round((g - 255 * (1 - a)) / a)));
-                  data[i+2] = Math.max(0, Math.min(255, Math.round((b - 255 * (1 - a)) / a)));
-                  data[i+3] = A;
-                }
-              }
-              await sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toFile(img + '.tmp');
-              import('node:fs/promises').then(fs => {
-                fs.copyFile(img + '.tmp', img).then(() => fs.rm(img + '.tmp'));
-              });
-            } catch (e) {
-              console.warn('Transparency drop failed for', img, e.message);
-            }
-          }
-          await dropWhite(brandKitPath);
-          await dropWhite(logoPath);
-          await dropWhite(faviconPath);
-        } catch (err) {
-          console.warn('Sharp module failed to load', err.message);
-        }
         return true;
       })();
   // Images continue in parallel while one CSS owner and the layout-family
@@ -685,7 +755,7 @@ RULES:
 SELECTED MECHANIC REFERENCES (quality only; do not copy blindly):
 ${customExemplars}
 
-OUTPUT: exactly one JSON object: { "css": "the complete stylesheet" }`, CSS_SECTION_SCHEMA, 32768, 8192, (process.env.DEFAULT_MODEL || 'gemini-3.1-pro'), false)
+OUTPUT: exactly one JSON object: { "css": "the complete stylesheet" }`, CSS_SECTION_SCHEMA, 32768)
     .then((raw) => ({ kind: 'css', css: extractJson(raw).css }))
     .catch((error) => ({ kind: 'css', error: String(error) }));
 
@@ -719,7 +789,7 @@ HIGH-END LAYOUT EXEMPLARS (Study these to understand the quality bar):
 ${LAYOUT_EXEMPLARS}
 
 OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
-    return callAgent(prompt, ONE_LAYOUT_SCHEMA, 16384, 4096, (process.env.DEFAULT_MODEL || 'gemini-3.1-pro'), false)
+    return callAgent(prompt, ONE_LAYOUT_SCHEMA, 16384)
       .then((raw) => ({ kind: 'layout', key, html: extractJson(raw).html }))
       .catch((error) => ({ kind: 'layout', key, error: String(error) }));
   });
@@ -821,19 +891,14 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
       if (pass > MAX_STRUCTURAL_PASSES) {
         throw new Error(`Structural repair did not converge after ${MAX_STRUCTURAL_PASSES} pass(es): ${verdict.errors.slice(0, 3).join('; ')}`);
       }
-      const issuesByTarget = new Map();
-      for (const error of verdict.errors) {
-        const layoutMatch = error.match(/^layout "([a-z_]+)"/);
-        const target = layoutMatch?.[1]
-          || (/^("css"|stylesheet)/.test(error) ? 'css' : null);
-        if (target && (target === 'css' || LAYOUT_SPECS[target])) {
-          issuesByTarget.set(target, [...(issuesByTarget.get(target) || []), error]);
-        }
+      const { byTarget: issuesByTarget, unrouted } = routeStructuralErrors(
+        verdict.errors,
+        Object.keys(LAYOUT_SPECS),
+      );
+      if (unrouted.length) {
+        console.warn(`  ⚠ ${unrouted.length} structural error(s) have no natural repair target; sending to CSS: ${unrouted.join('; ').slice(0, 200)}`);
       }
-      if (!issuesByTarget.size) {
-        issuesByTarget.set('css', verdict.errors);
-      }
-      
+
       // Append-only learning: each structural failure class is recorded once
       // per run to Total Recall (fire-and-forget, deduped, capped). The old
       // destructive pitfalls.json rewrite lived here.
@@ -849,6 +914,8 @@ OUTPUT: exactly one JSON object: { "html": "…the ${key} layout HTML…" }`;
 
 You are repairing ONLY the complete stylesheet below. Correct the structural issues without changing the approved design contract or adding hardcoded copy.
 
+A finding of the form 'layout "X" uses CSS class(es) with no matching selector: a, b, c' means THE STYLESHEET IS INCOMPLETE, not that the layout is wrong. Add a real, design-consistent rule for every one of those class names. Never respond by asking for classes to be removed from the layout — the layout is using the agreed class vocabulary and will not change.
+
 VALIDATOR FINDINGS:
 ${critique}
 
@@ -858,7 +925,7 @@ ${styleSpec}
 CURRENT COMPLETE CSS:
 ${candidate.css}
 
-OUTPUT: exactly one JSON object: { "css": "complete repaired CSS" }`, CSS_SECTION_SCHEMA, 32768, 4096, (process.env.DEFAULT_MODEL || 'gemini-3.5-flash'));
+OUTPUT: exactly one JSON object: { "css": "complete repaired CSS" }`, CSS_SECTION_SCHEMA, 32768);
         return { target, value: extractJson(raw).css };
       }
       const spec = LAYOUT_SPECS[target];
@@ -875,7 +942,7 @@ ${styleSpec}
 CURRENT "${target}" HTML:
 ${candidate.layouts[target] || '(missing)'}
 
-OUTPUT: exactly one JSON object: { "html": "complete repaired ${target} fragment" }`, ONE_LAYOUT_SCHEMA, 16384, 4096, (process.env.DEFAULT_MODEL || 'gemini-3.5-flash'));
+OUTPUT: exactly one JSON object: { "html": "complete repaired ${target} fragment" }`, ONE_LAYOUT_SCHEMA, 16384);
       return { target, value: extractJson(raw).html };
       }));
 
@@ -910,7 +977,7 @@ ${styleSpec}
 FULL SOURCE PACKAGE:
 ${source}
 
-OUTPUT: exactly one JSON object: { "approved": true, "score": 8, "blocking_issues": [] }`, RELEASE_REVIEW_SCHEMA, 32768, 8192, (process.env.DEFAULT_MODEL || 'gemini-3.1-pro'), false);
+OUTPUT: exactly one JSON object: { "approved": true, "score": 8, "blocking_issues": [] }`, RELEASE_REVIEW_SCHEMA, 32768);
     const audit = extractJson(raw);
     if (!Array.isArray(audit.blocking_issues)) audit.blocking_issues = [];
     console.log(`  → Release review (${label}): ${audit.score}/10 — ${audit.approved ? 'approved' : 'repair required'}`);

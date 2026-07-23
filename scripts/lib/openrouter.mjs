@@ -3,14 +3,20 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getSecret } from 'total-recall-brain/src/core/secrets-store.mjs';
 
-export const DEEPSEEK_REPAIR_MODEL = 'deepseek/deepseek-v4-pro';
+// Text generation/repair model. Kimi K3 (1M ctx) replaced DeepSeek V4 Pro after
+// a run where DeepSeek never converged on the structural class-binding gate:
+// ~11 candidates x 4 repair passes, every one rejected, tokens spent for zero
+// designs. K3 costs materially more ($3/$15 per M vs $0.435/$0.87), so keep it
+// overridable — THEME_TEXT_MODEL=deepseek/deepseek-v4-pro reverts in one env var.
+export const TEXT_MODEL = process.env.THEME_TEXT_MODEL || 'moonshotai/kimi-k3';
 export const CLAUDE_VISION_MODEL = 'anthropic/claude-sonnet-5';
-export const IMAGE_MODEL = 'google/gemini-3.1-flash-image';
-export const IMAGE_MODEL_LITE = 'google/gemini-3.1-flash-lite-image';
+export const IMAGE_MODEL = 'fal-ai/flux-pro/v1.1';
+export const IMAGE_MODEL_LITE = 'fal-ai/ideogram/v4';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_RECALL_DIR = join(__dirname, '..', '..', '.agent', 'skills', 'total-recall');
 let recallKeyPromise = null;
+let falKeyPromise = null;
 
 export function normalizeJsonSchema(value) {
   if (Array.isArray(value)) return value.map(normalizeJsonSchema);
@@ -94,6 +100,18 @@ export async function resolveOpenRouterApiKey({
   return recallKeyPromise;
 }
 
+// OpenRouter sometimes returns a hard failure inside an HTTP 200 body, e.g.
+// `200 {"message":"...requires more credits...","code":402}`. Taking
+// res.statusCode unconditionally stamped those as status 200, which slipped
+// past the >= 400 non-retryable branch and got retried as if transient.
+// The body's own code wins whenever the HTTP layer did not signal an error.
+function failureStatus(statusCode, json) {
+  const httpStatus = Number(statusCode) || 0;
+  const bodyCode = Number(json?.error?.code) || Number(json?.code) || 0;
+  if (httpStatus >= 400) return httpStatus;
+  return bodyCode || httpStatus;
+}
+
 function responseContent(json) {
   const content = json?.choices?.[0]?.message?.content;
   if (typeof content === 'string' && content.trim()) return content;
@@ -133,7 +151,7 @@ function requestOnce({ apiKey, body, timeoutMs = 300_000 }) {
         }
         if ((res.statusCode || 500) >= 400 || json?.error) {
           const failure = new Error(`OpenRouter error ${res.statusCode || 0}: ${JSON.stringify(json?.error || json).slice(0, 300)}`);
-          failure.status = res.statusCode || Number(json?.error?.code) || 0;
+          failure.status = failureStatus(res.statusCode, json);
           const retryAfter = Number(res.headers['retry-after']);
           if (Number.isFinite(retryAfter) && retryAfter > 0) {
             failure.retryAfterMs = Math.min(60_000, retryAfter * 1000);
@@ -187,7 +205,7 @@ function requestImageOnce({ apiKey, body, timeoutMs = 300_000 }) {
         }
         if ((res.statusCode || 500) >= 400 || json?.error) {
           const failure = new Error(`OpenRouter image error ${res.statusCode || 0}: ${JSON.stringify(json?.error || json).slice(0, 300)}`);
-          failure.status = res.statusCode || Number(json?.error?.code) || 0;
+          failure.status = failureStatus(res.statusCode, json);
           const retryAfter = Number(res.headers['retry-after']);
           if (Number.isFinite(retryAfter) && retryAfter > 0) {
             failure.retryAfterMs = Math.min(60_000, retryAfter * 1000);
@@ -230,7 +248,7 @@ export async function callOpenRouter({
   prompt = null,
   content = null,
   messages = null,
-  model = DEEPSEEK_REPAIR_MODEL,
+  model = TEXT_MODEL,
   schema = null,
   maxTokens = 32_768,
   reasoningEffort = 'low',
@@ -288,6 +306,124 @@ export async function callOpenRouterImage({
       lastError = error;
       if (!isRetryableOpenRouterError(error) || attempt === requestRetries) throw error;
       const delay = error.retryAfterMs || Math.min(8_000, 1_000 * (2 ** attempt));
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError;
+}
+
+// ─── Fal.ai image generation ─────────────────────────────────────────────────
+
+export async function resolveFalApiKey({
+  apiKey = process.env.FAL_KEY || '',
+  recallDir = process.env.TOTAL_RECALL_DIR || DEFAULT_RECALL_DIR,
+} = {}) {
+  if (apiKey) return apiKey;
+  if (!falKeyPromise) {
+    falKeyPromise = (async () => {
+      const result = await getSecret(recallDir, 'FAL_KEY', {
+        actor: 'portfolio-site',
+        action: 'runtime_read',
+      });
+      if (result.found && result.value) return result.value;
+      throw new Error('FAL_KEY is missing from Total Recall secrets');
+    })().catch((error) => {
+      falKeyPromise = null;
+      throw error;
+    });
+  }
+  return falKeyPromise;
+}
+
+function falRequestOnce({ apiKey, model, body, timeoutMs = 300_000 }) {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const url = new URL(`https://fal.run/${model}`);
+    const req = https.request({
+      hostname: url.hostname,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        Authorization: `Key ${apiKey}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        let json;
+        try {
+          json = JSON.parse(data);
+        } catch (error) {
+          const malformed = new Error(`Fal returned invalid JSON: ${String(error)}`);
+          malformed.status = res.statusCode || 0;
+          reject(malformed);
+          return;
+        }
+        if ((res.statusCode || 500) >= 400 || json?.detail) {
+          const failure = new Error(`Fal error ${res.statusCode || 0}: ${JSON.stringify(json?.detail || json).slice(0, 300)}`);
+          failure.status = res.statusCode || 0;
+          reject(failure);
+          return;
+        }
+        const image = json?.images?.[0];
+        if (!image?.url) {
+          const missing = new Error(`Fal returned no image: ${JSON.stringify(json).slice(0, 300)}`);
+          missing.status = res.statusCode || 0;
+          reject(missing);
+          return;
+        }
+        // Fetch the image from the returned URL
+        https.get(image.url, (imgRes) => {
+          const chunks = [];
+          imgRes.on('data', (chunk) => chunks.push(chunk));
+          imgRes.on('end', () => {
+            resolve({
+              buffer: Buffer.concat(chunks),
+              mediaType: image.content_type || 'image/png',
+              usage: null,
+            });
+          });
+          imgRes.on('error', reject);
+        }).on('error', reject);
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error('Fal request timed out'));
+    });
+    req.write(payload);
+    req.end();
+  });
+}
+
+export async function callFalImage({
+  model = IMAGE_MODEL,
+  prompt,
+  imageUrl = null,
+  aspectRatio = '1:1',
+  apiKey = null,
+  requestRetries = 2,
+}) {
+  const resolvedKey = await resolveFalApiKey({ apiKey: apiKey || undefined });
+  // Fal uses 'landscape_16_9', 'portrait_3_4', 'square' etc.
+  const falAspect = aspectRatio === '16:9' ? 'landscape_16_9'
+    : aspectRatio === '3:4' ? 'portrait_3_4'
+    : aspectRatio === '4:3' ? 'landscape_4_3'
+    : 'square';
+  const body = { prompt, image_size: falAspect, num_images: 1 };
+  if (imageUrl) body.image_url = imageUrl;
+  let lastError;
+  for (let attempt = 0; attempt <= requestRetries; attempt++) {
+    try {
+      return await falRequestOnce({ apiKey: resolvedKey, model, body });
+    } catch (error) {
+      lastError = error;
+      const status = Number(error?.status) || 0;
+      const retryable = status === 429 || status >= 500 || /timeout|timed out|ECONN/i.test(error?.message || '');
+      if (!retryable || attempt === requestRetries) throw error;
+      const delay = Math.min(8_000, 1_000 * (2 ** attempt));
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }

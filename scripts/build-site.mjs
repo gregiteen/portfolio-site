@@ -998,6 +998,24 @@ ${TRANSITIONS}
   fetch('/api/banner-offers').then(function(r) { return r.json(); }).then(function(d) { init(d.offers || []); }).catch(function() {});
 })();`;
 
+  // Mechanical containment for build-injected content, in the same spirit as
+  // the CNA banner and enforceBrandAssetContract: a deterministic floor that
+  // does not depend on any model getting it right. The rendered audit found
+  // card thumbnails overflowing their containers and cropping logotypes
+  // mid-word on multiple unrelated skins — a defect no theme CSS was
+  // structurally required to prevent.
+  //
+  // `img{max-width:100%}` is the standard responsive-image floor and cannot
+  // break a design that was already correct. `object-fit:contain` is the part
+  // that actually fixes the cropping: skins commonly pin a card thumbnail's
+  // height, and the CSS default (`fill`)/a theme's `cover` then slices a wide
+  // wordmark. `contain` letterboxes it so the full logotype always survives.
+  // Deliberately low-specificity so any theme rule can still override it.
+  const INJECTED_CONTENT_GUARDS = `<style>
+img{max-width:100%;height:auto}
+.item-logo{object-fit:contain;object-position:center}
+</style>`;
+
   // Guarantees the CNA (client-needs-assessment) CTA banner on every
   // AI-generated skin. Layout specialists are never told about it and can't
   // be trusted to include it via prompt compliance alone (see: hero images,
@@ -1119,8 +1137,8 @@ ${TRANSITIONS}
       finalHtml = `${headContent}\n<body>\n${customHtml}\n</body>\n</html>`;
     }
     finalHtml = finalHtml.includes('</body>')
-      ? finalHtml.replace('</body>', `${CNA_BANNER_FIXED}\n${MOTION_SCRIPT}\n${TEST_LOGOUT_SCRIPT}\n</body>`)
-      : finalHtml + CNA_BANNER_FIXED + MOTION_SCRIPT + TEST_LOGOUT_SCRIPT;
+      ? finalHtml.replace('</body>', `${INJECTED_CONTENT_GUARDS}\n${CNA_BANNER_FIXED}\n${MOTION_SCRIPT}\n${TEST_LOGOUT_SCRIPT}\n</body>`)
+      : finalHtml + INJECTED_CONTENT_GUARDS + CNA_BANNER_FIXED + MOTION_SCRIPT + TEST_LOGOUT_SCRIPT;
   } else {
     finalHtml = headContent + `<body>
 <div class="ambient-glows">
@@ -1436,7 +1454,14 @@ function customProjectItem(p, i) {
     DESCRIPTION: escapeHtml(p.data.description),
     YEAR: p.data.x_year ?? '',
     TECH_BADGES: badgesHtml(p.data.x_tech),
-    LOGO: p.data.x_logo ? `<img src="/${escapeHtml(p.data.x_logo)}" alt="${escapeHtml(p.data.name)} logo">` : '',
+    // The class is load-bearing: this <img> is injected here, so a layout
+    // specialist never writes it and generated CSS had no hook to constrain
+    // it. Every skin independently failed to bound it and wide wordmark PNGs
+    // overflowed their card, cropping logotypes mid-word ("Tota"/"Reca",
+    // "Ultra CHA") across mad-max, biolume-local and others. `item-logo` is in
+    // REQUIRED_INJECTED_CSS_CLASSES so the release gate now forces coverage,
+    // and INJECTED_CONTENT_GUARDS bounds it mechanically regardless.
+    LOGO: p.data.x_logo ? `<img class="item-logo" src="/${escapeHtml(p.data.x_logo)}" alt="${escapeHtml(p.data.name)} logo">` : '',
     INDEX: String(i + 1).padStart(2, '0'),
     // Prefer the repo link; fall back to the live product link (ultrachat.app,
     // festech.live, etc.) so cards always surface SOME outbound link when one

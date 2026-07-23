@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  DEEPSEEK_REPAIR_MODEL,
+  TEXT_MODEL,
   IMAGE_MODEL,
   buildOpenRouterBody,
   buildOpenRouterImageBody,
@@ -29,10 +29,10 @@ test('OpenRouter normalizes Gemini-style schema type casing recursively', () => 
   });
 });
 
-test('repair requests target DeepSeek V4 Pro with bounded reasoning and structured output', () => {
+test('repair requests target the configured text model with bounded reasoning and structured output', () => {
   const messages = [{ role: 'user', content: 'repair this candidate' }];
   const body = buildOpenRouterBody({
-    model: DEEPSEEK_REPAIR_MODEL,
+    model: TEXT_MODEL,
     messages,
     schema: {
       type: 'OBJECT',
@@ -42,7 +42,10 @@ test('repair requests target DeepSeek V4 Pro with bounded reasoning and structur
     reasoningEffort: 'low',
   });
 
-  assert.equal(body.model, 'deepseek/deepseek-v4-pro');
+  // Verified against OpenRouter's live /models catalogue: this slug supports
+  // reasoning, reasoning_effort, response_format and structured_outputs, which
+  // provider.require_parameters=true makes mandatory.
+  assert.equal(body.model, 'moonshotai/kimi-k3');
   assert.equal(body.messages, messages);
   assert.deepEqual(body.reasoning, { effort: 'low', exclude: true });
   assert.equal(body.response_format.type, 'json_schema');
@@ -64,7 +67,7 @@ test('image requests use the OpenRouter image API contract with reference images
   });
 
   assert.deepEqual(body, {
-    model: 'google/gemini-3.1-flash-image',
+    model: IMAGE_MODEL,
     prompt: 'restyle this verified logo',
     n: 1,
     resolution: '1K',

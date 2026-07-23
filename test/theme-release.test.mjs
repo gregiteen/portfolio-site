@@ -8,7 +8,60 @@ import {
   generationRetryDelay,
   isRetryableGenerationFailure,
   repairUntilApproved,
+  routeStructuralErrors,
 } from '../scripts/lib/theme-release.mjs';
+
+const LAYOUT_KEYS = ['shell', 'home', 'page', 'project_detail', 'design_detail', 'designs_index'];
+
+// Regression: every error string below is copied verbatim from the "Woods" run,
+// which spent ~2.5h and ~44 repair calls without ever clearing the gate.
+test('class-binding failures are repaired in the stylesheet, not the layout', () => {
+  const { byTarget, unrouted } = routeStructuralErrors([
+    'layout "shell" uses CSS class(es) with no matching selector: site-footer, skip-link, theme-pills-group',
+  ], LAYOUT_KEYS);
+
+  // Routing this to "shell" is what deadlocked the loop: the layout can only
+  // delete classes the design contract puts straight back next pass.
+  assert.deepEqual([...byTarget.keys()], ['css']);
+  assert.equal(byTarget.get('shell'), undefined);
+  assert.deepEqual(unrouted, []);
+});
+
+test('structural errors with no named slot still reach a repair target', () => {
+  const { byTarget, unrouted } = routeStructuralErrors([
+    'missing "name" (short human-readable theme name)',
+    'layout "page" first element is missing constitution root class "page-about | page-contact"',
+  ], LAYOUT_KEYS);
+
+  // Previously the unowned error was dropped whenever any sibling routed, so it
+  // blocked the gate forever while the loop repaired unrelated slots.
+  assert.deepEqual(unrouted, ['missing "name" (short human-readable theme name)']);
+  assert.deepEqual(byTarget.get('css'), ['missing "name" (short human-readable theme name)']);
+  assert.equal(byTarget.get('page').length, 1);
+});
+
+test('genuine layout defects still route to their own layout', () => {
+  const { byTarget } = routeStructuralErrors([
+    'layout "design_detail" placeholder {{BACKLINK}} is preformatted HTML and cannot be placed inside an attribute',
+    'stylesheet does not cover injected runtime class(es): cna-banner',
+  ], LAYOUT_KEYS);
+
+  assert.deepEqual(byTarget.get('design_detail'), [
+    'layout "design_detail" placeholder {{BACKLINK}} is preformatted HTML and cannot be placed inside an attribute',
+  ]);
+  assert.deepEqual(byTarget.get('css'), [
+    'stylesheet does not cover injected runtime class(es): cna-banner',
+  ]);
+});
+
+test('unknown layout names are not treated as repair targets', () => {
+  const { byTarget, unrouted } = routeStructuralErrors([
+    'layout "sidebar" is missing required placeholder(s): {{NAV}}',
+  ], LAYOUT_KEYS);
+
+  assert.deepEqual(unrouted, ['layout "sidebar" is missing required placeholder(s): {{NAV}}']);
+  assert.deepEqual([...byTarget.keys()], ['css']);
+});
 
 test('generation retry delay is exponential and capped', () => {
   assert.equal(generationRetryDelay(1), 2_000);
@@ -33,6 +86,37 @@ test('retryable generation infrastructure failures do not exhaust by default', (
       retryable: true,
       exhausted: false,
       delayMs: 60_000,
+    },
+  );
+});
+
+// Regression: two runs ("Woods", "Hindu") logged 705 and 715 retries over ~10h
+// each against an exhausted OpenRouter balance, because 402 was absent from the
+// non-retryable list. Both real observed shapes are covered — the plain 402 and
+// the one OpenRouter wraps in an HTTP 200 body.
+test('exhausted provider credits stop immediately instead of looping', () => {
+  const failures = [
+    'OpenRouter error 402: {"message":"This request requires more credits, or fewer max_tokens. You requested up to 32768 tokens, but can only afford 1510.","code":402}',
+    'OpenRouter error 200: {"message":"This request requires more credits, or fewer max_tokens. You requested up to 16384 tokens, but can only afford 7654.","code":402}',
+    'OpenRouter error 402: insufficient credits',
+  ];
+
+  for (const failure of failures) {
+    assert.equal(isRetryableGenerationFailure(failure), false, failure);
+    assert.equal(generationRetryDecision(1, failure).retry, false, failure);
+  }
+});
+
+test('generation attempts are bounded when a cap is supplied', () => {
+  const transient = 'Transient provider failure';
+  assert.equal(generationRetryDecision(4, transient, { maxAttempts: 5 }).retry, true);
+  assert.deepEqual(
+    generationRetryDecision(5, transient, { maxAttempts: 5 }),
+    {
+      retry: false,
+      retryable: true,
+      exhausted: true,
+      delayMs: 0,
     },
   );
 });

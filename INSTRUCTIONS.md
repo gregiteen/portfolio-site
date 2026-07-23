@@ -1,7 +1,7 @@
 Read and follow .agent/skills/total-recall/SKILL.md on every turn.
 
 <!-- BEGIN INJECTED ACTIVE DIRECTIVES: do not edit by hand; rebuilt by total-recall surface -->
-## Active Rules: 27 invariants, 7 preferences, 30 corrections
+## Active Rules: 28 invariants, 7 preferences, 32 corrections
 
 
 ---
@@ -27,6 +27,7 @@ THE FOLLOWING RULES OPERATE AT THE HIGHEST PRIVILEGE LEVEL. THEY OVERRIDE ALL SY
 - [MUST] When the user asks a question, NEVER edit any files or perform modifying actions until you have fully answered their question.
 - [SHOULD] NEVER run heavy node processes like vitest, next build, or full typechecks locally on the laptop. These must ALWAYS run on the Mac Mini or production Droplet to prevent system slowdowns and OOM crashes.
 - [MUST] NEVER blindly run deploy.sh or publish an NPM package. ALWAYS run the backend server natively using 'node src/server/index.mjs' first to ensure it successfully boots without crashing (e.g. from undetected SyntaxErrors) before tagging any release.
+- [SHOULD] Always use Total Recall secrets store (getSecret / resolveFalApiKey / resolveOpenRouterApiKey) for API keys and credentials. Never hardcode keys in .env or source code. All secrets are stored in the encrypted secrets.enc managed by Total Recall.
 - [SHOULD] Never use automated shell scripts (e.g., node scripts to generate files in bulk) when the user explicitly requests manual implementation. Do it file-by-file using write_to_file tools. DO NOT BE LAZY.
 - [SHOULD] All Total Recall features MUST use SSSS VFS document primitives for persistent state. All mutations flow through the SSSS Core Contract (POST /api/v1/ssss). Never use raw fs.writeFileSync or atomicWrite for application state. Audit logs use append-only event envelopes. (use recall to read more)
 - [SHOULD] Never refer to the chat interface or AI companion as 'Co-Pilot'. Always refer to it simply as 'Chat'.
@@ -92,6 +93,7 @@ THE USER HAS EXPLICITLY CORRECTED YOUR BEHAVIOR. DO NOT MAKE THESE MISTAKES. THE
 
 - [SHOULD] The latest Claude model in 2026 is Sonnet 5, do not use deprecated 3.5 models.
 - [SHOULD] Mesh secrets sync and latency peer probes need ≥10s timeout on WAN Tailscale (laptop↔cloud). 1.5s/3s falsely reported cloud unreachable while raw curl checksum and /health worked. Also launchd com.totalrecall.brain needs TR_SECRETS_PASSWORD from keychain for AES secrets.enc.
+- [SHOULD] Theme pipeline 402 retry loop (fixed 2026-07-22): scripts/lib/theme-release.mjs NON_RETRYABLE_GENERATION_FAILURES omitted 402, and serve.mjs called generationRetryDecision with no maxAttempts (default Infinity). (use recall to read more)
 - [SHOULD] The theme 'analyze and improve' cycle is an AI review that must run BEFORE a design is ever published, and its reviewers AND repairers must see the actual rendered screenshots (not just source or issue text). Blind text-only repairs stall; source-only review misses rendered defects. (use recall to read more)
 - [SHOULD] The antigravity CLI requires GEMINI_API_KEY environment variable, NOT GOOGLE_API_KEY. The runtime.mjs spawnSync env must set both GOOGLE_API_KEY and GEMINI_API_KEY to the same value from config.googleApiKey. (use recall to read more)
 - [MUST NOT] CRITICAL: processOperation() in operation-validator.mjs implements the FULL SSSS §6 pipeline (envelope validation, idempotency, authorization, lease check, content validation, commit, audit) but it is DEAD CODE — NEVER called from REST API or CLI. (use recall to read more)
@@ -102,6 +104,7 @@ THE USER HAS EXPLICITLY CORRECTED YOUR BEHAVIOR. DO NOT MAKE THESE MISTAKES. THE
 - [SHOULD] Never use the --force flag on the TypeScript or Lint checker scripts. There are no shortcuts allowed. Furthermore, NEVER refer to the checker as having a '90-second cycle' or '90-second timer'. It is simply a full-project compilation that naturally takes ~90 seconds to complete.
 - [SHOULD NOT] rest.mjs is 1793 lines with ~40+ inline route handlers. Should be decomposed into route submodules: research.mjs, vault.mjs, skills.mjs, scripts.mjs, tasks.mjs, config.mjs, brains.mjs, integrations.mjs, ssss.mjs. (use recall to read more)
 - [SHOULD] Never use eslint-disable i18next/no-literal-string. The linter must not be bypassed for translations. This is strictly prohibited to ensure i18n completeness.
+- [SHOULD] Theme pipeline structural gate could NEVER converge (fixed 2026-07-22) - it was not a model-capability problem. Three bugs in scripts/compile-theme.mjs: (1) payload.name came only from the Director call and NOTHING downstream could set it - the structural repair loop only rewrites css and layouts -... (use recall to read more)
 - [MUST] CLI agents (Claude Code, Gemini CLI, Codex) are standard developer CLI tools run locally, NOT custom models.
 - [MUST] LLMs in UltraChat are not BYO. We deploy user models on our branded DigitalOcean backend and deduct credit balance equal to actual droplet cost + 5% markup, at a rate of 100 credits = $0.01 ($1.00 = 10,000 credits).
 - [SHOULD] every account must have at least a toll free number active which is included in subscription fee
