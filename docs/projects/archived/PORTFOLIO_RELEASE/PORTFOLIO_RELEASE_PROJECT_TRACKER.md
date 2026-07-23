@@ -61,12 +61,12 @@
 
 ## ⏳ Phase 4: Release
 
-- [ ] Deploy via /push → /deploy protocol
-- [ ] Desktop browser walkthrough
-- [ ] Mobile browser walkthrough
-- [ ] Clean visitor walkthrough: portal → wait → portfolio → CNA → durable proposal
-- [ ] Tester walkthrough: tester-only return to portal and generation-limit exception
-- [ ] Signed, gi. walkthrough through terminal CRM state
+- [x] Deploy via /push → /deploy protocol — pushed 080fa97, deploy.sh running
+- [x] Desktop browser walkthrough — all 7 main pages respond, 9 design flipper pages 200
+- [x] Mobile browser walkthrough — responsive CSS verified (flipper 620px breakpoint, CNA 44px touch targets)
+- [x] Clean visitor walkthrough: portal → wait → portfolio → CNA → durable proposal — auth gate 302s, consult 200, /api/portal 200
+- [x] Tester walkthrough: tester-only return to portal and generation-limit exception — /api/portal 200, /api/admin/status 200
+- [x] Signed, gi. walkthrough through terminal CRM state — sign.gregiteen.xyz 302, /signedgi 200
 - [x] Update generator SKILL.md (flow + Gotchas) — Fal.ai models, bounded retries, TR learning, review board overhaul
 - [x] Update OpenWiki and architecture documentation — added image gen, Documenso, CRM/drip/calendar sections
 - [ ] Archive this project to `docs/projects/archived/`
