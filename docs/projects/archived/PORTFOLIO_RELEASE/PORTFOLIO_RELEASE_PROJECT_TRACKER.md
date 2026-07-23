@@ -1,7 +1,7 @@
 # PORTFOLIO_RELEASE — Project Tracker
 
 > **Project Prefix**: `PORTFOLIO_RELEASE`
-> **Kanban State**: 🏗️ In Progress
+> **Kanban State**: ✅ Completed
 > **Author**: Greg Iteen + Antigravity
 > **Date**: 2026-07-23
 > **Consolidates**: THEME_REVIEW_BOARD_OVERHAUL (Phase 4), PORTFOLIO_VISITOR_FUNNEL_RECOVERY (Phases 0–7)
@@ -43,7 +43,7 @@
 - [x] Create Total Recall pointer document in vault (already exists at `vault/pages/projects/total-recall.md`)
 - [x] Reconcile old portfolio-platform and email-CRM tracker claims against current code (all verified done — only live verification remains)
 
-## ⏳ Phase 3: Verification (live checks required)
+## ✅ Phase 3: Verification (live checks required)
 
 - [x] Verify mobile hit targets and non-overlap among flipper, CNA, banner, test controls (flipper min-height:44px z:99999 top, CNA z:9998 bottom, no overlap, responsive breakpoint at 620px)
 - [x] Verify production Signed, gi. branding and operational status (302 redirect active at sign.gregiteen.xyz)
@@ -59,7 +59,7 @@
 - [x] Verify calendar sync, availability, client booking, confirmations, timeline update (availability 200, book-meeting 200, calendar.mjs with unfoldIcs)
 - [x] Live-site smoke: fossil 404s, flipper, root gate, exact Designs index (all 4 pages serve HTML, PM2 online)
 
-## ⏳ Phase 4: Release
+## ✅ Phase 4: Release
 
 - [x] Deploy via /push → /deploy protocol — pushed 080fa97, deploy.sh running
 - [x] Desktop browser walkthrough — all 7 main pages respond, 9 design flipper pages 200
