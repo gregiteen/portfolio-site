@@ -3499,9 +3499,19 @@ OUTPUT JSON: { "company_name": "...", "industry": "...", "estimated_size": "..."
     if (adminPath === '/deploy' && req.method === 'POST') {
       try {
         const { execFile: execFileDeploy } = await import('node:child_process');
-        const run = (cmd, args) => new Promise((resolve, reject) => execFileDeploy(cmd, args, { cwd: '/opt/portfolio-site', timeout: 120000 }, (e, stdout, stderr) => e ? reject(new Error(stderr || e.message)) : resolve(stdout)));
-        await run('git', ['fetch', '--all']);
-        await run('git', ['reset', '--hard', 'origin/main']);
+        const { existsSync } = await import('node:fs');
+        const run = (cmd, args, cwd) => new Promise((resolve, reject) => execFileDeploy(cmd, args, { cwd: cwd || '/opt/portfolio-site', timeout: 120000 }, (e, stdout, stderr) => e ? reject(new Error(stderr || stdout || e.message)) : resolve(stdout)));
+        const hasGit = existsSync('/opt/portfolio-site/.git');
+        if (!hasGit) {
+          // First-time bootstrap via rsync excluded .git — clone fresh via https
+          const token = process.env.GITHUB_TOKEN || process.env.github_token || '';
+          const url = token ? `https://x-access-token:${token}@github.com/gregiteen/portfolio-site.git` : 'https://github.com/gregiteen/portfolio-site.git';
+          await run('rm', ['-rf', '/opt/portfolio-site'], '/opt');
+          await run('git', ['clone', url, '/opt/portfolio-site'], '/opt');
+        } else {
+          await run('git', ['fetch', '--all']);
+          await run('git', ['reset', '--hard', 'origin/main']);
+        }
         await run('npm', ['ci', '--include=dev', '--no-audit', '--no-fund']);
         await run('npm', ['run', 'build']);
         await run('pm2', ['reload', 'portfolio']);
