@@ -3495,6 +3495,23 @@ OUTPUT JSON: { "company_name": "...", "industry": "...", "estimated_size": "..."
       }
     }
 
+    // POST /api/admin/deploy — HTTPS deploy hook (no ssh). Gated by ADMIN_API_TOKEN, pulls main and reloads.
+    if (adminPath === '/deploy' && req.method === 'POST') {
+      try {
+        const { execFile: execFileDeploy } = await import('node:child_process');
+        const run = (cmd, args) => new Promise((resolve, reject) => execFileDeploy(cmd, args, { cwd: '/opt/portfolio-site', timeout: 120000 }, (e, stdout, stderr) => e ? reject(new Error(stderr || e.message)) : resolve(stdout)));
+        await run('git', ['fetch', '--all']);
+        await run('git', ['reset', '--hard', 'origin/main']);
+        await run('npm', ['ci', '--include=dev', '--no-audit', '--no-fund']);
+        await run('npm', ['run', 'build']);
+        await run('pm2', ['reload', 'portfolio']);
+        return sendJson(res, 200, { ok: true });
+      } catch (e) {
+        console.error('[Deploy] failed:', e.message);
+        return sendJson(res, 500, { error: e.message });
+      }
+    }
+
     // GET /api/admin/webmail/inbox
     if (adminPath === '/webmail/inbox' && req.method === 'GET') {
       try {
