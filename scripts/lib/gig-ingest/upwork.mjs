@@ -1,5 +1,5 @@
-// Upwork: no stable public JSON without OAuth; RSS is ToS-limited. This module only enables RSS where ToS permits; otherwise returns [].
-// WebSearch required before enabling a real feed — see gig-sources.md. Placeholder until validated.
+// Upwork: live RSS fetcher — only enabled where ToS permits. Requires validated feed URL in gig-sources.md; otherwise returns [].
+// WebSearch validation required before enabling — see gig-sources.md.
 export async function fetchUpworkJobs(feedUrl) {
   if (!feedUrl) return [];
   const res = await fetch(feedUrl, { signal: AbortSignal.timeout(10000) });

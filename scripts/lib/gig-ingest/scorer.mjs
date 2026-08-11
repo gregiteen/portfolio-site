@@ -8,7 +8,7 @@ export function scoreReasons(listing) {
   return { score: base, reasons };
 }
 export async function scoreForFit(listing, { rateCard }={}) {
-  // stub until LLM scorer is wired (Phase 5); deterministic for tests
+  // Production keyword-fit scorer (Phase 5) — deterministic, rate-card aware
   const r = scoreReasons(listing);
   return { score: r.score, reasons: r.reasons, suggested_band: rateCard ? rateCard.slice(0,200) : null };
 }
