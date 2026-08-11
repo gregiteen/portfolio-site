@@ -10,7 +10,7 @@ import { getWebmailSettings } from '../runtime-store.mjs';
 // first, always.
 const DRAFTS_FOLDER_FALLBACK = process.env.IMAP_DRAFTS_FOLDER || 'Drafts';
 
-const IMAP_HOST = process.env.IMAP_HOST || 'mail.gregiteen.xyz';
+const IMAP_HOST = process.env.IMAP_HOST || 'mail.ultrachat.app';
 const IMAP_PORT = parseInt(process.env.IMAP_PORT || '993', 10);
 function imapCredentials() {
   return {
