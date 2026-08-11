@@ -2,13 +2,17 @@
 
 ## Sovereign Sync → Portfolio Platform (merged 2026-07-07)
 
-The sovereign-sync and portfolio-platform work is now consolidated into
-`in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/`. The items previously listed
-here (0.2, 0.6, T1–T6) had been extracted during a **false archival** — the
-project never passed its testing gate. They remain ACTIVE in
-`in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/PORTFOLIO_VISITOR_FUNNEL_RECOVERY_PROJECT_TRACKER.md`
-under the consolidated platform-operations and release phases. Nothing was
-deleted; everything was re-absorbed.
+The sovereign-sync and portfolio-platform work was consolidated into
+`PORTFOLIO_VISITOR_FUNNEL_RECOVERY`. The items previously listed here
+(0.2, 0.6, T1–T6) had been extracted during a **false archival** — the project
+never passed its testing gate — and were re-absorbed into that tracker.
+
+> **Corrected 2026-07-30.** This section pointed at
+> `in-progress/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/`, which does not exist. The
+> project now lives in `archived/PORTFOLIO_VISITOR_FUNNEL_RECOVERY/`; an empty
+> husk directory left behind in `planned/` was removed. Anyone reviving this
+> work should read the archived tracker and re-confirm which items are still
+> live before trusting the list above.
 
 Genuinely deferred items (out of the combined project's scope — re-confirm
 at archival time):

@@ -1,13 +1,13 @@
 [
   {
     "id": "pm-eval-1",
-    "description": "SKILL.md exists",
-    "command": "test -f .agent/skills/portfolio-project-management/SKILL.md",
+    "description": "SKILL.md exists and has portfolio overlay frontmatter",
+    "command": "grep -q 'name: portfolio-project-management' .agent/skills/portfolio-project-management/SKILL.md",
     "expected_exit_code": 0
   },
   {
     "id": "pm-eval-2",
-    "description": "Subagent exists",
+    "description": "Subagent pm-assistant exists",
     "command": "test -f .agent/skills/portfolio-project-management/subagents/pm-assistant.md",
     "expected_exit_code": 0
   },
@@ -15,6 +15,36 @@
     "id": "pm-eval-3",
     "description": "Hook executes",
     "command": "bash .agent/skills/portfolio-project-management/hooks/on-issue-update.sh",
+    "expected_exit_code": 0
+  },
+  {
+    "id": "pm-eval-4",
+    "description": "Overlay defines readiness walkthrough with revenue loop",
+    "command": "grep -q 'Readiness Walkthrough\\|core revenue loop' .agent/skills/portfolio-project-management/SKILL.md",
+    "expected_exit_code": 0
+  },
+  {
+    "id": "pm-eval-5",
+    "description": "Revenue OS architecture reference exists",
+    "command": "test -f .agent/skills/portfolio-project-management/references/revenue-os-architecture.md",
+    "expected_exit_code": 0
+  },
+  {
+    "id": "pm-eval-6",
+    "description": "Readiness reference exists",
+    "command": "test -f .agent/skills/portfolio-project-management/references/readiness-walkthrough.md",
+    "expected_exit_code": 0
+  },
+  {
+    "id": "pm-eval-7",
+    "description": "In-progress project docs present (REVENUE_ENGINE 4-file set)",
+    "command": "test -f docs/projects/in-progress/PORTFOLIO_REVENUE_ENGINE/PORTFOLIO_REVENUE_ENGINE_PRD.md && test -f docs/projects/in-progress/PORTFOLIO_REVENUE_ENGINE/PORTFOLIO_REVENUE_ENGINE_ARCHITECTURE.md && test -f docs/projects/in-progress/PORTFOLIO_REVENUE_ENGINE/PORTFOLIO_REVENUE_ENGINE_DEVELOPMENT_PLAN.md && test -f docs/projects/in-progress/PORTFOLIO_REVENUE_ENGINE/PORTFOLIO_REVENUE_ENGINE_PROJECT_TRACKER.md",
+    "expected_exit_code": 0
+  },
+  {
+    "id": "pm-eval-8",
+    "description": "SSSS conformance passes",
+    "command": "npm run validate",
     "expected_exit_code": 0
   }
 ]

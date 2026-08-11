@@ -21,7 +21,7 @@ Run `node .agent/skills/webmail/scripts/check-webmail-env.mjs` to see what's con
 
 | File | Purpose |
 |---|---|
-| `scripts/lib/imap.mjs` | Legacy single-mailbox client — see table above |
+| `scripts/lib/imap.mjs` | Single-mailbox client — see table above. No longer purely legacy: as of GENERATION_DELIVERY_PIPELINE Phase 2, `appendDraft({to, subject, html, text})` composes proposal-reply drafts via `nodemailer`'s `MailComposer` and `client.append()`s them (with the `\Draft` flag) into the mailbox resolved by `resolveDraftsMailbox()` — SPECIAL-USE `\Drafts` (RFC 6154) first, `IMAP_DRAFTS_FOLDER`/`'Drafts'` fallback, throws if neither exists. Gated behind `DELIVERY_DRAFTS=1` (default off); not yet live-verified against `mail.gregiteen.xyz` — see that project's tracker. |
 | `scripts/lib/webmail.mjs` | Pure IMAP/SMTP functions for the standalone app: `verifyLogin`, `listMessages`, `getMessage`, `sendMessage` |
 | `scripts/lib/webmail-ui.mjs` (322 lines) | The actual server: in-memory session map, cookie auth, hand-rolled router (`handleWebmail`), inline HTML/CSS templates (login, inbox, message, compose) |
 | `static/crm-app.html` | Dark-themed admin SPA. **Not directly reachable** — `GET /crm-app.html` 404s on the main site; it's only served (with an injected nav bar) at `/crm` inside the authenticated webmail app |

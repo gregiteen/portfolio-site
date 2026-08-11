@@ -13,7 +13,7 @@
 import { writeFile, mkdir, copyFile, readFile, rm, rename } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { join, dirname, delimiter, extname } from 'node:path';
+import { join, dirname, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import {
@@ -34,7 +34,15 @@ import {
   routeStructuralErrors,
 } from './lib/theme-release.mjs';
 import { scanLayoutSources, scanBuiltHtml } from './lib/artifact-gate.mjs';
-import { buildTransparentMark } from './lib/logo-transparency.mjs';
+import { generateImage } from './lib/image-gen.mjs';
+import {
+  LOGO_SUBJECT,
+  LOGO_EXTRACTION,
+  FAVICON_SUBJECT,
+  FAVICON_EXTRACTION,
+  generateBrandKit,
+  buildMark,
+} from './lib/brand-marks.mjs';
 import {
   createRunLessonRecorder,
   formatLessonPack,
@@ -48,7 +56,6 @@ import {
   IMAGE_MODEL_LITE,
   callOpenRouter,
   callOpenRouterImage,
-  callFalImage,
   isRetryableOpenRouterError,
 } from './lib/openrouter.mjs';
 
@@ -336,41 +343,6 @@ async function openRouterVision(parts, schema, label = 'visual review', model = 
   }
 }
 
-// Logo/favicon stay on the full OpenRouter image model — it renders small legible text
-// far more reliably, and that's exactly the defect ("garbled letterforms",
-// "GI" reading as "CII") that's been triggering repair passes and re-rolls.
-// Hero/portrait have no text to render, so they get the ~4x faster Lite
-// model (Nano Banana 2 Lite) with no observed quality tradeoff.
-async function generateImage(imagePrompt, outputPath, baseImagePath = null, model = IMAGE_MODEL) {
-  let imageUrl = null;
-  if (baseImagePath) {
-    // Fal accepts data URIs for image_url
-    const mimeType = /\.png$/i.test(baseImagePath) ? 'image/png' : 'image/jpeg';
-    const data = (await readFile(baseImagePath)).toString('base64');
-    imageUrl = `data:${mimeType};base64,${data}`;
-  }
-  const filename = outputPath.split('/').pop() || '';
-  const aspectRatio = filename.startsWith('hero') || filename.startsWith('logo') || filename.startsWith('brandkit')
-    ? '16:9'
-    : filename.startsWith('portrait') ? '3:4' : '1:1';
-  const result = await callFalImage({
-    model,
-    prompt: imagePrompt,
-    imageUrl,
-    aspectRatio,
-  });
-  const sharp = (await import('sharp')).default;
-  let output = result.buffer;
-  if (/\.jpe?g$/i.test(extname(outputPath))) {
-    output = await sharp(output).jpeg({ quality: 90 }).toBuffer();
-  } else if (/\.png$/i.test(extname(outputPath))) {
-    output = await sharp(output).png().toBuffer();
-  }
-  await writeFile(outputPath, output);
-  console.log(`  → Fal ${model} saved ${outputPath} (${Math.round(output.length / 1024)}KB)`);
-  return true;
-}
-
 // ─── Prompts ─────────────────────────────────────────────────────────────────
 
 const placeholderContract = Object.entries(LAYOUT_SPECS)
@@ -626,8 +598,6 @@ Return exactly the DIRECTOR_SCHEMA JSON object.`, DIRECTOR_SCHEMA, 32768);
   // preserved). Each falls back safely: portrait → the untouched source photo;
   // logo/favicon failures surface in the asset audit.
   console.log(`[2/3] Generating Images (hero, logo, favicon, portrait) in background…`);
-  const logoPrompt = planObj.image_prompts?.logo
-    || `A flat, minimal personal brand wordmark for "Greg Iteen" fitting this brief: ${prompt}. No tagline, no photo, no clutter.`;
   const portraitStyle = planObj.image_prompts?.portrait_style
     || `Re-render this portrait photograph to match this design brief: ${prompt}. Keep the subject's face and likeness clearly recognizable; change only the treatment, palette, and grain.`;
   // Logo/favicon are image-to-image RESTYLES of the verified marks: the model
@@ -638,89 +608,37 @@ Return exactly the DIRECTOR_SCHEMA JSON object.`, DIRECTOR_SCHEMA, 32768);
   const withFallback = (promise, fallbackSource, targetPath) => promise
     .then(async (ok) => { if (!ok) await copyFile(fallbackSource, targetPath); return ok; })
     .catch(async () => { await copyFile(fallbackSource, targetPath); return false; });
+  // Populated inside imagePromise below (before it awaits Promise.allSettled)
+  // and read by assetFlow's visual-audit correction loop further down, so a
+  // rejected logo/favicon is corrected through the SAME buildMark pipeline —
+  // background removal + edge-to-edge composition + trim — as the initial
+  // render, using the same brand kit as its image-to-image base.
+  const brandKitPath = logoPath.replace('logo.png', 'brandkit.png');
+  let kitSuccess = false;
+  let markConcept = '';
+  // The art director gets the whole locked constitution, not just the raw
+  // prompt — the palette and display face it designs against are the same ones
+  // the CSS specialist is executing, so the mark lands as part of the design
+  // instead of a sticker applied to it.
+  const brandContext = {
+    style: prompt,
+    name: planObj.name,
+    accent: planObj.accent,
+    colors: planObj.tokens?.colors,
+    typography: planObj.tokens?.typography,
+    imageTreatment: planObj.imageTreatment,
+    signatureGesture: planObj.signatureGesture,
+  };
   const imagePromise = (async () => {
         const p1 = withFallback(generateImage(`Subject: A visually explicit, recognizable editorial interpretation of the user's exact brief: "${prompt}".\nContext: Wide hero artwork for a premium portfolio website; the requested subject must be clearly present, not reduced to an abstract palette or texture.\nStyle: ${planObj.image_prompts?.hero || planObj.imageTreatment || 'High-end editorial art direction'}\n\nCRITICAL CONSTRAINTS: Do not include text, watermarks, signatures, logos, interface overlays, or nonsensical symbols. Leave usable contrast for real page content.`, heroPath, null, IMAGE_MODEL), heroFallback, heroPath);
         const p2 = withFallback(generateImage(`Subject: Editorial portrait photograph of the supplied human, surrounded by a visually recognizable interpretation of the exact brief: "${prompt}".\nContext: Portfolio bio picture. Keep the person's face and body credible while incorporating the requested subject into the environment, backdrop, lighting, wardrobe detail, or surrounding scene.\nStyle: ${portraitStyle}\n\nHARD CONSTRAINT: this is the same person — identical face and likeness. Never transform the person into the requested animal, object, or character. Do not include text, distortion, extra limbs, or low-quality artifacts.`, portraitPath, portraitSource, IMAGE_MODEL), portraitSource, portraitPath);
 
-        const brandKitPath = logoPath.replace('logo.png', 'brandkit.png');
-        const kitSuccess = await generateImage(`Subject: A flat, 2D digital graphic on a perfectly solid #FFFFFF white background. It must contain TWO completely separate designs on the same canvas: a Logo and a Favicon.\nContext: Digital asset.\nStyle: THE THEME IS "${prompt}". EMBRACE THE THEME FULLY, BUT EXECUTE IT WITH A HIGH-END, PREMIUM ARTISTIC VISION. Pick a primary and accent color that perfectly match the "${prompt}" theme. Design it like a world-class agency. NO 2008 DESIGNS. NO BASIC SHIT.\n\nCRITICAL LAYOUT INSTRUCTION: You must draw TWO separate items:\n1. THE LOGO: A highly creative graphic emblem (fitting the "${prompt}" theme) placed next to the exact words "GREG ITEEN". Do NOT put the letters "GI" inside this graphic emblem.\n2. THE FAVICON: A completely separate, standalone square icon spelling exactly "GI".\nDO NOT combine the Favicon text into the Logo's graphic emblem. Keep them distinct.\n\nHARD CONSTRAINT: This must be a strictly 2D FLAT vector style graphic. DO NOT use 3D effects, bevels, embossing, drop shadows, or gloss. DO NOT generate physical objects. NO CLIP-ART. NO GENERIC AI SHAPES. The background MUST be perfectly solid #FFFFFF white.`, brandKitPath, null, IMAGE_MODEL_LITE).catch(() => false);
+        const kit = await generateBrandKit(brandContext, brandKitPath, IMAGE_MODEL_LITE);
+        kitSuccess = kit.ok;
+        markConcept = kit.direction?.emblem_concept || '';
 
-        // Brand marks need a real alpha channel, and Google's image models
-        // cannot emit one — verified against the current docs: the whole Nano
-        // Banana family (including 3.1 Flash Image, used here) returns flat RGB.
-        // So each mark is rendered TWICE from the same brand kit, once over
-        // white and once over black, and the true alpha is recovered by
-        // difference matting: Cw - Cb = (1-a)*255. That solves anti-aliased
-        // edges exactly, where colour keying can only guess at them.
-        const markPrompt = (subject, size, extraction, background) => `Subject: A flat, 2D digital graphic on a perfectly solid ${background} background. It is ${subject} extracted from the provided Brand Kit image in ${size} size.\nContext: Digital asset.\nStyle: EMBRACE THE THEME FULLY, BUT EXECUTE IT WITH A HIGH-END, PREMIUM ARTISTIC VISION. ${extraction} MATCH THE AESTHETIC OF THE BASE IMAGE PERFECTLY.\n\nCOMPOSITION: Draw the mark large, filling the canvas edge to edge with only a small even margin. Do not centre a small mark in a large empty field.\n\nHARD CONSTRAINT: This must be a strictly 2D FLAT vector style graphic. DO NOT use 3D effects, bevels, embossing, drop shadows, or gloss. DO NOT generate physical objects. The background MUST be perfectly solid ${background}, edge to edge, with nothing else on it. Render the artwork itself IDENTICALLY regardless of the background colour.`;
-
-        // Green, not white. Keying against white pits the key colour against
-        // the artwork — logo art is frequently white, cream or pale, and that
-        // collision is what erased the "GREG ITEEN" wordmark. Logo art is
-        // essentially never pure green, so the key and the mark cannot be
-        // confused, and the despill pass removes the rim it leaves behind.
-        const KEY_BACKGROUND = '#00FF00 pure green (chroma key green screen)';
-
-        const LOGO_SUBJECT = 'a single logo';
-        // "Do not return the standalone GI monogram" is load-bearing: the SPACE
-        // skin shipped with the FAVICON ("GI") sitting in the logo slot, which
-        // is why its brand mark was a bare monogram instead of the wordmark.
-        const LOGO_EXTRACTION = 'Extract the main logo wordmark ("GREG ITEEN") ALONG WITH its integrated graphic emblem or icon. The text "GREG ITEEN" and the thematic graphic elements must remain together as one unified logo. Do not isolate the text. DO NOT return the standalone square "GI" monogram — that is the separate favicon, not this asset. The words "GREG ITEEN" MUST be present and legible.';
-        const FAVICON_SUBJECT = 'a single square favicon';
-        const FAVICON_EXTRACTION = 'Extract the favicon typography ("GI") ALONG WITH its integrated graphic emblem or icon. The text "GI" and the thematic graphic elements must remain together as one unified icon. Do not isolate the text.';
-
-        // Renders the white/black pair, mattes them, and writes the result.
-        // Every step is awaited — the previous implementation fired the
-        // write-back as a floating promise, so the transparent version raced
-        // the pipeline and the opaque original sometimes won (SPACE shipped
-        // with no alpha channel at all).
-        const buildMark = async (targetPath, subject, size, extraction, sourceFallback) => {
-          const whitePath = `${targetPath}.white.png`;
-          const blackPath = `${targetPath}.black.png`;
-          const base = kitSuccess ? brandKitPath : sourceFallback;
-          const label = targetPath.split('/').pop();
-          try {
-            await generateImage(markPrompt(subject, size, extraction, KEY_BACKGROUND), whitePath, base);
-            // Second render only when matting is explicitly enabled: the image
-            // model redraws the mark at a different position/scale between
-            // runs, so the pair usually cannot be subtracted (measured: a
-            // double-exposure ghost). Keying the green screen is the reliable
-            // path; matting stays available behind a flag.
-            let blackOk = false;
-            if (process.env.THEME_MARK_MATTE === '1') {
-              try {
-                await generateImage(markPrompt(subject, size, extraction, '#000000 black'), blackPath, base);
-                blackOk = true;
-              } catch (error) {
-                console.warn(`  ⚠ ${label}: black-background render failed (${error.message}); keying instead.`);
-              }
-            }
-            const sharp = (await import('sharp')).default;
-            const result = await buildTransparentMark(
-              await readFile(whitePath),
-              blackOk ? await readFile(blackPath) : null,
-              sharp,
-            );
-            if (!result.buffer) {
-              console.warn(`  ⚠ ${label}: could not build a transparent mark (${result.reason}); keeping the verified brand asset.`);
-              await copyFile(sourceFallback, targetPath);
-              return false;
-            }
-            await writeFile(targetPath, result.buffer);
-            console.log(`  → ${label}: transparent via ${result.method} (${Math.round(result.buffer.length / 1024)}KB)`);
-            return true;
-          } catch (error) {
-            console.warn(`  ⚠ ${label}: generation failed (${error.message}); keeping the verified brand asset.`);
-            await copyFile(sourceFallback, targetPath).catch(() => {});
-            return false;
-          } finally {
-            await rm(whitePath, { force: true }).catch(() => {});
-            await rm(blackPath, { force: true }).catch(() => {});
-          }
-        };
-
-        const p3 = buildMark(logoPath, LOGO_SUBJECT, '1200x630', LOGO_EXTRACTION, logoSource);
-        const p4 = buildMark(faviconPath, FAVICON_SUBJECT, '512x512', FAVICON_EXTRACTION, faviconSource);
+        const p3 = buildMark(logoPath, LOGO_SUBJECT, '1200x630', LOGO_EXTRACTION, logoSource, kitSuccess ? brandKitPath : logoSource, markConcept);
+        const p4 = buildMark(faviconPath, FAVICON_SUBJECT, '512x512', FAVICON_EXTRACTION, faviconSource, kitSuccess ? brandKitPath : faviconSource, kit.direction?.favicon_concept || '');
 
         await Promise.allSettled([p1, p2, p3, p4]);
         return true;
@@ -1048,8 +966,23 @@ OUTPUT: exactly one JSON object: { "approved": true, "issues": [] }`,
       const regen = named.length ? named : ['hero'];
       await Promise.allSettled(regen.map((asset) => {
         if (asset === 'hero') return withFallback(generateImage(`Subject: A visually explicit, recognizable editorial interpretation of the exact brief: "${prompt}".\nContext: Wide hero artwork for a premium portfolio website.\nStyle: ${planObj.image_prompts?.hero || planObj.imageTreatment || prompt}\n\nCRITICAL CORRECTIVE PASS: The Review Board rejected the previous generation for this exact reason: "${issues}". Fix it while keeping the requested subject clearly visible. Do not include text, watermarks, signatures, logos, interface overlays, or floating marks.`, heroPath, null, IMAGE_MODEL), heroFallback, heroPath);
-        if (asset === 'logo') return withFallback(generateImage(`Subject: A flat, professional brand wordmark.\nContext: Flat logo design centered on a solid background matching the theme shell color.\nStyle: ${logoPrompt}\n\nCRITICAL CORRECTIVE PASS: The Review Board rejected the previous generation for this exact reason: "${issues}". You MUST specifically address and fix this failure. The wordmark must clearly read exactly "GI" with crisp, legible typography. Do not add any extra words, mockups, or photographs.`, logoPath), logoSource, logoPath);
-        if (asset === 'favicon') return withFallback(generateImage(`Subject: A single square app-icon glyph.\nContext: Favicon design, flat, perfectly centered, filling the square.\nStyle: ${logoPrompt}\n\nCRITICAL CORRECTIVE PASS: The Review Board rejected the previous generation for this exact reason: "${issues}". You MUST specifically address and fix this failure. The icon must clearly read exactly "GI" with perfect legibility. Do not add any extra words, mockups, or complex details that won't scale.`, faviconPath), faviconSource, faviconPath);
+        // Corrections reuse buildMark — the chroma-key background removal +
+        // edge-to-edge composition + trim pipeline — instead of writing a raw
+        // generated PNG straight to disk. A bespoke corrective prompt used to
+        // ask for a mark "centered on a solid background matching the theme
+        // shell color" and skip transparency/trim entirely, which is exactly
+        // how a rejected logo turned into a small wordmark stranded in a huge
+        // opaque canvas (see designs/legos on the deployed site).
+        if (asset === 'logo') {
+          return buildMark(logoPath, LOGO_SUBJECT, '1200x630',
+            `${LOGO_EXTRACTION} CRITICAL CORRECTIVE PASS: The Review Board rejected the previous generation for this exact reason: "${issues}". You MUST specifically address and fix this failure while keeping the wordmark legible.`,
+            logoSource, kitSuccess ? brandKitPath : logoSource, markConcept);
+        }
+        if (asset === 'favicon') {
+          return buildMark(faviconPath, FAVICON_SUBJECT, '512x512',
+            `${FAVICON_EXTRACTION} CRITICAL CORRECTIVE PASS: The Review Board rejected the previous generation for this exact reason: "${issues}". You MUST specifically address and fix this failure while keeping the icon legible at small size.`,
+            faviconSource, kitSuccess ? brandKitPath : faviconSource);
+        }
         return withFallback(generateImage(`Subject: Corrected editorial portrait of the supplied human with a recognizable "${prompt}" environment.\nStyle: ${portraitStyle}\n\nCRITICAL CORRECTIVE PASS: Fix this exact rejection: "${issues}". Preserve the person's face and likeness; correct all background anatomy and artifacts. Never transform the person into the requested subject.`, portraitPath, portraitSource, IMAGE_MODEL), portraitSource, portraitPath);
       }));
       visualAudit = await auditVisualAssets();
@@ -1162,6 +1095,19 @@ ${blocks}
             brief: prompt,
             designPlan: plan,
             priorIssues: priorReviewIssues,
+            runId: process.env.GENERATION_RUN_ID || styleName,
+            pass,
+            // GENERATIVE_DESIGN_STUDIO Phase 0 — capture the generated
+            // imagery alongside the render-audit screenshots for this same
+            // pass, not just what the reviewer saw on the page. hero/logo/
+            // favicon/portrait/brandkit are overwritten in place on every
+            // repair pass, so evidence-store.mjs copies the bytes rather
+            // than referencing these live paths.
+            generatedAssets: [
+              ['hero', heroPath], ['portrait', portraitPath],
+              ['logo', logoPath], ['favicon', faviconPath],
+              ['brandkit', brandKitPath],
+            ].map(([kind, path]) => ({ kind, path })),
           }),
           ...(assetFlowAwaited ? [] : [assetFlow]),
         ]);

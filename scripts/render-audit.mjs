@@ -21,10 +21,10 @@
 
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFile, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { LAYOUT_SPECS, extractJson } from './lib/theme.mjs';
+import { recordEvidence } from './lib/evidence-store.mjs';
 import {
   CLAUDE_VISION_MODEL,
   callOpenRouter,
@@ -208,6 +208,9 @@ export async function renderAudit(slug, {
   brief = '',
   designPlan = '',
   priorIssues = [],
+  runId = slug,
+  pass = 1,
+  generatedAssets = [],
 } = {}) {
   let chromium;
   try {
@@ -236,13 +239,6 @@ export async function renderAudit(slug, {
   } finally {
     await browser.close();
     if (staticServer) await staticServer.close();
-  }
-
-  // Persist the evidence: a fail-closed rejection deletes the design, so the
-  // screenshots are the only way to postmortem what the reviewer saw.
-  for (const [i, [label, buf]] of shots.entries()) {
-    const file = join(tmpdir(), `render-audit-${slug}-${i}-${label.split(' ')[0]}.jpeg`);
-    await writeFile(file, buf).catch(() => {});
   }
 
   const layoutKeys = Object.keys(LAYOUT_SPECS).join(', ');
@@ -296,9 +292,41 @@ OUTPUT: exactly one JSON object: { "approved": true, "score": 9, "prompt_fidelit
     parts.push({ text: `Screenshot: ${label}` }, { inlineData: { mimeType: 'image/jpeg', data: buf.toString('base64') } });
   }
 
-  const audit = extractJson(await openRouterVision(parts));
-  if (!Array.isArray(audit.issues)) audit.issues = [];
-  const sanitized = sanitizeAuditVerdict(audit, { screenshotLabels });
+  // Persist the evidence regardless of how the vision call resolves — a
+  // fail-closed rejection deletes the design, so these screenshots are the
+  // only way to postmortem what the reviewer saw (GENERATIVE_DESIGN_STUDIO
+  // Phase 0). A throw from the vision call must not lose the screenshots
+  // already captured, so this wraps the call rather than guarding it.
+  let sanitized;
+  try {
+    const audit = extractJson(await openRouterVision(parts));
+    if (!Array.isArray(audit.issues)) audit.issues = [];
+    sanitized = sanitizeAuditVerdict(audit, { screenshotLabels });
+    try {
+      await recordEvidence({
+        slug, runId, pass,
+        outcome: sanitized.approved ? 'approved' : 'rejected',
+        verdict: sanitized,
+        shots: shots.map(([label, buf]) => ({ label, buf, mimeType: 'image/jpeg' })),
+        generatedAssets,
+      });
+    } catch (evidenceErr) {
+      console.warn(`[Evidence] Failed to persist evidence for ${slug} run ${runId} pass ${pass}: ${evidenceErr.message}`);
+    }
+  } catch (auditErr) {
+    try {
+      await recordEvidence({
+        slug, runId, pass,
+        outcome: 'unknown',
+        verdict: { error: auditErr instanceof Error ? auditErr.message : String(auditErr) },
+        shots: shots.map(([label, buf]) => ({ label, buf, mimeType: 'image/jpeg' })),
+        generatedAssets,
+      });
+    } catch (evidenceErr) {
+      console.warn(`[Evidence] Failed to persist evidence for ${slug} run ${runId} pass ${pass} after audit failure: ${evidenceErr.message}`);
+    }
+    throw auditErr;
+  }
   // Ship the evidence with the verdict so a vision-capable repair model can
   // analyze the SAME pixels the reviewer judged (text-only repairs stall —
   // see the generator skill's gotchas). Base64 JPEG, ~600KB per pass, held

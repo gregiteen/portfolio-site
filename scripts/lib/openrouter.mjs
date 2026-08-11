@@ -11,7 +11,7 @@ import { getSecret } from 'total-recall-brain/src/core/secrets-store.mjs';
 export const TEXT_MODEL = process.env.THEME_TEXT_MODEL || 'moonshotai/kimi-k3';
 export const CLAUDE_VISION_MODEL = 'anthropic/claude-sonnet-5';
 export const IMAGE_MODEL = 'fal-ai/flux-pro/v1.1';
-export const IMAGE_MODEL_LITE = 'fal-ai/ideogram/v4';
+export const IMAGE_MODEL_LITE = 'ideogram/v4';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_RECALL_DIR = join(__dirname, '..', '..', '.agent', 'skills', 'total-recall');

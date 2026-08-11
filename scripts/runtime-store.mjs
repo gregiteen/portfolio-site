@@ -131,6 +131,8 @@ function proposalBody(proposal) {
       requestId: proposal.requestId || null,
       generationState: proposal.generationState || null,
       generationError: proposal.generationError || null,
+      draftAppended: !!proposal.draftAppended,
+      draftAppendedAt: proposal.draftAppendedAt || null,
     }),
     '',
     '## Assessment',
@@ -240,6 +242,8 @@ function normalizeProposalData(data, raw) {
       requestId: thread.requestId || null,
       generationState: thread.generationState || null,
       generationError: thread.generationError || null,
+      draftAppended: !!thread.draftAppended,
+      draftAppendedAt: thread.draftAppendedAt || null,
     },
   };
 }
@@ -439,6 +443,105 @@ export async function appendBannerEvent(evt) {
   }, body));
 }
 
+// ── Delivery settings + events (GENERATION_DELIVERY_PIPELINE Phase 3) ──────
+// `delivery_settings` is a tenant_private singleton (mirrors rate_card's
+// pattern); `delivery_event` is one doc per delivery action (mirrors
+// design_evidence's one-doc-per-pass pattern) so every auto-send is
+// individually auditable, never folded into a shared log a later write
+// could clobber.
+const deliverySettingsRel = 'runtime/config/delivery-settings.md';
+
+export async function getDeliverySettings() {
+  try {
+    const raw = await readFile(join(vaultRoot, deliverySettingsRel), 'utf8');
+    return extractJsonBlock(parseDocument(raw).body, 'Settings JSON') || {};
+  } catch {
+    return {};
+  }
+}
+
+export async function updateDeliverySettings(patch) {
+  const prior = await getDeliverySettings();
+  const next = { ...prior, ...serializable(patch || {}) };
+  await mkdir(dirs.config, { recursive: true });
+  await writeDocument(deliverySettingsRel, serializeRuntimeDocument({
+    type: 'delivery_settings',
+    title: 'Delivery Settings',
+    description: 'Auto-propose mode, confidence threshold, rate cap, and kill switch.',
+    timestamp: nowIso(),
+    propose_mode: next.propose_mode || 'draft',
+  }, ['# Delivery Settings', '', '## Settings JSON', jsonBlock(next), ''].join('\n')));
+  return next;
+}
+
+export async function recordDeliveryEvent(evt) {
+  const id = safeId(evt.id || createHash('sha256').update(`${evt.kind || ''}:${evt.recipient || ''}:${Date.now()}`).digest('hex').slice(0, 16));
+  const created = nowIso();
+  const rel = `runtime/events/delivery/${id}.md`;
+  const fm = {
+    type: 'delivery_event',
+    title: `Delivery event: ${evt.kind || 'unknown'} (${id})`,
+    description: `${evt.kind || 'unknown'} delivery outcome for ${evt.recipient || 'unknown recipient'}.`,
+    timestamp: created,
+    delivery_id: id,
+    kind: evt.kind || 'unknown', // 'digest' | 'draft' | 'auto_propose'
+    outcome: evt.outcome || 'unknown', // 'sent' | 'drafted' | 'failed'
+    created,
+  };
+  const body = [
+    '# Delivery Event',
+    '',
+    '## Detail JSON',
+    jsonBlock({
+      recipient: evt.recipient || null,
+      proposalId: evt.proposalId || null,
+      confidence: typeof evt.confidence === 'number' ? evt.confidence : null,
+      threshold: typeof evt.threshold === 'number' ? evt.threshold : null,
+      reason: evt.reason || null,
+      subject: evt.subject || null,
+      body: evt.body || null,
+      error: evt.error || null,
+    }),
+    '',
+  ].join('\n');
+  await writeDocument(rel, serializeRuntimeDocument(fm, body));
+  return { id, ...fm };
+}
+
+/** Auto-sends within the rate-cap window — the rate cap enforced
+ * independently of the confidence threshold, per the architecture doc. */
+export async function countRecentAutoSends(windowMs) {
+  const dir = join(vaultRoot, 'runtime', 'events', 'delivery');
+  const cutoff = Date.now() - windowMs;
+  let count = 0;
+  try {
+    const files = await readdir(dir);
+    for (const file of files.filter((f) => f.endsWith('.md'))) {
+      try {
+        const { data } = parseDocument(await readFile(join(dir, file), 'utf8'));
+        if (data?.kind === 'auto_propose' && data?.outcome === 'sent' && Date.parse(data?.created) >= cutoff) count++;
+      } catch { /* unreadable event — skip */ }
+    }
+  } catch { /* no events yet */ }
+  return count;
+}
+
+/** Recent delivery_event docs, newest first, for the admin audit view. */
+export async function listRecentDeliveryEvents(limit = 100) {
+  const dir = join(vaultRoot, 'runtime', 'events', 'delivery');
+  const out = [];
+  try {
+    const files = await readdir(dir);
+    for (const file of files.filter((f) => f.endsWith('.md'))) {
+      try {
+        const { data, body } = parseDocument(await readFile(join(dir, file), 'utf8'));
+        if (data?.type === 'delivery_event') out.push({ ...data, detail: extractJsonBlock(body, 'Detail JSON') || {} });
+      } catch { /* unreadable event — skip */ }
+    }
+  } catch { /* no events yet */ }
+  return out.sort((a, b) => String(b.created).localeCompare(String(a.created))).slice(0, limit);
+}
+
 export function getVisitor(email) {
   return visitorCache.get(emailKey(email)) || null;
 }
@@ -486,8 +589,11 @@ export async function appendRun(run) {
   if (!VALID_RUN_STATUSES.has(status)) throw new Error(`Invalid generation_run status: ${status}`);
   const rel = `runtime/runs/${id}.md`;
   let priorBody = '';
+  let priorData = null;
   if (existsSync(join(vaultRoot, rel))) {
-    priorBody = parseDocument(await readFile(join(vaultRoot, rel), 'utf8')).body.replace(/\s+$/, '');
+    const parsed = parseDocument(await readFile(join(vaultRoot, rel), 'utf8'));
+    priorBody = parsed.body.replace(/\s+$/, '');
+    priorData = parsed.data;
   }
   const timestamp = nowIso();
   const event = `${timestamp} ${status}${run.error ? `: ${run.error}` : ''}`;
@@ -504,6 +610,13 @@ export async function appendRun(run) {
     started_at: toIso(run.started_at || run.startedAt) || timestamp,
     finished_at: toIso(run.finished_at || run.finishedAt) || null,
     error: run.error || null,
+    // Delivery is a detached consumer of promotion (see
+    // GENERATION_DELIVERY_PIPELINE architecture doc) — these fields are set
+    // by delivery.mjs after this run's status is already "done", never by
+    // the generation path itself. Preserved across every other appendRun()
+    // call so a later status update doesn't clobber an earlier digest result.
+    digest_status: 'digest_status' in run ? run.digest_status : (priorData?.digest_status ?? null),
+    digest_error: 'digest_error' in run ? run.digest_error : (priorData?.digest_error ?? null),
   };
   await writeDocument(rel, serializeRuntimeDocument(fm, body));
   return { id, ...fm };

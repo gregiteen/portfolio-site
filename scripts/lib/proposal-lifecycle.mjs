@@ -3,6 +3,11 @@ export const PROPOSAL_STATUSES = Object.freeze([
   'pending_approval',
   'revising',
   'approved',
+  // GENERATION_DELIVERY_PIPELINE Phase 2: a draft was IMAP-appended to
+  // Greg's own Drafts folder for manual review/edit/send from his real mail
+  // client. Distinct from 'sent', which means this app's own SMTP transport
+  // already delivered it — 'drafted' hasn't left the building yet.
+  'drafted',
   'sent',
   'signed',
   'client_rejected',

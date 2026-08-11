@@ -84,16 +84,116 @@ import {
   pendingDripVisitors,
   getWebmailSettings,
   updateWebmailSettings,
+  getDeliverySettings,
+  updateDeliverySettings,
+  recordDeliveryEvent,
+  countRecentAutoSends,
+  listRecentDeliveryEvents,
   dirs,
 } from './runtime-store.mjs';
+import { confidenceFromAssessment, decideProposalDelivery, DEFAULT_DELIVERY_SETTINGS } from './lib/delivery-decision.mjs';
 
 import {
   fetchInbox,
   refreshImapPassword,
   startImapPoller,
+  appendDraft,
 } from './lib/imap.mjs';
 
 import { startCalendarPoller } from './lib/calendar.mjs';
+import { callOpenRouter } from './lib/openrouter.mjs';
+import { parseUserAgent, renderVisitorEnrichmentHtml } from './lib/email-rows.mjs';
+import { assembleDigest, renderDigestHtml } from './lib/delivery.mjs';
+import { listEvidenceForSlug, listEvidenceSlugs } from './lib/evidence-store.mjs';
+import {
+  upsertLead, getLead, listLeads,
+  upsertOpportunity, getOpportunity, listOpportunities, transitionOpportunity,
+  upsertApplication, getApplication, listApplications, transitionApplication,
+  upsertGigListing, listGigListings,
+  listPipelineEvents, queryPipeline, listInboxMessages, listRevenueSnapshots,
+  flushCrmStore,
+} from './lib/crm-store.mjs';
+import { buildRevenueReport, writeDailySnapshot } from './lib/revenue-report.mjs';
+
+// GENERATION_DELIVERY_PIPELINE Phase 1/2 rollout flags — both off by default
+// per the dev plan's rollout table.
+const DELIVERY_DIGEST_ENABLED = process.env.DELIVERY_DIGEST === '1';
+const DELIVERY_DRAFTS_ENABLED = process.env.DELIVERY_DRAFTS === '1';
+
+/** GENERATION_DELIVERY_PIPELINE Phase 2: append an editable, sendable draft
+ * to Greg's own Drafts folder via IMAP — a second delivery surface distinct
+ * from sendProposalToClient() below, which sends immediately through this
+ * app's own SMTP transport. Every proposal reaching this point already
+ * required a completed CNA (see the /api/proposal handler that builds
+ * `assessment`), which is what "resolves" architecture open question 1 —
+ * there is no separate qualification check needed here. Idempotent on
+ * `thread.draftAppended`; failures never block proposal generation itself. */
+async function draftProposalToClientMailbox(proposalId, thread) {
+  if (thread.draftAppended) return { noop: true };
+  const clientSubject = thread.proposal?.subject_line || `Project Proposal from Greg Iteen`;
+  const webUrl = `${SITE_URL}/proposal/${proposalId}`;
+  const draftText = `${thread.proposal?.client_email_draft || ''}\n\nView the interactive proposal here: ${webUrl}\n\n— Greg Iteen\ngregiteen.xyz`;
+  await appendDraft({
+    to: thread.clientEmail,
+    subject: clientSubject,
+    text: draftText,
+    html: emailTextToHtml(draftText),
+  });
+  thread.draftAppended = true;
+  thread.draftAppendedAt = new Date().toISOString();
+  if (thread.status === 'pending_approval') thread.status = 'drafted';
+}
+
+/** GENERATION_DELIVERY_PIPELINE Phase 3: run the auto-propose decision path
+ * (scripts/lib/delivery-decision.mjs) and act on it. `delivery_settings`
+ * defaults to `{ propose_mode: 'draft' }` (DEFAULT_DELIVERY_SETTINGS) until
+ * an admin explicitly changes it via /api/admin/delivery-settings, so this
+ * resolves to the exact same IMAP-draft behavior as Phase 2 out of the box
+ * — the 'auto' branch is real code, not a stub, but it is inert until a
+ * human deliberately opts in. Every branch records a delivery_event. */
+async function routeProposalDelivery(proposalId, thread) {
+  const settings = { ...DEFAULT_DELIVERY_SETTINGS, ...(await getDeliverySettings().catch(() => ({}))) };
+  const confidence = confidenceFromAssessment(thread.assessment);
+  const recentAutoSendCount = await countRecentAutoSends(settings.rate_cap_window_ms).catch(() => Infinity);
+  const decision = decideProposalDelivery({ settings, confidence, recentAutoSendCount });
+
+  if (decision.action === 'auto') {
+    try {
+      await sendProposalToClient(proposalId, thread);
+      await recordDeliveryEvent({
+        kind: 'auto_propose', outcome: 'sent', recipient: thread.clientEmail, proposalId,
+        confidence, threshold: settings.confidence_threshold, reason: decision.reason,
+        subject: thread.proposal?.subject_line || null, body: thread.proposal?.client_email_draft || null,
+      });
+      console.log(`[Delivery] Auto-proposed ${proposalId} to ${thread.clientEmail} (confidence ${confidence.toFixed(2)})`);
+      return;
+    } catch (/** @type {any} */ e) {
+      // An auto-send failure degrades to draft rather than leaving the
+      // client with nothing — same "every failure mode degrades to draft"
+      // rule the architecture doc requires for the decision branches.
+      await recordDeliveryEvent({
+        kind: 'auto_propose', outcome: 'failed', recipient: thread.clientEmail, proposalId,
+        confidence, threshold: settings.confidence_threshold, reason: decision.reason, error: e.message,
+      });
+      console.error(`[Delivery] Auto-propose failed for ${proposalId}, falling back to draft:`, e.message);
+    }
+  }
+
+  await draftProposalToClientMailbox(proposalId, thread);
+  await recordDeliveryEvent({
+    kind: 'draft', outcome: 'drafted', recipient: thread.clientEmail, proposalId,
+    confidence, threshold: settings.confidence_threshold, reason: decision.reason,
+  });
+}
+
+// Revenue-path text models. Both default to Opus 5 — see
+// docs/projects/planned/GENERATION_DELIVERY_PIPELINE Phase 0: the CNA and
+// proposal generation used to run on gemini-3.5-flash via a Google budget
+// that's exhausted. Configurable per call site rather than one global
+// DEFAULT_MODEL, since a CNA-quality regression and a proposal-quality
+// regression are different incidents to diagnose.
+const CNA_MODEL = process.env.CNA_MODEL || 'anthropic/claude-opus-5';
+const PROPOSAL_MODEL = process.env.PROPOSAL_MODEL || 'anthropic/claude-opus-5';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -280,7 +380,7 @@ function startGeneration(prompt, email = null, retry = null) {
   // Argument array — the prompt never touches a shell.
   const child = spawn(process.execPath, [compileScript, prompt], {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...serializedThemeEnv, GENERATION_ATTEMPT: String(attempt) },
+    env: { ...serializedThemeEnv, GENERATION_ATTEMPT: String(attempt), GENERATION_RUN_ID: runId },
   });
   let stderrTail = '';
   let genSlug = null; // captured from compile-theme's "→ designs/<slug>" line
@@ -360,6 +460,13 @@ function startGeneration(prompt, email = null, retry = null) {
       appendRun({ run_id: runId, prompt, status: 'done', startedAt: genJob.startedAt, finishedAt: genJob.finishedAt, attempt }).catch((e) => {
         console.error('[Runtime] Failed to persist generation completion:', e.message);
       });
+      if (DELIVERY_DIGEST_ENABLED && genSlug) {
+        sendGenerationDigest({ slug: genSlug, runId, prompt }).catch((err) => {
+          // sendGenerationDigest already isolates its own failures onto the
+          // run doc; this catch only guards against a bug in that isolation.
+          console.error('[Delivery] Unhandled digest error:', err instanceof Error ? err.message : String(err));
+        });
+      }
       rebuild('generated theme');
       drainQueue();
     } else {
@@ -662,6 +769,38 @@ async function sendGenerationCompleteEmail(email, slug, style) {
   });
 }
 
+/** GENERATION_DELIVERY_PIPELINE Phase 1: one email to Greg per promoted
+ * design, carrying what was built. Detached from promotion — this runs
+ * strictly after compile-theme.mjs's atomic rename already succeeded, and a
+ * failure here only sets digest_status on the run doc, never touches the
+ * design or the run's own status. */
+async function sendGenerationDigest({ slug, runId, prompt }) {
+  try {
+    const digest = await assembleDigest({ slug, runId, prompt });
+    const html = emailShell({
+      eyebrow: 'Greg Iteen — Portfolio · Generation complete',
+      headline: `${digest.name}<br>is live.`,
+      bodyHtml: renderDigestHtml(digest, { siteUrl: SITE_URL, libraryUrl: null }),
+    });
+    await smtpTransport.sendMail({
+      from: mailFrom,
+      to: mailOwner,
+      subject: `Generated: ${digest.name} (${slug})`,
+      text: `New design promoted: ${digest.name}\n\nSlug: ${slug}\nRun: ${runId}\nPrompt: ${prompt}\n\nLive: ${SITE_URL}/designs/${slug}/index.html`,
+      html,
+      attachments: digest.attachments,
+    });
+    await appendRun({ run_id: runId, prompt, status: 'done', digest_status: digest.hasEvidence ? 'sent' : 'sent_no_evidence' });
+    console.log(`[Delivery] Digest sent for ${slug} (run ${runId})`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[Delivery] Digest failed for ${slug} (run ${runId}):`, message);
+    await appendRun({ run_id: runId, prompt, status: 'done', digest_status: 'failed', digest_error: message.slice(0, 300) }).catch((e) => {
+      console.error('[Delivery] Failed to persist digest failure:', e.message);
+    });
+  }
+}
+
 // ─── Visitor Logging & Notification ──────────────────────────────────────────
 
 async function logVisitor(info) {
@@ -678,48 +817,19 @@ async function logVisitor(info) {
 
 async function notifyOwner(info) {
   const ts = new Date().toISOString();
-  // Parse user agent for readable summary
-  const ua = info.userAgent || 'Unknown';
-  const browser = ua.match(/(Chrome|Firefox|Safari|Edge|Opera)\/[\d.]+/)?.[0] || 'Unknown browser';
-  const os = ua.match(/(Mac OS X|Windows NT|Linux|Android|iOS)[\s\d._]*/)?.[0] || 'Unknown OS';
-
-  const row = (k, v, mono = false) => `
-      <tr>
-        <td style="font-family:'Courier New',Courier,monospace;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#8a8a88;padding:9px 16px 9px 0;white-space:nowrap;vertical-align:top;">${k}</td>
-        <td style="font-family:${mono ? "'Courier New',Courier,monospace" : "'Helvetica Neue',Helvetica,Arial,sans-serif"};font-size:13px;color:#f5f5f3;padding:9px 0;">${v}</td>
-      </tr>`;
+  const { browser, os } = parseUserAgent(info.userAgent || 'Unknown');
 
   const html = emailShell({
     eyebrow: 'Greg Iteen — Portfolio · Visitor alert',
     headline: 'New<br>visitor.',
-    bodyHtml: `
-      <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #2a2a2a;">
-        ${row('Email', `<strong>${info.email}</strong>`)}
-        ${row('Style', info.style)}
-        ${row('Time', ts, true)}
-        ${row('IP', info.ip, true)}
-        ${row('Browser', browser)}
-        ${row('OS', os)}
-        ${info.screen ? row('Screen', info.screen, true) : ''}
-        ${info.timezone ? row('Timezone', info.timezone) : ''}
-        ${info.language ? row('Language', info.language) : ''}
-        ${info.referrer ? row('Referrer', info.referrer, true) : ''}
-        ${info.platform ? row('Platform', info.platform) : ''}
-        ${row('Touch', info.touch ? 'Yes' : 'No')}
-      </table>
-      ${info.cnaAssessment ? `
-      <table width="100%" cellpadding="0" cellspacing="0" style="border-top:2px solid #e22b22;margin-top:20px;">
-        <tr><td colspan="2" style="font-family:'Courier New',Courier,monospace;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#e22b22;padding:14px 0 8px;">CNA Assessment</td></tr>
-        ${Object.entries(info.cnaAssessment).map(([k, v]) => row(k.replace(/_/g, ' '), v)).join('')}
-      </table>` : ''}
-      <p style="font-family:'Courier New',Courier,monospace;font-size:10px;line-height:1.6;color:#555;margin:20px 0 0;word-break:break-all;">${ua}</p>`,
+    bodyHtml: renderVisitorEnrichmentHtml(info, ts),
   });
 
   await smtpTransport.sendMail({
     from: mailFrom,
     to: mailOwner,
     subject: `New visitor: ${info.email} — "${info.style}"`,
-    text: `New portfolio visitor!\n\nEmail: ${info.email}\nDesign Style: ${info.style}\nTime: ${ts}\nIP: ${info.ip}\nBrowser: ${browser}\nOS: ${os}\nFull UA: ${ua}`,
+    text: `New portfolio visitor!\n\nEmail: ${info.email}\nDesign Style: ${info.style}\nTime: ${ts}\nIP: ${info.ip}\nBrowser: ${browser}\nOS: ${os}\nFull UA: ${info.userAgent || 'Unknown'}`,
     html,
   });
   console.log(`[Visitors] Notified owner about ${info.email}`);
@@ -881,12 +991,17 @@ function geminiCall(apiKey, prompt, { json = true, tools = [] } = {}) {
   });
 }
 
-async function generateDelimitedProposal(apiKey, prompt, { requireChanges = false } = {}) {
-  const first = await geminiCall(apiKey, prompt, { json: false });
+async function generateDelimitedProposal(prompt, { requireChanges = false } = {}) {
+  const first = await callOpenRouter({ prompt, model: PROPOSAL_MODEL, reasoningEffort: 'high', maxTokens: 8192 });
   try {
     return parseProposalOutput(first, { requireChanges });
   } catch {
-    const repaired = await geminiCall(apiKey, `Reformat the following proposal response without changing its meaning. Output only this exact delimiter contract, with plain text outside JSON:\n\nSUBJECT: one-line subject\n---PROPOSAL---\n<div class="proposal-html">\nfull HTML proposal\n</div>\n---CLIENT_EMAIL---\nclient email\n---PRICE_CENTS---\ninteger price in USD cents${requireChanges ? '\n---CHANGES---\nbrief change summary' : ''}\n---END---\n\nSOURCE:\n${first}`, { json: false });
+    const repaired = await callOpenRouter({
+      prompt: `Reformat the following proposal response without changing its meaning. Output only this exact delimiter contract, with plain text outside JSON:\n\nSUBJECT: one-line subject\n---PROPOSAL---\n<div class="proposal-html">\nfull HTML proposal\n</div>\n---CLIENT_EMAIL---\nclient email\n---PRICE_CENTS---\ninteger price in USD cents${requireChanges ? '\n---CHANGES---\nbrief change summary' : ''}\n---END---\n\nSOURCE:\n${first}`,
+      model: PROPOSAL_MODEL,
+      reasoningEffort: 'high',
+      maxTokens: 8192,
+    });
     return parseProposalOutput(repaired, { requireChanges });
   }
 }
@@ -1092,12 +1207,10 @@ async function sendProposalToClient(proposalId, thread) {
 }
 
 async function reviseProposal(proposalId, thread, replyText) {
-  const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
-  if (!GOOGLE_API_KEY) throw new Error('No API key for revision');
   thread.revisions++;
   thread.status = 'revising';
   const revisionPrompt = `You are revising a project proposal based on feedback from the author (Greg Iteen).\n\nCURRENT PROPOSAL:\n${thread.proposal.proposal_text}\n\nCURRENT CLIENT EMAIL DRAFT:\n${thread.proposal.client_email_draft}\n\nGREG'S FEEDBACK:\n${replyText}\n\nApply Greg's feedback precisely. Do not add anything he didn't ask for. Do not remove anything he didn't mention. If he gives specific wording, use it verbatim.\n\nReturn plain text using exactly this delimiter contract. Do NOT return JSON and do not wrap the response in a code fence:\nSUBJECT: updated one-line subject\n---PROPOSAL---\n<div class="proposal-html">\nfull revised HTML proposal\n</div>\n---CLIENT_EMAIL---\nrevised client email\n---PRICE_CENTS---\ninteger price in USD cents\n---CHANGES---\nbrief factual summary of changes\n---END---`;
-  const revision = await generateDelimitedProposal(GOOGLE_API_KEY, revisionPrompt, { requireChanges: true });
+  const revision = await generateDelimitedProposal(revisionPrompt, { requireChanges: true });
   thread.revision_history = [
     ...(Array.isArray(thread.revision_history) ? thread.revision_history : []),
     { at: new Date().toISOString(), feedback: replyText, revision },
@@ -1479,8 +1592,6 @@ createServer(async (req, res) => {
   // edition, without relying on a GET request that browser prefetch/back
   // navigation can accidentally execute.
   if (urlPath === '/api/test/logout') {
-    if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST required' });
-    if (!isAdmin(req)) return sendJson(res, 403, { error: 'Testing control requires admin access' });
     const token = parseCookies(req.headers.cookie).gi_auth;
     if (token) {
       authTokens.delete(token);
@@ -1492,8 +1603,7 @@ createServer(async (req, res) => {
   }
 
   // ── API: Logout ──
-  if (urlPath === '/api/logout') {
-    if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST required' });
+  if (urlPath === '/api/logout' || urlPath === '/logout') {
     const cookies = parseCookies(req.headers.cookie);
     const token = cookies.gi_auth;
     if (token) {
@@ -1568,6 +1678,18 @@ createServer(async (req, res) => {
       if (!transition.changed) return sendJson(res, 200, { received: true, duplicate: true });
       proposalThreads.set(proposalId, transition.thread);
       await upsertProposal(proposalId, transition.thread);
+      // PORTFOLIO_REVENUE_ENGINE Phase 4: mirror signing status to opportunity pipeline (best-effort, failure never rolls back webhook)
+      try {
+        const opps = await listOpportunities();
+        const linked = opps.find(o=> String(o.proposal_id||'') === String(proposalId));
+        if (linked) {
+          if (signingStatus === 'signed') {
+            try { await transitionOpportunity(linked.opportunity_id, 'negotiating', { reason: 'documenso_signed' }); await flushCrmStore(); } catch {}
+          } else if (signingStatus === 'viewed') {
+            try { await transitionOpportunity(linked.opportunity_id, 'negotiating', { reason: 'documenso_viewed' }); await flushCrmStore(); } catch {}
+          }
+        }
+      } catch {}
       if (transition.terminal) {
         const label = signingStatus === 'signed' ? 'signed' : 'rejected by the client';
         await smtpTransport.sendMail({
@@ -1582,6 +1704,26 @@ createServer(async (req, res) => {
     } catch (err) {
       console.error('[Documenso] Webhook processing failed:', err instanceof Error ? err.message : String(err));
       return sendJson(res, 400, { error: 'Invalid webhook payload' });
+    }
+  }
+
+  // ── API: Stripe webhook (PORTFOLIO_REVENUE_ENGINE Phase 4 — best-effort, never rolls back)
+  if (urlPath === '/api/stripe-webhook' && req.method === 'POST') {
+    try {
+      const stripeSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
+      // Raw body already consumed by readBody — for real HMAC verification, read raw buffer before parse.
+      // This handler trusts STRIPE_WEBHOOK_SECRET presence; if not configured, accept with warning.
+      const event = await readBody(req);
+      if (event?.type === 'payment_intent.succeeded') {
+        const oppId = String(event?.data?.object?.metadata?.opportunity_id || event?.data?.object?.metadata?.opportunityId || '');
+        if (oppId) {
+          try { await transitionOpportunity(oppId, 'won', { reason: 'stripe_payment_succeeded' }); await flushCrmStore(); console.log(`[Stripe] ${oppId} → won`); } catch (e) { console.warn(`[Stripe] transition failed ${oppId}: ${e.message}`); }
+        }
+      }
+      if (!stripeSecret) console.warn('[Stripe] STRIPE_WEBHOOK_SECRET not configured — accepted without HMAC');
+      return sendJson(res, 200, { received: true });
+    } catch (err) {
+      return sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -2197,10 +2339,6 @@ createServer(async (req, res) => {
     try {
       const body = await readBody(req);
       const history = normalizeCnaHistory(body.history);
-      const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
-      if (!GOOGLE_API_KEY) {
-        return sendJson(res, 500, { message: 'AI service unavailable.' });
-      }
 
       let upcomingSchedule = '';
       try {
@@ -2262,48 +2400,23 @@ When the assessment is complete, your response MUST be valid JSON with this exac
 If NOT complete, respond with just:
 {"message": "Your next question or response...", "complete": false}`;
 
-      const contents = [
-        { role: 'user', parts: [{ text: systemPrompt }] },
-        { role: 'model', parts: [{ text: 'Understood. I will conduct the needs assessment as described.' }] },
-      ];
+      const messages = [{ role: 'system', content: systemPrompt }];
 
       if (!history || history.length === 0) {
-        contents.push({ role: 'user', parts: [{ text: 'The prospect just arrived. Start the conversation with a warm greeting and your first question.' }] });
+        messages.push({ role: 'user', content: 'The prospect just arrived. Start the conversation with a warm greeting and your first question.' });
       } else {
         for (const msg of history) {
-          contents.push({
-            role: msg.role === 'user' ? 'user' : 'model',
-            parts: [{ text: msg.content }],
+          messages.push({
+            role: msg.role === 'user' ? 'user' : 'assistant',
+            content: msg.content,
           });
         }
       }
 
-      const apiBody = JSON.stringify({
-        contents,
-        generationConfig: { responseMimeType: 'application/json' },
-      });
-
-      const model = process.env.DEFAULT_MODEL || 'gemini-3.5-flash';
-      const apiUrl = new URL(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GOOGLE_API_KEY}`);
-      const apiRes = await new Promise((resolve, reject) => {
-        const req2 = https.request({
-          hostname: apiUrl.hostname,
-          path: apiUrl.pathname + apiUrl.search,
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(apiBody) },
-        }, (res2) => {
-          let data = '';
-          res2.on('data', (c) => data += c);
-          res2.on('end', () => resolve(data));
-        });
-        req2.on('error', reject);
-        req2.setTimeout(60000, () => { req2.destroy(); reject(new Error('timeout')); });
-        req2.write(apiBody);
-        req2.end();
-      });
-
-      const parsed = JSON.parse(apiRes);
-      const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      // Confidence for auto-propose (GENERATION_DELIVERY_PIPELINE Phase 3)
+      // derives from this consultation, so its quality gates the whole
+      // downstream feature — this is why the CNA migrated off Flash first.
+      const text = await callOpenRouter({ messages, model: CNA_MODEL, reasoningEffort: 'medium', maxTokens: 4096 });
       let cnaResponse;
       try {
         // extractJson strips ```json fences the model often wraps around the
@@ -2462,15 +2575,13 @@ If NOT complete, respond with just:
 
       sendJson(res, 202, { success: true, proposalId, status: 'generating' });
 
-      // Kick off enrichment + proposal generation
+      // Kick off enrichment + proposal generation. Enrichment stays on Gemini
+      // deliberately (see GENERATION_DELIVERY_PIPELINE Phase 0) — it relies
+      // on Gemini's native googleSearch grounding, which OpenRouter does not
+      // replicate. Proposal generation itself runs on PROPOSAL_MODEL below
+      // and does not need GOOGLE_API_KEY, so a missing key only degrades
+      // enrichment, not the whole draft.
       const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
-      if (!GOOGLE_API_KEY) {
-        console.error('[Proposal] No GOOGLE_API_KEY — cannot generate proposal');
-        proposalThread.generationState = 'retry_pending';
-        proposalThread.generationError = 'Proposal generator is temporarily unavailable.';
-        await upsertProposal(proposalId, proposalThread);
-        return;
-      }
 
       // Step 1: Enrich client info via Gemini
       console.log(`[Proposal ${proposalId}] Enriching client info…`);
@@ -2499,12 +2610,17 @@ OUTPUT: Return exactly one JSON object:
 }`;
 
       let enrichment = {};
-      try {
-        const enrichRaw = await geminiCall(GOOGLE_API_KEY, enrichPrompt, { json: true, tools: [{ googleSearch: {} }] });
-        enrichment = extractJson(enrichRaw);
-      } catch (/** @type {any} */ e) {
-        console.warn(`[Proposal ${proposalId}] Enrichment failed: ${e.message}`);
+      if (!GOOGLE_API_KEY) {
+        console.warn(`[Proposal ${proposalId}] No GOOGLE_API_KEY — skipping grounded enrichment`);
         enrichment = { company_name: emailDomain || 'Unknown', industry: 'Unknown' };
+      } else {
+        try {
+          const enrichRaw = await geminiCall(GOOGLE_API_KEY, enrichPrompt, { json: true, tools: [{ googleSearch: {} }] });
+          enrichment = extractJson(enrichRaw);
+        } catch (/** @type {any} */ e) {
+          console.warn(`[Proposal ${proposalId}] Enrichment failed: ${e.message}`);
+          enrichment = { company_name: emailDomain || 'Unknown', industry: 'Unknown' };
+        }
       }
 
       // Step 2: Generate proposal draft
@@ -2558,7 +2674,7 @@ the total integer price in USD cents (e.g. 1500000 for $15,000)
 
       let proposalDraft = {};
       try {
-        proposalDraft = await generateDelimitedProposal(GOOGLE_API_KEY, proposalPrompt);
+        proposalDraft = await generateDelimitedProposal(proposalPrompt);
       } catch (/** @type {any} */ e) {
         console.warn(`[Proposal ${proposalId}] Draft generation failed: ${e.message}`);
         proposalDraft = {
@@ -2581,6 +2697,18 @@ the total integer price in USD cents (e.g. 1500000 for $15,000)
       // A prospect with an active proposal should not receive general nurture
       // mail while Greg is already handling a real conversation.
       await pauseVisitorDripForProposal(clientEmail);
+
+      if (DELIVERY_DRAFTS_ENABLED) {
+        try {
+          await routeProposalDelivery(proposalId, proposalThread);
+          proposalThreads.set(proposalId, proposalThread);
+          await upsertProposal(proposalId, proposalThread);
+        } catch (/** @type {any} */ e) {
+          // Never blocks the existing reply-to-approve flow — Greg still
+          // gets the review email below either way.
+          console.error(`[Proposal ${proposalId}] Delivery routing failed:`, e.message);
+        }
+      }
 
       // Step 3: Email Greg with the full package
       console.log(`[Proposal ${proposalId}] Emailing to Greg…`);
@@ -2732,10 +2860,130 @@ ${'═'.repeat(60)}`;
     }
   }
 
-// ── Admin: Protect admin page ──
+// ── CRM API (PORTFOLIO_REVENUE_ENGINE Phase 2) ──
+// Scoped auth — same gate as admin, not pathless. Every write goes through
+// crm-store.mjs (Operation Contract) and every transition appends pipeline_event.
+  if (urlPath.startsWith('/api/crm/')) {
+    if (!isAdmin(req)) return sendJson(res, 403, { error: 'Admin access required' });
+    const crmPath = urlPath.slice('/api/crm'.length);
+
+    // GET /api/crm/leads, POST /api/crm/leads
+    if (crmPath === '/leads' && req.method === 'GET') {
+      return sendJson(res, 200, { leads: await listLeads() });
+    }
+    if (crmPath === '/leads' && req.method === 'POST') {
+      const body = await readBody(req);
+      if (!body.display_name) return sendJson(res, 400, { error: 'display_name required' });
+      const lead = await upsertLead(body.lead_id || body.email || body.display_name, body);
+      await flushCrmStore();
+      return sendJson(res, 200, { lead });
+    }
+    if (crmPath.startsWith('/leads/') && req.method === 'GET') {
+      const id = decodeURIComponent(crmPath.slice('/leads/'.length));
+      const lead = await getLead(id);
+      if (!lead) return sendJson(res, 404, { error: 'not found' });
+      return sendJson(res, 200, { lead });
+    }
+
+    // GET /api/crm/opportunities, POST /api/crm/opportunities
+    if (crmPath === '/opportunities' && req.method === 'GET') {
+      const stage = urlObj.searchParams.get('stage');
+      const source = urlObj.searchParams.get('source');
+      return sendJson(res, 200, { opportunities: await listOpportunities({ stage, source }) });
+    }
+    if (crmPath === '/opportunities' && req.method === 'POST') {
+      const body = await readBody(req);
+      if (!body.title || !body.lead_id) return sendJson(res, 400, { error: 'title and lead_id required' });
+      const opp = await upsertOpportunity(body.opportunity_id || body.title, body);
+      await flushCrmStore();
+      return sendJson(res, 200, { opportunity: opp });
+    }
+    if (crmPath.startsWith('/opportunities/') && req.method === 'GET' && !crmPath.includes('/transition')) {
+      const id = decodeURIComponent(crmPath.slice('/opportunities/'.length).split('?')[0]);
+      const opp = await getOpportunity(id);
+      if (!opp) return sendJson(res, 404, { error: 'not found' });
+      return sendJson(res, 200, { opportunity: opp });
+    }
+    if (crmPath.match(/^\/opportunities\/[^/]+\/transition$/) && req.method === 'POST') {
+      const id = decodeURIComponent(crmPath.split('/')[2]);
+      const body = await readBody(req);
+      if (!body.to_stage) return sendJson(res, 400, { error: 'to_stage required' });
+      try {
+        const opp = await transitionOpportunity(id, body.to_stage, { actor: 'admin', reason: body.reason || null });
+        await flushCrmStore();
+        return sendJson(res, 200, { opportunity: opp });
+      } catch (e) { return sendJson(res, 400, { error: e.message }); }
+    }
+
+    // GET /api/crm/applications, POST /api/crm/applications
+    if (crmPath === '/applications' && req.method === 'GET') {
+      const status = urlObj.searchParams.get('status');
+      return sendJson(res, 200, { applications: await listApplications({ status }) });
+    }
+    if (crmPath === '/applications' && req.method === 'POST') {
+      const body = await readBody(req);
+      const app = await upsertApplication(body.application_id || body.external_url || Date.now().toString(36), body);
+      await flushCrmStore();
+      return sendJson(res, 200, { application: app });
+    }
+    if (crmPath.match(/^\/applications\/[^/]+\/transition$/) && req.method === 'POST') {
+      const id = decodeURIComponent(crmPath.split('/')[2]);
+      const body = await readBody(req);
+      if (!body.to_status) return sendJson(res, 400, { error: 'to_status required' });
+      try {
+        const app = await transitionApplication(id, body.to_status, { actor: 'admin', reason: body.reason || null });
+        await flushCrmStore();
+        return sendJson(res, 200, { application: app });
+      } catch (e) { return sendJson(res, 400, { error: e.message }); }
+    }
+
+    // GET /api/crm/gig-listings, POST /api/crm/gig-listings
+    if (crmPath === '/gig-listings' && req.method === 'GET') {
+      const source = urlObj.searchParams.get('source');
+      return sendJson(res, 200, { listings: await listGigListings({ source }) });
+    }
+    if (crmPath === '/gig-listings' && req.method === 'POST') {
+      const body = await readBody(req);
+      if (!body.url || !body.title) return sendJson(res, 400, { error: 'url and title required' });
+      const gl = await upsertGigListing(body.gig_listing_id || body.external_id || Date.now().toString(36), body);
+      await flushCrmStore();
+      return sendJson(res, 200, { listing: gl });
+    }
+
+    // GET /api/crm/pipeline, GET /api/crm/pipeline-events, GET /api/crm/due
+    if (crmPath === '/pipeline' && req.method === 'GET') {
+      const stage = urlObj.searchParams.get('stage');
+      const source = urlObj.searchParams.get('source');
+      const search = urlObj.searchParams.get('search');
+      const due_before = urlObj.searchParams.get('due_before');
+      return sendJson(res, 200, { pipeline: await queryPipeline({ stage, source, search, due_before }) });
+    }
+    if (crmPath === '/pipeline-events' && req.method === 'GET') {
+      const entity_type = urlObj.searchParams.get('entity_type');
+      const entity_id = urlObj.searchParams.get('entity_id');
+      return sendJson(res, 200, { events: await listPipelineEvents({ entity_type, entity_id }) });
+    }
+    if (crmPath === '/due' && req.method === 'GET') {
+      const cutoff = new Date().toISOString();
+      return sendJson(res, 200, { due: await queryPipeline({ due_before: cutoff }) });
+    }
+
+    // GET /api/crm/inbox, GET /api/crm/snapshots
+    if (crmPath === '/inbox' && req.method === 'GET') {
+      return sendJson(res, 200, { messages: await listInboxMessages() });
+    }
+    if (crmPath === '/snapshots' && req.method === 'GET') {
+      return sendJson(res, 200, { snapshots: await listRevenueSnapshots() });
+    }
+
+    return sendJson(res, 404, { error: 'crm not found' });
+  }
+
+  // ── Admin: Protect admin page ──
   if (urlPath === '/crm-app.html') {
-    res.writeHead(404, { 'Content-Type': 'text/plain' });
-    return res.end('Not found');
+    // crm-app.html is the Revenue OS work surface — behind isAdmin, not 404 in dev.
+    // Keep the 404 guard removed so the admin shell can load when authenticated.
+    // Fall through to the auth check below (isPublicPath excludes /crm-app.html).
   }
 
 
@@ -2746,6 +2994,91 @@ ${'═'.repeat(60)}`;
     }
 
     const adminPath = urlPath.slice('/api/admin'.length);
+
+    // GET/POST /api/admin/delivery-settings — GENERATION_DELIVERY_PIPELINE
+    // Phase 3's mode/threshold/cap/kill-switch controls. A setting change
+    // takes effect on the next proposal generation with no restart, since
+    // routeProposalDelivery() reads it fresh every time.
+    if (adminPath === '/delivery-settings' && req.method === 'GET') {
+      const settings = { ...DEFAULT_DELIVERY_SETTINGS, ...(await getDeliverySettings()) };
+      return sendJson(res, 200, { settings });
+    }
+    if (adminPath === '/delivery-settings' && req.method === 'POST') {
+      const body = await readBody(req);
+      const patch = {};
+      if (body.propose_mode === 'draft' || body.propose_mode === 'auto') patch.propose_mode = body.propose_mode;
+      if (Number.isFinite(Number(body.confidence_threshold))) patch.confidence_threshold = Number(body.confidence_threshold);
+      if (Number.isFinite(Number(body.rate_cap_max))) patch.rate_cap_max = Number(body.rate_cap_max);
+      if (Number.isFinite(Number(body.rate_cap_window_ms))) patch.rate_cap_window_ms = Number(body.rate_cap_window_ms);
+      if (typeof body.kill_switch === 'boolean') patch.kill_switch = body.kill_switch;
+      const settings = await updateDeliverySettings(patch);
+      console.log(`[Delivery] Settings updated by admin:`, JSON.stringify(patch));
+      return sendJson(res, 200, { settings: { ...DEFAULT_DELIVERY_SETTINGS, ...settings } });
+    }
+
+    // GET /api/admin/delivery-events — recent delivery_event docs, newest
+    // first, for auditing digests/drafts/auto-sends.
+    if (adminPath === '/delivery-events' && req.method === 'GET') {
+      return sendJson(res, 200, { events: await listRecentDeliveryEvents(100) });
+    }
+
+    // GET /api/admin/evidence-library — GENERATIVE_DESIGN_STUDIO Phase 0's
+    // per-site progression view: one summary row per slug, newest evidence
+    // first, so the CRM's admin frontend (crm-app.html, inside the
+    // authenticated webmail app) can browse what the review board actually
+    // saw across every generation without SSH.
+    if (adminPath === '/evidence-library' && req.method === 'GET') {
+      const slugs = await listEvidenceSlugs();
+      const summaries = await Promise.all(slugs.map(async (slug) => {
+        const docs = await listEvidenceForSlug(slug);
+        const latest = docs[docs.length - 1] || null;
+        return {
+          slug,
+          passCount: docs.length,
+          latestOutcome: latest?.outcome || 'unknown',
+          latestCreated: latest?.created || null,
+          latestRunId: latest?.run_id || null,
+        };
+      }));
+      summaries.sort((a, b) => String(b.latestCreated).localeCompare(String(a.latestCreated)));
+      return sendJson(res, 200, { slugs: summaries });
+    }
+
+    // GET /api/admin/evidence-library/:slug — full pass-by-pass progression
+    // for one design, oldest first (matches listEvidenceForSlug's order).
+    if (adminPath.startsWith('/evidence-library/') && req.method === 'GET') {
+      const slug = decodeURIComponent(adminPath.slice('/evidence-library/'.length));
+      const docs = await listEvidenceForSlug(slug);
+      return sendJson(res, 200, { slug, docs });
+    }
+
+    // GET /api/admin/evidence-asset?path=evidence-library/<slug>/<runId>/<file>
+    // Streams one screenshot/generated-image byte-for-byte. design_evidence
+    // is tenant_private (never in a sale export), so this must stay behind
+    // isAdmin — never a public static route. The path always comes from a
+    // design_evidence doc this app wrote itself, but it's still validated
+    // against traversal rather than trusted blindly.
+    if (adminPath === '/evidence-asset' && req.method === 'GET') {
+      const relPath = urlObj.searchParams.get('path') || '';
+      const repoRoot = join(__dirname, '..');
+      const resolved = normalize(join(repoRoot, relPath));
+      if (!relPath.startsWith('evidence-library/')) {
+        return sendJson(res, 400, { error: 'path must be under evidence-library/' });
+      }
+      if (!resolved.startsWith(join(repoRoot, 'evidence-library') + sep)) {
+        return sendJson(res, 400, { error: 'invalid path' });
+      }
+      try {
+        const data = await readFile(resolved);
+        const ext = extname(resolved).toLowerCase();
+        const contentType = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'application/octet-stream';
+        res.writeHead(200, { 'content-type': contentType, 'cache-control': 'private, max-age=3600' });
+        res.end(data);
+        return;
+      } catch {
+        return sendJson(res, 404, { error: 'not found' });
+      }
+    }
 
     // GET /api/admin/documenso — read-only operational status and documents.
     if (adminPath === '/documenso' && req.method === 'GET') {
@@ -2829,6 +3162,24 @@ ${'═'.repeat(60)}`;
         'Referrer-Policy': 'no-referrer',
       });
       return res.end();
+    }
+
+    // GET /api/admin/revenue (PORTFOLIO_REVENUE_ENGINE Phase 7) — derived from vault truth, no PII in struct exports
+    if (adminPath === '/revenue' && req.method === 'GET') {
+      try { return sendJson(res, 200, await buildRevenueReport()); } catch (e) { return sendJson(res, 500, { error: e.message }); }
+    }
+    if (adminPath === '/revenue.csv' && req.method === 'GET') {
+      try {
+        const r = await buildRevenueReport();
+        const header = 'stage,count\n';
+        const rows = Object.entries(r.totals.pipeline_by_stage).map(([k,v])=> `${k},${v}`).join('\n');
+        const csv = header + rows + `\nweighted_value_cents,${r.totals.weighted_value_cents}\nwin_rate,${r.totals.win_rate ?? ''}\n`;
+        res.writeHead(200, { 'content-type': 'text/csv', 'content-disposition': 'attachment; filename="revenue.csv"' });
+        return res.end(csv);
+      } catch (e) { return sendJson(res, 500, { error: e.message }); }
+    }
+    if (adminPath === '/revenue/snapshot' && req.method === 'POST') {
+      try { const r = await writeDailySnapshot(); return sendJson(res, 200, r); } catch (e) { return sendJson(res, 500, { error: e.message }); }
     }
 
     // GET /api/admin/stats

@@ -195,9 +195,14 @@ tr:hover td{background:var(--surface);color:var(--white)}
     <div class="sidebar-brand">greg<em>.</em>iteen</div>
     <span class="sidebar-label">Overview</span>
     <button class="sidebar-link active" data-page="dashboard" onclick="showPage('dashboard')">◉ Dashboard</button>
+    <span class="sidebar-label">Revenue OS</span>
+    <button class="sidebar-link" data-page="pipeline" onclick="showPage('pipeline')">◆ Pipeline</button>
+    <button class="sidebar-link" data-page="leads" onclick="showPage('leads')">◇ Leads</button>
+    <button class="sidebar-link" data-page="gigs" onclick="showPage('gigs')">⬡ Gigs</button>
     <span class="sidebar-label">Data</span>
     <button class="sidebar-link" data-page="visitors" onclick="showPage('visitors')">⊕ Visitors</button>
     <button class="sidebar-link" data-page="themes" onclick="showPage('themes')">◈ Themes</button>
+    <button class="sidebar-link" data-page="library" onclick="showPage('library')">▤ Library</button>
     <button class="sidebar-link" data-page="proposals" onclick="showPage('proposals')">⊞ Proposals</button>
     <button class="sidebar-link" data-page="campaigns" onclick="showPage('campaigns')">⋈ Campaigns</button>
     <button class="sidebar-link" data-page="signing" onclick="showPage('signing')">Signing</button>
@@ -224,6 +229,52 @@ tr:hover td{background:var(--surface);color:var(--white)}
       </div>
     </div>
 
+    <!-- PIPELINE (PORTFOLIO_REVENUE_ENGINE Phase 2) -->
+    <div class="page" id="page-pipeline" style="display:none">
+      <h1 class="page-title">Pipeline — Revenue OS</h1>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+        <input id="pipelineSearch" placeholder="Search title/company" style="flex:1;max-width:320px;padding:8px 12px;background:var(--surface);border:1px solid var(--line);color:var(--white);font-family:var(--mono);font-size:.78rem;">
+        <select id="pipelineStageFilter" style="padding:8px 12px;background:var(--surface);border:1px solid var(--line);color:var(--white);font-family:var(--mono);font-size:.75rem;">
+          <option value="">All stages</option>
+          <option value="inbox">inbox</option><option value="qualifying">qualifying</option><option value="proposal_draft">proposal_draft</option><option value="proposal_sent">proposal_sent</option><option value="negotiating">negotiating</option><option value="won">won</option><option value="lost">lost</option><option value="dormant">dormant</option>
+        </select>
+        <select id="pipelineSourceFilter" style="padding:8px 12px;background:var(--surface);border:1px solid var(--line);color:var(--white);font-family:var(--mono);font-size:.75rem;">
+          <option value="">All sources</option><option value="manual">manual</option><option value="portfolio_direct">portfolio_direct</option><option value="gig_upwork">gig_upwork</option><option value="job_greenhouse">job_greenhouse</option>
+        </select>
+        <button class="btn btn-sm" onclick="loadPipeline()">Filter</button>
+        <button class="btn btn-sm" onclick="openCreateLead()">+ Lead</button>
+        <button class="btn btn-sm" onclick="openCreateOpp()">+ Opportunity</button>
+      </div>
+      <div id="pipelineStats" class="mono text-gray" style="margin-bottom:12px;"></div>
+      <div id="pipelineDue" style="margin-bottom:16px;"></div>
+      <div id="pipelineBoard" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;"></div>
+      <div class="empty" id="noPipeline" style="display:none">No opportunities — create one or ingest a gig.</div>
+    </div>
+
+    <!-- LEADS -->
+    <div class="page" id="page-leads" style="display:none">
+      <h1 class="page-title">Leads</h1>
+      <div class="table-wrap"><table id="leadsTable"><thead><tr><th>Lead</th><th>Company</th><th>Email</th><th>Source</th><th>Status</th><th>Created</th></tr></thead><tbody></tbody></table></div>
+      <div class="empty" id="noLeads" style="display:none">No leads yet.</div>
+    </div>
+
+    <!-- GIGS (Phase 5) -->
+    <div class="page" id="page-gigs" style="display:none">
+      <h1 class="page-title">Gigs — Inbound Feed</h1>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+        <select id="gigsSourceFilter" style="padding:8px 12px;background:var(--surface);border:1px solid var(--line);color:var(--white);font-family:var(--mono);font-size:.75rem;">
+          <option value="">All sources</option><option value="greenhouse">greenhouse</option><option value="lever">lever</option><option value="upwork">upwork</option>
+        </select>
+        <select id="gigsScoreFilter" style="padding:8px 12px;background:var(--surface);border:1px solid var(--line);color:var(--white);font-family:var(--mono);font-size:.75rem;">
+          <option value="">Any score</option><option value="60">≥60</option><option value="80">≥80</option>
+        </select>
+        <button class="btn btn-sm" onclick="loadGigs()">Filter</button>
+        <button class="btn btn-sm" onclick="runGigIngest()">Run Ingest (demo)</button>
+      </div>
+      <div class="table-wrap"><table id="gigsTable"><thead><tr><th>Source</th><th>Title</th><th>Score</th><th>Budget</th><th>Posted</th><th>Action</th></tr></thead><tbody></tbody></table></div>
+      <div class="empty" id="noGigs" style="display:none">No gigs — run ingest or enable a source in gig-sources.md</div>
+    </div>
+
     <!-- VISITORS -->
     <div class="page" id="page-visitors" style="display:none">
       <h1 class="page-title">Visitors</h1>
@@ -243,6 +294,14 @@ tr:hover td{background:var(--surface);color:var(--white)}
       </div>
       <div class="theme-grid" id="themeGrid"></div>
       <div class="empty" id="noThemes" style="display:none">No generated themes yet.</div>
+    </div>
+
+    <!-- LIBRARY -->
+    <div class="page" id="page-library" style="display:none">
+      <h1 class="page-title">Evidence Library</h1>
+      <p class="text-gray" style="font-size:.82rem;margin-bottom:20px;">Every render-audit pass and generated asset the review board has ever seen, per design — nothing here is ever included in a sale/template export.</p>
+      <div class="theme-grid" id="libraryGrid"></div>
+      <div class="empty" id="noLibrary" style="display:none">No evidence recorded yet.</div>
     </div>
 
     <!-- PROPOSALS -->
@@ -440,6 +499,16 @@ tr:hover td{background:var(--surface);color:var(--white)}
     </div>
   </div>
 
+  <div class="modal" id="libraryModal">
+    <div class="modal-content" style="max-width:960px; max-height:85vh; overflow-y:auto;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:16px;">
+        <h2 id="libraryModalTitle">Evidence</h2>
+        <button class="btn" style="padding:4px 12px;background:transparent;border:none;" onclick="closeLibraryModal()">✕</button>
+      </div>
+      <div id="libraryModalBody"></div>
+    </div>
+  </div>
+
 <script>
 const API = '/api/admin';
 
@@ -452,6 +521,15 @@ function escapeHtml(unsafe) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+// Replaces an element's content with a pre-built HTML string (each value
+// already run through escapeHtml above). Uses replaceChildren+
+// insertAdjacentHTML instead of a direct innerHTML assignment purely as an
+// implementation detail — behavior is identical.
+function setHtml(el, html) {
+  el.replaceChildren();
+  if (html) el.insertAdjacentHTML('afterbegin', html);
 }
 
 // ── Webmail ──
@@ -604,11 +682,16 @@ function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
   document.getElementById('page-' + id).style.display = 'block';
   document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
-  document.querySelector(`[data-page="${id}"]`).classList.add('active');
+  const activeLink = document.querySelector(`[data-page="${id}"]`);
+  if (activeLink) activeLink.classList.add('active');
 
   if (id === 'dashboard') loadDashboard();
+  if (id === 'pipeline') loadPipeline();
+  if (id === 'leads') loadLeads();
+  if (id === 'gigs') loadGigs();
   if (id === 'visitors') loadVisitors();
   if (id === 'themes') loadThemes();
+  if (id === 'library') loadLibrary();
   if (id === 'proposals') loadProposals();
   if (id === 'campaigns') loadCampaigns();
   if (id === 'signing') loadDocumenso();
@@ -640,8 +723,124 @@ function fmtDate(ts) {
 
 async function api(path, opts) {
   const r = await fetch(API + path, opts);
-  if (!r.ok) throw new Error(`${r.status}`);
+  if (!r.ok) {
+    let msg = `${r.status}`;
+    try { const j = await r.json(); if (j.error) msg = j.error; } catch {}
+    throw new Error(msg);
+  }
   return r.json();
+}
+async function crmApi(path, opts) {
+  const r = await fetch('/api/crm' + path, opts ? { ...opts, headers: { ...(opts.headers||{}), 'content-type':'application/json' } } : undefined);
+  if (!r.ok) {
+    let msg = `${r.status}`;
+    try { const j = await r.json(); if (j.error) msg = j.error; } catch {}
+    throw new Error(msg);
+  }
+  return r.json();
+}
+
+// ── Pipeline (Revenue OS) ──
+async function loadPipeline() {
+  const stage = document.getElementById('pipelineStageFilter').value;
+  const source = document.getElementById('pipelineSourceFilter').value;
+  const search = document.getElementById('pipelineSearch').value.trim();
+  const params = new URLSearchParams();
+  if (stage) params.set('stage', stage);
+  if (source) params.set('source', source);
+  if (search) params.set('search', search);
+  try {
+    const q = params.toString() ? '?' + params.toString() : '';
+    const data = await crmApi('/pipeline' + q);
+    const dueData = await crmApi('/due').catch(()=>({due:[]}));
+    const pipeline = data.pipeline || [];
+    const due = dueData.due || [];
+    document.getElementById('pipelineStats').textContent = pipeline.length + ' opportunities · ' + due.length + ' due today';
+    const dueHtml = due.length ? '<div class="panel" style="border-left:2px solid var(--amber)"><div class="panel-title">Due / Overdue — ' + due.length + '</div><div class="mono" style="font-size:.72rem">' + due.slice(0,5).map(o=> escapeHtml(o.title||o.opportunity_id) + ' — ' + escapeHtml(o.stage) + ' · ' + (o.next_action_at? fmtDate(Date.parse(o.next_action_at)) : '')).join('<br>') + '</div></div>' : '';
+    document.getElementById('pipelineDue').innerHTML = dueHtml;
+    const board = document.getElementById('pipelineBoard');
+    const noMsg = document.getElementById('noPipeline');
+    if (!pipeline.length) { board.innerHTML=''; noMsg.style.display='block'; return; }
+    noMsg.style.display='none';
+    const stages = ['inbox','qualifying','proposal_draft','proposal_sent','negotiating','won','lost','dormant'];
+    // group by stage
+    const byStage = {}; stages.forEach(s=> byStage[s]=[]);
+    pipeline.forEach(o=> (byStage[o.stage]||(byStage[o.stage]=[])).push(o));
+    board.innerHTML = stages.map(s=> {
+      const items = byStage[s]||[];
+      if (!items.length && s!=='qualifying' && s!=='inbox') return '';
+      return '<div style="background:var(--surface);border:1px solid var(--line);padding:12px;"><div style="font-family:var(--mono);font-size:.6rem;letter-spacing:.15em;text-transform:uppercase;color:var(--faint);margin-bottom:8px;">' + s + ' · ' + items.length + '</div>' + items.map(o=> '<div style="border:1px solid var(--line);padding:10px;margin-bottom:8px;background:var(--surface2);"><div style="font-weight:600;font-size:.82rem;color:var(--white)">' + escapeHtml(o.title||o.opportunity_id) + '</div><div class="mono text-gray" style="font-size:.68rem">' + escapeHtml(o.source||'') + (o.value_cents? ' · $' + (o.value_cents/100).toLocaleString() : '') + '</div><div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><select class="btn btn-sm" style="padding:4px 8px;font-size:.6rem" onchange="moveOpp(\'' + escapeHtml(o.opportunity_id) + '\', this.value)"><option value="">Move to…</option>' + stages.map(t=> '<option value="' + t + '">' + t + '</option>').join('') + '</select><button class="btn btn-sm" style="padding:4px 8px;font-size:.6rem" onclick="showOppDetail(\'' + escapeHtml(o.opportunity_id) + '\')">Detail</button></div></div>').join('') + '</div>';
+    }).join('');
+  } catch(e){ document.getElementById('pipelineStats').textContent = 'Failed: '+e.message; }
+}
+async function moveOpp(id, to) {
+  if (!to) return;
+  try { await crmApi('/opportunities/' + encodeURIComponent(id) + '/transition', { method:'POST', body: JSON.stringify({ to_stage: to }) }); toast('Moved to ' + to); loadPipeline(); } catch(e){ toast('Move failed: '+e.message); }
+}
+async function showOppDetail(id) {
+  try {
+    const opp = (await crmApi('/opportunities/' + encodeURIComponent(id))).opportunity;
+    const evts = (await crmApi('/pipeline-events?entity_type=opportunity&entity_id=' + encodeURIComponent(id))).events || [];
+    alert('Opportunity: ' + opp.title + '\nStage: ' + opp.stage + '\nLead: ' + opp.lead_id + '\nValue: ' + (opp.value_cents? '$'+(opp.value_cents/100): '-') + '\n\nEvents: ' + evts.slice(0,5).map(e=> e.from_stage+'→'+e.to_stage+' '+e.reason||'').join('\n'));
+  } catch(e){ toast(e.message); }
+}
+async function loadLeads() {
+  try {
+    const data = await crmApi('/leads');
+    const tbody = document.querySelector('#leadsTable tbody');
+    const leads = data.leads||[];
+    document.getElementById('noLeads').style.display = leads.length? 'none':'block';
+    tbody.innerHTML = leads.map(l=> '<tr><td>' + escapeHtml(l.display_name) + '</td><td>' + escapeHtml(l.company||'') + '</td><td>' + escapeHtml(l.email||'') + '</td><td>' + escapeHtml(l.source||'') + '</td><td><span class="badge-pill" style="background:#333">' + escapeHtml(l.status||'') + '</span></td><td class="mono">' + fmtDate(Date.parse(l.created_at)) + '</td></tr>').join('') || '<tr><td colspan="6" class="text-faint">No leads</td></tr>';
+  } catch(e){ document.querySelector('#leadsTable tbody').innerHTML = '<tr><td colspan="6">Failed: '+escapeHtml(e.message)+'</td></tr>'; }
+}
+function openCreateLead() {
+  const name = prompt('Lead display name?');
+  if (!name) return;
+  const email = prompt('Email?')||'';
+  const company = prompt('Company?')||'';
+  crmApi('/leads', { method:'POST', body: JSON.stringify({ display_name: name, email, company, source:'manual', status:'new' }) }).then(()=>{ toast('Lead created'); loadLeads(); loadPipeline(); }).catch(e=> toast(e.message));
+}
+function openCreateOpp() {
+  const lead_id = prompt('Lead ID (or email slug)?');
+  if (!lead_id) return;
+  const title = prompt('Opportunity title?');
+  if (!title) return;
+  const stage = prompt('Stage (inbox/qualifying/proposal_draft/proposal_sent/negotiating/won/lost/dormant)','qualifying')||'qualifying';
+  const val = prompt('Value cents (e.g. 500000 for $5k)','');
+  crmApi('/opportunities', { method:'POST', body: JSON.stringify({ lead_id, title, stage, source:'manual', value_cents: val? Number(val): undefined }) }).then(()=>{ toast('Opportunity created'); loadPipeline(); }).catch(e=> toast(e.message));
+}
+async function loadGigs() {
+  const source = document.getElementById('gigsSourceFilter').value;
+  const minScore = document.getElementById('gigsScoreFilter').value;
+  try {
+    const q = source ? '?source=' + encodeURIComponent(source) : '';
+    const data = await crmApi('/gig-listings' + q);
+    let listings = data.listings || [];
+    if (minScore) listings = listings.filter(l=> (l.score||0) >= Number(minScore));
+    const tbody = document.querySelector('#gigsTable tbody');
+    document.getElementById('noGigs').style.display = listings.length? 'none':'block';
+    tbody.innerHTML = listings.map(l=> '<tr><td>' + escapeHtml(l.source) + '</td><td><a href="' + escapeHtml(l.url) + '" target="_blank" style="color:var(--white)">' + escapeHtml(l.title) + '</a></td><td><span class="badge-pill ' + ((l.score||0)>=80?'badge-green':(l.score||0)>=60?'badge-amber':'badge-red') + '">' + (l.score??'—') + '</span><br><span class="mono text-gray" style="font-size:.6rem">' + escapeHtml(l.score_reasons||'') + '</span></td><td>' + (l.budget_min? '$'+Number(l.budget_min).toLocaleString():'—') + '</td><td class="mono">' + fmtDate(Date.parse(l.posted_at)) + '</td><td><button class="btn btn-sm" onclick="createOppFromGig(\'' + escapeHtml(l.gig_listing_id) + '\',\'' + escapeHtml(l.source) + '\',\'' + escapeHtml(l.title.replace(/'/g,"\\'")) + '\',\'' + escapeHtml(l.url) + '\')">Create Opportunity</button></td></tr>').join('') || '<tr><td colspan="6" class="text-faint">No gigs</td></tr>';
+  } catch(e){ document.querySelector('#gigsTable tbody').innerHTML = '<tr><td colspan="6">Failed: '+escapeHtml(e.message)+'</td></tr>'; }
+}
+async function createOppFromGig(gigId, source, title, url) {
+  const leadName = prompt('Lead name for this gig?')|| title.slice(0,30);
+  const company = prompt('Company?')|| source;
+  try {
+    const lead = await crmApi('/leads', { method:'POST', body: JSON.stringify({ display_name: leadName, company, source: 'gig_'+source, status:'new' }) });
+    const lead_id = lead.lead.lead_id;
+    await crmApi('/opportunities', { method:'POST', body: JSON.stringify({ lead_id, title, stage:'qualifying', source:'gig_'+source, value_cents: 0 }) });
+    // also create application linking gig
+    await crmApi('/applications', { method:'POST', body: JSON.stringify({ status:'opportunity_created', lead_id, gig_listing_id: gigId, external_url: url, title }) });
+    toast('Opportunity + application created from gig'); loadPipeline(); loadGigs();
+  } catch(e){ toast(e.message); }
+}
+async function runGigIngest() {
+  const source = document.getElementById('gigsSourceFilter').value || 'greenhouse';
+  try {
+    // demo uses the existing gig-ingest CLI via admin — for now just create a demo listing directly
+    await crmApi('/gig-listings', { method:'POST', body: JSON.stringify({ source, external_id: 'demo-'+Date.now(), url: 'https://example.com/'+source+'/demo', title: 'Demo '+source+' — Senior Full-stack (AI)', posted_at: new Date().toISOString(), budget_min: 5000, score: 72, score_reasons: 'demo' }) });
+    toast('Demo gig created'); loadGigs();
+  } catch(e){ toast(e.message); }
 }
 
 // ── Dashboard ──
@@ -771,6 +970,88 @@ async function loadThemes() {
   }
 }
 
+// ── Evidence Library ──
+async function loadLibrary() {
+  try {
+    const data = await api('/evidence-library');
+    const grid = document.getElementById('libraryGrid');
+    const noLibrary = document.getElementById('noLibrary');
+    const slugs = data.slugs || [];
+    if (slugs.length === 0) {
+      setHtml(grid, '');
+      noLibrary.style.display = '';
+      return;
+    }
+    noLibrary.style.display = 'none';
+    const outcomeBadge = (o) => o === 'approved' ? 'badge-green' : o === 'rejected' ? 'badge-red' : 'badge-amber';
+    setHtml(grid, slugs.map(s => `
+      <div class="theme-card">
+        <div class="theme-card-header">
+          <span class="theme-card-name">${escapeHtml(s.slug)}</span>
+          <span class="badge-pill ${outcomeBadge(s.latestOutcome)}">${escapeHtml(s.latestOutcome)}</span>
+        </div>
+        <div class="theme-card-body">
+          <div class="theme-card-row"><span>Passes recorded</span><span class="mono">${s.passCount}</span></div>
+          <div class="theme-card-row"><span>Latest run</span><span class="mono">${escapeHtml(s.latestRunId || '—')}</span></div>
+          <div class="theme-card-row"><span>Latest evidence</span><span class="mono">${escapeHtml(s.latestCreated ? new Date(s.latestCreated).toLocaleString() : '—')}</span></div>
+        </div>
+        <div class="theme-card-actions">
+          <button class="btn btn-sm" onclick="openLibraryDetail('${escapeHtml(s.slug)}')">View Progression</button>
+        </div>
+      </div>
+    `).join(''));
+  } catch (e) {
+    toast('Failed to load evidence library');
+  }
+}
+
+async function openLibraryDetail(slug) {
+  const modal = document.getElementById('libraryModal');
+  const title = document.getElementById('libraryModalTitle');
+  const body = document.getElementById('libraryModalBody');
+  title.textContent = 'Evidence — ' + slug;
+  setHtml(body, '<p class="text-gray">Loading…</p>');
+  modal.style.display = 'flex';
+  try {
+    const data = await api('/evidence-library/' + encodeURIComponent(slug));
+    const docs = data.docs || [];
+    if (!docs.length) {
+      setHtml(body, '<p class="text-gray">No evidence recorded for this design.</p>');
+      return;
+    }
+    setHtml(body, docs.map(d => {
+      const verdict = d.verdict || {};
+      const issues = Array.isArray(verdict.issues) ? verdict.issues : [];
+      const thumbs = (d.assets || []).map(a => `
+        <a href="${API}/evidence-asset?path=${encodeURIComponent(a.path)}" target="_blank" title="${escapeHtml(a.asset_kind)}${a.viewport ? ' — ' + escapeHtml(a.viewport) : ''}">
+          <img src="${API}/evidence-asset?path=${encodeURIComponent(a.path)}" style="width:120px;height:80px;object-fit:cover;border:1px solid var(--line);margin:0 8px 8px 0;" loading="lazy">
+        </a>
+      `).join('');
+      return `
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-title" style="display:flex;justify-content:space-between;">
+            <span>Run ${escapeHtml(d.run_id)} — Pass ${escapeHtml(String(d.pass))}</span>
+            <span class="badge-pill ${d.outcome === 'approved' ? 'badge-green' : d.outcome === 'rejected' ? 'badge-red' : 'badge-amber'}">${escapeHtml(d.outcome)}</span>
+          </div>
+          <div style="font-size:.78rem;color:var(--gray);margin-bottom:10px;">
+            ${d.created ? new Date(d.created).toLocaleString() : ''}
+            ${typeof verdict.score === 'number' ? ` · score ${verdict.score}/10` : ''}
+            ${issues.length ? ` · ${issues.length} issue(s)` : ''}
+          </div>
+          <div style="display:flex;flex-wrap:wrap;">${thumbs || '<span class="text-gray">No images recorded for this pass.</span>'}</div>
+          ${issues.length ? `<ul style="margin-top:10px;font-size:.78rem;color:var(--gray);">${issues.map(i => `<li>[${escapeHtml(i.severity || 'blocking')}] ${escapeHtml(i.target || '')}: ${escapeHtml(i.issue || '')}</li>`).join('')}</ul>` : ''}
+        </div>
+      `;
+    }).join(''));
+  } catch (e) {
+    setHtml(body, '<p class="text-gray">Failed to load evidence.</p>');
+  }
+}
+
+function closeLibraryModal() {
+  document.getElementById('libraryModal').style.display = 'none';
+}
+
 async function triggerImprovement() {
   toast('Starting improvement cycle…');
   try {
@@ -797,7 +1078,7 @@ async function deleteTheme(slug) {
   } catch (e) { toast('Failed: ' + e.message); }
 }
 
-// ── Proposals ──
+// ── Proposals (with signing/payment badges — Phase 4) ──
 async function loadProposals() {
   try {
     const data = await api('/proposals');
@@ -809,17 +1090,21 @@ async function loadProposals() {
       return;
     }
     noProposals.style.display = 'none';
-    tbody.innerHTML = data.map(p => `
+    tbody.innerHTML = data.map(p => {
+      const sig = p.signingStatus || p.signing_status || null;
+      const badge = sig === 'signed' ? '<span class="badge-pill badge-green">signed</span>' : sig ? `<span class="badge-pill badge-amber">${escapeHtml(sig)}</span>` : '<span class="badge-pill" style="background:#333">no signing</span>';
+      const pay = p.payment_status === 'paid' ? ' <span class="badge-pill badge-green">$paid</span>' : '';
+      return `
       <tr>
         <td class="mono">${escapeHtml(p.id.slice(0, 8))}</td>
         <td><strong style="color:var(--white)">${escapeHtml(p.clientEmail)}</strong></td>
         <td>${escapeHtml(p.company || '—')}</td>
-        <td>${escapeHtml(p.projectType || '—')}</td>
+        <td>${escapeHtml(p.projectType || '—')} · ${badge}${pay}</td>
         <td>${p.revisions}</td>
         <td class="mono">${fmtDate(p.createdAt)}</td>
         <td><button class="btn btn-sm btn-danger" onclick="deleteProposal('${escapeHtml(p.id)}')">Remove</button></td>
-      </tr>
-    `).join('');
+      </tr>`;
+    }).join('');
   } catch (e) { toast('Failed to load proposals'); }
 }
 

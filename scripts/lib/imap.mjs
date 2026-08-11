@@ -1,7 +1,14 @@
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { createTransport } from 'nodemailer';
+import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 import { getWebmailSettings } from '../runtime-store.mjs';
+
+// GENERATION_DELIVERY_PIPELINE Phase 2 — configured fallback for servers
+// that don't advertise \Drafts via SPECIAL-USE (RFC 6154). Never hardcode a
+// literal folder name as the primary path; try the advertised attribute
+// first, always.
+const DRAFTS_FOLDER_FALLBACK = process.env.IMAP_DRAFTS_FOLDER || 'Drafts';
 
 const IMAP_HOST = process.env.IMAP_HOST || 'mail.gregiteen.xyz';
 const IMAP_PORT = parseInt(process.env.IMAP_PORT || '993', 10);
@@ -40,6 +47,47 @@ export async function refreshImapPassword(password) {
   const previous = client;
   client = null;
   await previous?.logout().catch(() => {});
+}
+
+/**
+ * Resolve the Drafts mailbox by its SPECIAL-USE `\Drafts` attribute
+ * (RFC 6154) — never a hardcoded literal name, since it varies across
+ * servers and clients (e.g. "Drafts" vs "INBOX.Drafts" vs a localized name).
+ * Falls back to IMAP_DRAFTS_FOLDER / 'Drafts' if the server doesn't
+ * advertise the attribute, then throws rather than silently guessing.
+ */
+export async function resolveDraftsMailbox() {
+  const c = await getImapClient();
+  const mailboxes = await c.list();
+  const bySpecialUse = mailboxes.find((mb) => mb.specialUse === '\\Drafts');
+  if (bySpecialUse) return bySpecialUse.path;
+  const byFallbackName = mailboxes.find((mb) => mb.path === DRAFTS_FOLDER_FALLBACK || mb.name === DRAFTS_FOLDER_FALLBACK);
+  if (byFallbackName) return byFallbackName.path;
+  throw new Error(`No Drafts mailbox found: no \\Drafts SPECIAL-USE attribute, and no mailbox named "${DRAFTS_FOLDER_FALLBACK}" (set IMAP_DRAFTS_FOLDER to override)`);
+}
+
+/**
+ * Compose a MIME message via nodemailer's MailComposer (never sent — just
+ * built) and APPEND it to the resolved Drafts mailbox with the \Draft flag.
+ * GENERATION_DELIVERY_PIPELINE Phase 2 — the caller is responsible for
+ * idempotency (one draft per (visitorEmail, generationRunId); see
+ * proposal.draftAppended in runtime-store.mjs) since only it knows the
+ * business key.
+ */
+export async function appendDraft({ to, from, subject, html, text }) {
+  const { user } = imapCredentials();
+  const mailFrom = from || process.env.MAIL_FROM || user;
+  if (!to || !subject || (!html && !text)) {
+    throw new Error('appendDraft requires to, subject, and html or text');
+  }
+  const composer = new MailComposer({ from: mailFrom, to, subject, html, text });
+  const mime = await new Promise((resolve, reject) => {
+    composer.compile().build((err, message) => (err ? reject(err) : resolve(message)));
+  });
+  const draftsPath = await resolveDraftsMailbox();
+  const c = await getImapClient();
+  const result = await c.append(draftsPath, mime, ['\\Draft']);
+  return { path: draftsPath, uid: result?.uid ?? null };
 }
 
 export async function fetchInbox() {

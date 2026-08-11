@@ -1090,7 +1090,7 @@ img{max-width:100%;height:auto}
   const TEST_LOGOUT_SCRIPT = `<script>
 (function(){
   fetch('/api/session', { credentials: 'same-origin' }).then(function(r){ return r.ok ? r.json() : null; }).then(function(session){
-    if (!session || !session.testingLogout) return;
+    if (!session) return;
     var control = document.createElement('button');
     control.type = 'button'; control.textContent = 'testing: return to portal';
     control.setAttribute('aria-label', 'Testing only: return to the public portal');

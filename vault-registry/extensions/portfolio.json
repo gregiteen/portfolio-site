@@ -67,6 +67,97 @@
       "append_only": false,
       "portability": "tenant_private",
       "required_fields": ["type"]
+    },
+    "design_evidence": {
+      "family": "ops",
+      "canonical_path": "runtime/evidence/<slug>/<run_id>-<pass>.md",
+      "append_only": false,
+      "portability": "tenant_private",
+      "required_fields": ["type", "slug", "run_id", "pass", "outcome", "created"]
+    },
+    "design_critique": {
+      "family": "ops",
+      "canonical_path": "runtime/critiques/<slug>/<run_id>-<candidate>.md",
+      "append_only": false,
+      "portability": "tenant_private",
+      "required_fields": ["type", "slug", "run_id", "candidate", "created"]
+    },
+    "delivery_settings": {
+      "family": "config",
+      "canonical_path": "runtime/config/delivery-settings.md",
+      "append_only": false,
+      "portability": "tenant_private",
+      "required_fields": ["type", "propose_mode"]
+    },
+    "delivery_event": {
+      "family": "ops",
+      "canonical_path": "runtime/events/delivery/<id>.md",
+      "append_only": false,
+      "portability": "tenant_private",
+      "required_fields": ["type", "delivery_id", "kind", "outcome", "created"]
+    },
+    "gig_sources": {
+      "family": "config",
+      "canonical_path": "runtime/config/gig-sources.md",
+      "append_only": false,
+      "portability": "tenant_private",
+      "required_fields": ["type"]
+    },
+    "lead": {
+      "family": "crm",
+      "canonical_path": "runtime/leads/<id>.md",
+      "append_only": false,
+      "portability": "tenant_private",
+      "required_fields": ["type", "lead_id", "display_name", "status", "created_at"]
+    },
+    "opportunity": {
+      "family": "crm",
+      "canonical_path": "runtime/opportunities/<id>.md",
+      "append_only": false,
+      "portability": "tenant_private",
+      "required_fields": ["type", "opportunity_id", "lead_id", "title", "stage", "created_at"]
+    },
+    "application": {
+      "family": "crm",
+      "canonical_path": "runtime/applications/<id>.md",
+      "append_only": false,
+      "portability": "tenant_private",
+      "required_fields": ["type", "application_id", "status", "created_at"]
+    },
+    "gig_listing": {
+      "family": "ops",
+      "canonical_path": "runtime/gig-listings/<source>/<id>.md",
+      "append_only": false,
+      "portability": "tenant_private",
+      "required_fields": ["type", "gig_listing_id", "source", "external_id", "url", "title", "posted_at"]
+    },
+    "pipeline_event": {
+      "family": "ops",
+      "canonical_path": "runtime/pipeline-events/<id>.md",
+      "append_only": true,
+      "portability": "tenant_private",
+      "required_fields": ["type", "event_id", "entity_type", "entity_id", "from_stage", "to_stage", "created_at"]
+    },
+    "inbox_message": {
+      "family": "ops",
+      "canonical_path": "runtime/inbox/<id>.md",
+      "append_only": false,
+      "portability": "tenant_private",
+      "required_fields": ["type", "inbox_id", "message_id", "received_at"]
+    },
+    "revenue_snapshot": {
+      "family": "ops",
+      "canonical_path": "runtime/snapshots/<date>.md",
+      "append_only": false,
+      "portability": "tenant_private",
+      "required_fields": ["type", "snapshot_date", "created_at"]
+    },
+    "email_template": {
+      "family": "marketing",
+      "canonical_path": "campaigns/templates/<id>.md",
+      "append_only": false,
+      "portability": "structural",
+      "required_fields": ["type", "template_id", "subject"]
     }
   }
 }
