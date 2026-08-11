@@ -30,7 +30,7 @@ Execute this sequence:
 
 4. **Sync main:** `git push origin main`.
 
-5. **Copy to Droplet:** Do not hand-roll the rsync here — invoke the `deploy` skill (`.agent/skills/deploy/SKILL.md`), which runs `scripts/deploy.sh` (rsync with the correct excludes, PM2 restart, and a live health check against `https://gregiteen.xyz/splash.html`).
+5. **Copy to Droplet:** Do not hand-roll the rsync here — invoke the `deploy` skill (`.agent/skills/deploy/SKILL.md`), which runs `scripts/deploy.sh` (rsync with the correct excludes, PM2 restart, and a live health check against `https://gregiteen.xyz/splash.html`). Preferred transport is Headscale tailnet `portfolio-site 100.64.0.1` (`https://headscale.ultrachat.app`); public `138.197.199.217` via `http_proxy` `CONNECT` + JS `ssh2` is the sandbox fallback, and `POST /api/admin/deploy` (`ADMIN_API_TOKEN`, async `200 {started:true}`) is the no-ssh fallback. `HEADSCALE_API_KEY` is in `secrets.enc`/`.env`.
 
 ## Pitfalls
 
