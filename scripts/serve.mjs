@@ -3497,29 +3497,32 @@ OUTPUT JSON: { "company_name": "...", "industry": "...", "estimated_size": "..."
 
     // POST /api/admin/deploy — HTTPS deploy hook (no ssh). Gated by ADMIN_API_TOKEN, pulls main and reloads.
     if (adminPath === '/deploy' && req.method === 'POST') {
-      try {
-        const { execFile: execFileDeploy } = await import('node:child_process');
-        const { existsSync } = await import('node:fs');
-        const run = (cmd, args, cwd) => new Promise((resolve, reject) => execFileDeploy(cmd, args, { cwd: cwd || '/opt/portfolio-site', timeout: 120000 }, (e, stdout, stderr) => e ? reject(new Error(stderr || stdout || e.message)) : resolve(stdout)));
-        const hasGit = existsSync('/opt/portfolio-site/.git');
-        if (!hasGit) {
-          // First-time bootstrap via rsync excluded .git — clone fresh via https
-          const token = process.env.GITHUB_TOKEN || process.env.github_token || '';
-          const url = token ? `https://x-access-token:${token}@github.com/gregiteen/portfolio-site.git` : 'https://github.com/gregiteen/portfolio-site.git';
-          await run('rm', ['-rf', '/opt/portfolio-site'], '/opt');
-          await run('git', ['clone', url, '/opt/portfolio-site'], '/opt');
-        } else {
-          await run('git', ['fetch', '--all']);
-          await run('git', ['reset', '--hard', 'origin/main']);
+      const { execFile: execFileDeploy } = await import('node:child_process');
+      const { existsSync } = await import('node:fs');
+      const run = (cmd, args, cwd) => new Promise((resolve, reject) => execFileDeploy(cmd, args, { cwd: cwd || '/opt/portfolio-site', timeout: 120000 }, (e, stdout, stderr) => e ? reject(new Error(stderr || stdout || e.message)) : resolve(stdout)));
+      // Respond immediately to avoid nginx 504 — run deploy in background
+      sendJson(res, 200, { ok: true, started: true });
+      (async () => {
+        try {
+          const hasGit = existsSync('/opt/portfolio-site/.git');
+          if (!hasGit) {
+            const token = process.env.GITHUB_TOKEN || process.env.github_token || '';
+            const url = token ? `https://x-access-token:${token}@github.com/gregiteen/portfolio-site.git` : 'https://github.com/gregiteen/portfolio-site.git';
+            await run('rm', ['-rf', '/opt/portfolio-site'], '/opt');
+            await run('git', ['clone', url, '/opt/portfolio-site'], '/opt');
+          } else {
+            await run('git', ['fetch', '--all']);
+            await run('git', ['reset', '--hard', 'origin/main']);
+          }
+          await run('npm', ['ci', '--include=dev', '--no-audit', '--no-fund']);
+          await run('npm', ['run', 'build']);
+          await run('pm2', ['reload', 'portfolio']);
+          console.log('[Deploy] completed successfully');
+        } catch (e) {
+          console.error('[Deploy] failed:', e.message);
         }
-        await run('npm', ['ci', '--include=dev', '--no-audit', '--no-fund']);
-        await run('npm', ['run', 'build']);
-        await run('pm2', ['reload', 'portfolio']);
-        return sendJson(res, 200, { ok: true });
-      } catch (e) {
-        console.error('[Deploy] failed:', e.message);
-        return sendJson(res, 500, { error: e.message });
-      }
+      })();
+      return;
     }
 
     // GET /api/admin/webmail/inbox
@@ -3530,7 +3533,7 @@ OUTPUT JSON: { "company_name": "...", "industry": "...", "estimated_size": "..."
       } catch (e) {
         console.error('[Webmail inbox] fetch failed:', e.message);
         // Return empty inbox instead of 500 so CRM stays usable if IMAP is temp down
-        if (e.message.includes('IMAP credentials not configured') || e.message.includes('No user exists')) {
+        if (e.message.includes('IMAP credentials not configured') || e.message.includes('No user exists') || e.message.includes('Connection not available') || e.message.includes('ECONN') || e.message.includes('ETIMEDOUT') || e.message.includes('Unable to connect')) {
           return sendJson(res, 200, { messages: [], warning: e.message });
         }
         return sendJson(res, 500, { error: e.message });
