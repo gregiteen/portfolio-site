@@ -3504,6 +3504,8 @@ OUTPUT JSON: { "company_name": "...", "industry": "...", "estimated_size": "..."
       sendJson(res, 200, { ok: true, started: true });
       (async () => {
         try {
+          // Fix dubious ownership when /opt/portfolio-site was rsynced as root
+          await run('git', ['config', '--global', '--add', 'safe.directory', '/opt/portfolio-site']).catch(() => {});
           const hasGit = existsSync('/opt/portfolio-site/.git');
           if (!hasGit) {
             const token = process.env.GITHUB_TOKEN || process.env.github_token || '';
