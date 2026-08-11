@@ -14,8 +14,8 @@ const IMAP_HOST = process.env.IMAP_HOST || 'mail.gregiteen.xyz';
 const IMAP_PORT = parseInt(process.env.IMAP_PORT || '993', 10);
 function imapCredentials() {
   return {
-    user: process.env.IMAP_USER || process.env.MAIL_USER,
-    pass: process.env.IMAP_PASS || process.env.MAIL_PASS,
+    user: process.env.IMAP_USER || process.env.MAIL_USER || process.env.PORTFOLIO_WEBMAIL_EMAIL,
+    pass: process.env.IMAP_PASS || process.env.MAIL_PASS || process.env.PORTFOLIO_WEBMAIL_PASSWORD,
   };
 }
 
@@ -92,6 +92,11 @@ export async function appendDraft({ to, from, subject, html, text }) {
 
 export async function fetchInbox() {
   const c = await getImapClient();
+  // Guard empty INBOX — '1:*' throws on some servers when mailbox is empty; handle gracefully
+  try {
+    const status = await c.status('INBOX', { messages: true });
+    if (!status.messages) return [];
+  } catch {}
   const lock = await c.getMailboxLock('INBOX');
   try {
     const messages = [];

@@ -3501,6 +3501,11 @@ OUTPUT JSON: { "company_name": "...", "industry": "...", "estimated_size": "..."
         const messages = await fetchInbox();
         return sendJson(res, 200, { messages });
       } catch (e) {
+        console.error('[Webmail inbox] fetch failed:', e.message);
+        // Return empty inbox instead of 500 so CRM stays usable if IMAP is temp down
+        if (e.message.includes('IMAP credentials not configured') || e.message.includes('No user exists')) {
+          return sendJson(res, 200, { messages: [], warning: e.message });
+        }
         return sendJson(res, 500, { error: e.message });
       }
     }
