@@ -12,11 +12,13 @@ import { createTransport } from 'nodemailer';
 // importing file's own process.loadEnvFile() call, so a top-level read here
 // would always see undefined and silently fall back to the loopback default.
 function imapClient(email, password) {
+  const host = process.env.WEBMAIL_IMAP_HOST || process.env.IMAP_HOST || 'mail.gregiteen.xyz';
+  const isLoopback = host === '127.0.0.1' || host === 'localhost';
   return new ImapFlow({
-    host: process.env.WEBMAIL_IMAP_HOST || '127.0.0.1',
-    port: Number(process.env.WEBMAIL_IMAP_PORT || 993),
+    host,
+    port: Number(process.env.WEBMAIL_IMAP_PORT || process.env.IMAP_PORT || 993),
     secure: true,
-    tls: { rejectUnauthorized: false }, // loopback connection, cert CN won't match 127.0.0.1
+    tls: { rejectUnauthorized: isLoopback ? false : true },
     auth: { user: email, pass: password },
     logger: false,
   });
@@ -100,12 +102,14 @@ export async function getMessage(email, password, uid) {
 }
 
 export async function sendMessage(email, password, { to, subject, text, inReplyTo }) {
+  const smtpHost = process.env.WEBMAIL_SMTP_HOST || process.env.SMTP_HOST || 'mail.gregiteen.xyz';
+  const isLoopback = smtpHost === '127.0.0.1' || smtpHost === 'localhost';
   const transport = createTransport({
-    host: process.env.WEBMAIL_SMTP_HOST || '127.0.0.1',
-    port: Number(process.env.WEBMAIL_SMTP_PORT || 587),
+    host: smtpHost,
+    port: Number(process.env.WEBMAIL_SMTP_PORT || process.env.SMTP_PORT || 587),
     secure: false,
     requireTLS: true,
-    tls: { rejectUnauthorized: false },
+    tls: { rejectUnauthorized: isLoopback ? false : true },
     auth: { user: email, pass: password },
   });
   await transport.sendMail({

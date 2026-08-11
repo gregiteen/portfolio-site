@@ -71,36 +71,50 @@ function shell({ title, body, flash }) {
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--black:#0a0a0a;--white:#f5f5f3;--gray:rgba(245,245,243,.55);--faint:rgba(245,245,243,.22);--line:rgba(245,245,243,.28);--accent:#ff6a00}
+:root{--black:#0a0a0a;--panel:#111113;--white:#f5f5f3;--gray:rgba(245,245,243,.55);--faint:rgba(245,245,243,.22);--line:rgba(245,245,243,.12);--line-strong:rgba(245,245,243,.18);--accent:#ff6a00;--accent-2:#ff8a3d}
 html,body{min-height:100%}
-body{font-family:'Archivo',sans-serif;background:var(--black);color:var(--white)}
-.frame{max-width:820px;margin:0 auto;padding:clamp(20px,4vw,48px)}
-.top{display:flex;justify-content:space-between;align-items:center;font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gray);margin-bottom:clamp(24px,4vw,48px);border-bottom:1px solid var(--line);padding-bottom:16px}
-.top a{color:var(--gray);text-decoration:none; margin-left:20px;}
+body{font-family:'Archivo',system-ui,sans-serif;background:
+  radial-gradient(900px 500px at 15% 0%, rgba(255,106,0,.08), transparent 60%),
+  radial-gradient(700px 400px at 85% 10%, rgba(255,138,61,.06), transparent 60%),
+  var(--black);color:var(--white);-webkit-font-smoothing:antialiased}
+.frame{max-width:980px;margin:0 auto;padding:clamp(20px,4vw,40px)}
+.top{display:flex;justify-content:space-between;align-items:center;font-family:'IBM Plex Mono',monospace;font-size:.68rem;letter-spacing:.14em;text-transform:uppercase;color:var(--gray);margin-bottom:28px;border:1px solid var(--line);background:rgba(17,17,19,.6);backdrop-filter:blur(12px);padding:14px 18px}
+.top a{color:var(--gray);text-decoration:none;margin-left:18px;transition:color .15s}
 .top a:hover{color:var(--white)}
-.top .logo{height:18px;width:auto;display:block}
-h1{font-family:'Archivo Black',sans-serif;font-size:1.6rem;margin-bottom:20px}
-.flash{font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--accent);border:1px solid var(--accent);padding:10px 14px;margin-bottom:20px}
-label{display:block;font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);margin:16px 0 6px}
-input[type=email],input[type=password],input[type=text],textarea{width:100%;background:transparent;border:none;border-bottom:1px solid var(--line);color:var(--white);font-family:'Archivo',sans-serif;font-size:1rem;padding:10px 0;outline:none}
-input:focus,textarea:focus{border-color:var(--accent)}
-textarea{min-height:220px;resize:vertical;font-family:'IBM Plex Mono',monospace;font-size:.85rem;line-height:1.5}
-button,.btn{display:inline-block;background:var(--accent);color:var(--white);border:none;font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:.8rem;letter-spacing:.05em;text-decoration:none;padding:12px 24px;margin-top:24px;cursor:pointer;transition:opacity .2s}
-button:hover,.btn:hover{opacity:.85}
-.list{border-top:1px solid var(--line)}
-.row{display:flex;gap:16px;padding:14px 0;border-bottom:1px solid var(--line);text-decoration:none;color:var(--white)}
-.row:hover{background:rgba(245,245,243,.04)}
-.row .from{width:200px;flex-shrink:0;color:var(--gray);font-family:'IBM Plex Mono',monospace;font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.row .subject{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.top .logo{height:18px;width:auto;display:block;opacity:.9}
+h1{font-family:'Archivo Black',sans-serif;font-size:clamp(1.6rem,3vw,2.1rem);letter-spacing:-.02em;line-height:.9;margin-bottom:10px}
+.subhead{font-family:'IBM Plex Mono',monospace;font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);margin-bottom:24px}
+.flash{font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--accent);border:1px solid rgba(255,106,0,.35);background:rgba(255,106,0,.08);padding:12px 14px;margin-bottom:20px}
+label{display:block;font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);margin:18px 0 8px}
+input[type=email],input[type=password],input[type=text],textarea{width:100%;background:rgba(255,255,255,.02);border:1px solid var(--line);color:var(--white);font-family:'Archivo',sans-serif;font-size:.95rem;padding:12px 14px;outline:none;transition:border-color .15s, background .15s}
+input:focus,textarea:focus{border-color:rgba(255,106,0,.5);background:rgba(255,255,255,.04)}
+textarea{min-height:260px;resize:vertical;font-family:'IBM Plex Mono',monospace;font-size:.85rem;line-height:1.6}
+button,.btn{display:inline-flex;align-items:center;gap:8px;background:var(--accent);color:#0a0a0a;border:1px solid var(--accent);font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;text-decoration:none;padding:11px 18px;margin-top:18px;cursor:pointer;transition:all .15s}
+button:hover,.btn:hover{background:var(--accent-2);border-color:var(--accent-2);transform:translateY(-1px)}
+.btn-ghost{background:transparent;color:var(--white);border-color:var(--line-strong)}
+.btn-ghost:hover{background:rgba(255,255,255,.06);color:var(--white)}
+.toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:18px;flex-wrap:wrap}
+.count{font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--gray)}
+.list{border:1px solid var(--line);background:rgba(17,17,19,.55);backdrop-filter:blur(10px);overflow:hidden}
+.row{display:grid;grid-template-columns:200px 1fr 120px;gap:16px;padding:14px 18px;border-bottom:1px solid var(--line);text-decoration:none;color:var(--white);transition:background .12s}
+.row:last-child{border-bottom:none}
+.row:hover{background:rgba(255,255,255,.04)}
+.row .from{color:var(--gray);font-family:'IBM Plex Mono',monospace;font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row.unseen .from{color:var(--white)}
+.row .subject{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.92rem}
 .row.unseen .subject{font-weight:700}
-.row .date{width:110px;flex-shrink:0;text-align:right;color:var(--gray);font-family:'IBM Plex Mono',monospace;font-size:.72rem}
-.meta{font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--gray);margin-bottom:24px;line-height:1.8}
+.row .date{width:auto;text-align:right;color:var(--gray);font-family:'IBM Plex Mono',monospace;font-size:.72rem;align-self:center}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;margin-right:8px;vertical-align:middle}
+.meta{font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--gray);margin-bottom:18px;line-height:1.8}
 .meta strong{color:var(--white)}
-.body-frame{border:1px solid var(--line);width:100%;min-height:300px;background:var(--white)}
-.body-text{white-space:pre-wrap;font-family:'IBM Plex Mono',monospace;font-size:.85rem;line-height:1.6;border:1px solid var(--line);padding:20px}
-.attachments{margin-top:20px;font-family:'IBM Plex Mono',monospace;font-size:.8rem}
+.body-frame{border:1px solid var(--line);width:100%;min-height:420px;background:#fff;border-radius:2px}
+.body-text{white-space:pre-wrap;font-family:'IBM Plex Mono',monospace;font-size:.85rem;line-height:1.65;border:1px solid var(--line);padding:20px;background:rgba(17,17,19,.4)}
+.attachments{margin-top:18px;font-family:'IBM Plex Mono',monospace;font-size:.8rem}
 .attachments a{color:var(--accent);text-decoration:none}
-.empty{color:var(--gray);font-family:'IBM Plex Mono',monospace;font-size:.85rem;padding:40px 0;text-align:center}
+.attachments a:hover{text-decoration:underline}
+.empty{color:var(--gray);font-family:'IBM Plex Mono',monospace;font-size:.82rem;padding:56px 24px;text-align:center;line-height:1.6}
+.empty strong{color:var(--white);font-family:'Archivo Black',sans-serif;font-size:1rem;display:block;margin-bottom:8px;letter-spacing:-.01em}
+@media(max-width:640px){.row{grid-template-columns:1fr auto}.row .from{grid-column:1/-1;font-size:.74rem}.toolbar{flex-direction:column;align-items:stretch}}
 </style>
 </head>
 <body>
@@ -162,17 +176,19 @@ function formatDate(d) {
 }
 
 function inboxPage(messages) {
+  const unread = messages.filter(m=> !m.seen).length;
   const rows = messages.length
     ? messages.map((m) => `<a class="row${m.seen ? '' : ' unseen'}" href="/message/${m.uid}">
-        <span class="from">${escapeHtml(m.fromName || m.from)}</span>
+        <span class="from">${!m.seen ? '<span class="dot"></span>' : ''}${escapeHtml(m.fromName || m.from)}</span>
         <span class="subject">${escapeHtml(m.subject)}</span>
         <span class="date">${escapeHtml(formatDate(m.date))}</span>
       </a>`).join('\n')
-    : '<div class="empty">No messages.</div>';
+    : `<div class="empty"><strong>Inbox is empty</strong>No live mail yet — real IMAP (sales@gregiteen.xyz) is connected; messages appear here as they arrive. Try sending yourself a test from /compose.</div>`;
   return shell({
     title: 'Inbox',
     body: `<h1>Inbox</h1>
-<a class="btn" href="/compose">Compose</a>
+<div class="subhead">${messages.length} messages ${unread ? `· ${unread} unread` : ''}</div>
+<div class="toolbar"><span class="count">${messages.length ? 'Newest first' : 'Live IMAP — no mocks'}</span><a class="btn" href="/compose">Compose</a></div>
 <div class="list">${rows}</div>`,
   });
 }
