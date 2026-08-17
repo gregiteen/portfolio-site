@@ -36,7 +36,10 @@ report('Stack 1 — standalone mail.gregiteen.xyz CRM (webmail.mjs / webmail-ui.
 ]);
 
 report('Stack 2 — legacy single-mailbox admin client (imap.mjs: OOO poller + old /api/admin/webmail/* routes):', [
-  { name: 'IMAP_HOST', fallback: 'mail.gregiteen.xyz' },
+  // Must track imap.mjs's actual default. It moved to mail.ultrachat.app so the
+  // hostname matches the TLS cert's altnames (the cert is CN=ultrachat.app and
+  // does not cover mail.gregiteen.xyz) — see the webmail skill.
+  { name: 'IMAP_HOST', fallback: 'mail.ultrachat.app' },
   { name: 'IMAP_PORT', fallback: '993' },
   { name: 'IMAP_USER' },
   { name: 'IMAP_PASS' },

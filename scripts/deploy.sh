@@ -7,6 +7,20 @@ echo "📦 Syncing static frontend..."
 rsync -avz --delete dist/site/ root@138.197.199.217:/var/www/gregiteen.xyz/
 
 # 2. Sync backend (excluding runtime/volatile data)
+#
+# vault/pages/designs/ has two writers: this repo (hand-authored portfolio
+# entries) and promote-theme.mjs running ON the droplet (promoted generated
+# designs). A plain --exclude would stop local edits from ever deploying; no
+# rule at all lets --delete destroy every droplet-side promotion. The `P`
+# (protect) filter is the only one that does both: local files still transfer,
+# droplet-only files survive the delete pass.
+#
+# vault/.events/ is server-local runtime state, not code — the SSSS engine
+# appends every committed operation to audit.jsonl and re-reads it on boot
+# (warmFromAudit) to rebuild its 24h idempotency cache. Syncing the laptop's
+# copy over it both truncates an append-only log and hands production a
+# foreign dedup window, so it is excluded like vault/runtime/. A missing file
+# is handled gracefully by the engine.
 echo "📦 Syncing backend codebase..."
 rsync -avz --delete \
   --exclude 'node_modules' \
@@ -14,13 +28,16 @@ rsync -avz --delete \
   --exclude '.env' \
   --exclude '.agent' \
   --exclude '.claude' \
+  --exclude '.remember' \
   --exclude '.theme-staging' \
   --exclude '.data/' \
   --exclude '/designs/' \
   --exclude 'vault/pages/skins/' \
   --exclude 'vault/runtime/' \
+  --exclude 'vault/.events/' \
   --exclude 'vault/visitors.md' \
   --exclude '/dist/' \
+  --filter 'P /vault/pages/designs/**' \
   ./ root@138.197.199.217:/opt/portfolio-site/
 
 # 3. Install the exact locked dependency tree before reloading the server.

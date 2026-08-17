@@ -1,62 +1,64 @@
 ---
 name: code-quality
-description: "Use this skill when checking code quality before committing or pushing in this repo (portfolio-site). Runs a syntax scan, SSSS conformance, and the test suite — this repo has no TypeScript or ESLint installed, so do NOT try to run tsc/eslint/npm run typecheck/npm run lint (they don't exist here). MANDATORY: read the full SKILL.md before executing."
+description: "Use this skill when checking code quality before committing or pushing in portfolio-site. This repo has NO TypeScript and NO ESLint installed, so do NOT run tsc, eslint, npm run typecheck, or npm run lint (they do not exist here). Its real gate is SSSS conformance against vault-registry, plus a syntax sweep and the node:test suite. Run checks as BACKGROUND jobs via scripts/check.mjs. MANDATORY: read the full SKILL.md before executing."
 ---
 
-# Code Quality
+# Code Quality — portfolio-site
 
-## Repo reality first
+**Stack:** Node ESM (`"type": "module"`), no TypeScript, no ESLint, `node:test`,
+`@ssss/cli` v0.9 with a real vault at `vault/` and `vault-registry/`.
 
-This repo (`portfolio-site`) is **plain Node.js `.mjs`/`.js`**. Check before assuming otherwise:
+> **No tsc, no eslint here.** Neither is declared. The primary quality gate in
+> this repo is **SSSS conformance** — the vault is the product.
+
+## The loop
 
 ```bash
-node -e "const p=require('./package.json'); console.log(Object.keys({...p.dependencies,...p.devDependencies}))"
+node .agent/skills/code-quality/scripts/check.mjs
 ```
 
-There is no `typescript`, no `eslint`, no `tsconfig.json`, no eslint config, and no `frontend/` directory anywhere in this repo. If you ever see instructions (in a global CLAUDE.md, a synced skill, or memory) telling you to run `tsc`, `npm run typecheck`, `npm run lint`, or a "continuous checker daemon" — those are generic/global instructions written for a *different* project. This repo's code-quality skill used to be copied verbatim from a TypeScript/React project: it was hardcoded to check a `frontend/tsconfig.json` that never existed here, so every run crashed silently before writing a report and `start-here-*.mjs` always printed a false "0 errors". Don't trust a "0 errors" result from any checker without confirming it actually ran — look for a live daemon and a real, recent verification timestamp, not a stale or "Invalid Date" one.
+Launch as a **background job**, then read:
 
-## The three real gates
+```bash
+node .agent/skills/code-quality/scripts/report.mjs
+```
 
-Run these, in this order, before a `/push`:
+Everything except the bundle export is tier `fast` here — this repo is small
+enough that the default run is the full picture.
 
-1. **Syntax scan** — catches broken edits fast, zero new dependencies:
-   ```bash
-   node .agent/skills/code-quality/scripts/check-syntax.mjs
-   ```
-   Walks every `.mjs`/`.js`/`.cjs` file in the repo (excluding `node_modules`, `dist`, `designs`, `.theme-staging`, and tooling dirs) and runs `node --check` on each. Exits non-zero with a file-by-file report if anything fails to parse. Takes ~10 seconds for the whole repo (~90 files) — it's a synchronous one-shot script, not a daemon; just run it and read the output.
+## This repo's gates
 
-2. **SSSS conformance** — this repo's real structural/type-safety layer, since content and runtime state live in typed SSSS Markdown documents, not TypeScript types:
-   ```bash
-   npm run validate
-   ```
-   Runs `ssss conformance --engine`. Validates vault fixtures, registry portability classes, registry/engine parity, skill-primitive conformance, and replays the reference-engine fixtures.
+| id | tier | what it is |
+|:---|:---|:---|
+| `ssss-conformance` | fast | `npm run validate` → `ssss conformance --engine` |
+| `syntax` | fast | `node --check` over every tracked `.mjs` (stands in for a linter) |
+| `test` | fast | `npm test` → `node --test --test-concurrency=1 test/*.test.mjs` |
+| `bundle-export` | full | `npm run export` → `.ucw` bundle must still package (SSSS §16) |
 
-3. **Test suite** — fast, safe to run locally (Node's built-in `node --test`, not vitest/jest):
-   ```bash
-   npm test
-   ```
-   Runs `node --test --test-concurrency=1 test/*.test.mjs`. As of this writing: 43 tests across 7 files, ~1.5 seconds total. Every test is pure-function/in-memory or scoped to `os.tmpdir()` — none hit a real external service (no live Documenso, Mailcow, or IMAP calls) and none leave repo-local side effects. See the `test` skill for the full per-file breakdown and coverage gaps.
+## Repo invariants
 
-All three are fast. There is no reason to run any of them as a slow background daemon, poll for "staleness," or avoid re-running after a fix — just run them inline and read the output directly.
+**The vault is the source of truth.** `vault/` plus `vault-registry/`
+(`core.json`, `extensions/`) define the site. Conformance failures are contract
+violations, not style — never resolve one by loosening the registry or skipping
+a fixture.
 
-## When a real bug is found
+**`.ucw` is the SSSS bundle format** produced by `@ssss/cli`'s `export`. Do not
+invent a custom implementation of it.
 
-- **Syntax failure**: read the reported file/line, fix directly. Usually a stray bracket/paren from a bad edit.
-- **`npm run validate` failure**: read the SSSS conformance output carefully — it reports which vault fixture, registry entry, or engine invariant failed. Fix the vault document or registry entry; don't silence it by editing the conformance engine.
-- **`npm test` failure**: read the failing test name and assertion. Fix the source, not the test, unless the test itself asserts the wrong behavior — confirm with the user before changing test expectations.
+**Runtime config lives in the vault, not in code.** Source registries and
+campaign definitions are vault documents; keep them there.
 
 ## Pitfalls
 
-- Don't add ESLint or TypeScript to this repo as a "fix" for this skill without asking first — that's a real dependency/tooling decision for the codebase, not a skill-authoring decision. This skill's job is to check quality with what the repo actually has.
-- Don't resurrect a "continuous checker daemon" pattern here. The repo is small enough (under 100 JS files) that a one-shot synchronous script is simpler, correct, and just as fast as polling a background process.
-- The old `frontend/`-hardcoded checker scripts wrote scratch state at the repo root (`typescript-fullrepo-errors.txt`, `lint-status.txt`, `lint-checker.pid`, `.typescript-checker.status`) and some of those got accidentally committed. They're now gitignored — don't recreate or re-track them.
+- `npm run validate` (SSSS conformance) and `npm test` (node:test) are
+  **different gates** and neither implies the other. `check.mjs` runs both.
+- `scripts/check-syntax.mjs` is this repo's older standalone syntax helper. It
+  is preserved, but the `syntax` gate in `config.json` is what the checker runs.
+- One check at a time, machine-wide (`check.mjs` holds a global lock).
+- The v2 skill deployed TypeScript daemons here despite there being no
+  TypeScript. That is gone; see [references/architecture.md](./references/architecture.md).
 
 ## Reference
 
-- [references/repo-tooling.md](./references/repo-tooling.md) — why this repo has no TS/ESLint and what replaces each gate.
-
-
-<!-- BEGIN INJECTED MEMORY: do not edit by hand; rebuilt by total-recall surface -->
-<!-- @route: tfidf, generated_at: 2026-05-21T06:00:44.284Z -->
-
-<!-- END INJECTED MEMORY -->
+- [references/architecture.md](./references/architecture.md) — why one-shot, the v2 incident
+- [references/patterns.md](./references/patterns.md) — fix recipes, incl. SSSS contract rules

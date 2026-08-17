@@ -7,8 +7,11 @@ import {
   despillTowardBackground,
   detectBackgroundColor,
   differenceMatte,
+  extractKitMarks,
   keyOutBackground,
   makeLogoTransparent,
+  segmentMarkBoxes,
+  trimDetachedRules,
 } from '../scripts/lib/logo-transparency.mjs';
 
 /**
@@ -301,4 +304,82 @@ test('cleared pixels carry the artwork mean, not the key colour', () => {
   assert.ok(g < 100, `cleared pixel must not retain key green, got rgb(${r},${g},${b})`);
   // it should sit near the artwork colour so downscaling fringes invisibly
   assert.ok(Math.abs(b - art[2]) < 40, `expected a fill near the art colour, got rgb(${r},${g},${b})`);
+});
+
+// ─── Brand-kit segmentation ──────────────────────────────────────────────────
+// The two-up sheet is split by deterministic cropping rather than by asking an
+// image model to redraw each mark. These cover the arrangements real sheets
+// came back in.
+
+const KW = 200;
+const KH = 100;
+
+/** Transparent canvas with opaque filled rects — a pre-keyed brand-kit sheet. */
+function sheet(rects) {
+  const data = new Uint8Array(KW * KH * 4);
+  for (const { x0, y0, x1, y1 } of rects) {
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const i = (y * KW + x) * 4;
+        data[i] = 20; data[i + 1] = 20; data[i + 2] = 20; data[i + 3] = 255;
+      }
+    }
+  }
+  return data;
+}
+
+test('segmentMarkBoxes splits a side-by-side sheet on the x axis', () => {
+  // wide lockup on the left, square tile on the right
+  const data = sheet([{ x0: 10, y0: 40, x1: 100, y1: 60 }, { x0: 150, y0: 35, x1: 180, y1: 65 }]);
+  const { boxes } = segmentMarkBoxes(data, KW, KH, { axis: 'x' });
+  assert.equal(boxes.length, 2);
+  assert.equal(boxes[0].x0, 10);
+  assert.equal(boxes[1].x0, 150);
+});
+
+test('segmentMarkBoxes splits a STACKED sheet on the y axis', () => {
+  // The model does not reliably honour "logo left, favicon right".
+  const data = sheet([{ x0: 40, y0: 5, x1: 160, y1: 25 }, { x0: 85, y0: 70, x1: 115, y1: 95 }]);
+  assert.equal(segmentMarkBoxes(data, KW, KH, { axis: 'x' }).boxes.length, 1, 'columns overlap, so x cannot split it');
+  const { boxes } = segmentMarkBoxes(data, KW, KH, { axis: 'y' });
+  assert.equal(boxes.length, 2);
+});
+
+test('segmentMarkBoxes ignores speckle below the size floor', () => {
+  const data = sheet([{ x0: 10, y0: 40, x1: 100, y1: 60 }, { x0: 150, y0: 35, x1: 180, y1: 65 }, { x0: 195, y0: 2, x1: 195, y1: 2 }]);
+  const { boxes } = segmentMarkBoxes(data, KW, KH, { axis: 'x' });
+  assert.equal(boxes.length, 2, 'a single stray pixel is not a mark');
+});
+
+test('trimDetachedRules drops a detached hairline but keeps the mark', () => {
+  // A divider under the wordmark shares its columns, so it lands INSIDE the
+  // logo cluster and stretches the box downward.
+  const data = sheet([{ x0: 20, y0: 10, x1: 120, y1: 40 }, { x0: 30, y0: 80, x1: 110, y1: 81 }]);
+  const box = { x0: 20, y0: 10, x1: 120, y1: 81 };
+  const trimmed = trimDetachedRules(data, KW, box);
+  assert.equal(trimmed.y0, 10, 'top of the mark is preserved');
+  assert.equal(trimmed.y1, 40, 'the detached rule is trimmed off');
+  assert.equal(trimmed.x0, 20);
+  assert.equal(trimmed.x1, 120);
+});
+
+test('trimDetachedRules leaves a solid mark untouched', () => {
+  const data = sheet([{ x0: 20, y0: 10, x1: 120, y1: 40 }]);
+  const box = { x0: 20, y0: 10, x1: 120, y1: 40 };
+  assert.deepEqual(trimDetachedRules(data, KW, box), box);
+});
+
+test('extractKitMarks refuses a sheet whose background is not uniform', async () => {
+  // Fail closed: the caller keeps the previously verified asset.
+  const gradient = await sharp({
+    create: { width: 200, height: 100, channels: 3, background: { r: 255, g: 255, b: 255 } },
+  }).composite([{
+    input: { create: { width: 100, height: 100, channels: 3, background: { r: 10, g: 10, b: 10 } } },
+    left: 100,
+    top: 0,
+  }]).png().toBuffer();
+  const result = await extractKitMarks(gradient, sharp);
+  assert.equal(result.logo, null);
+  assert.equal(result.favicon, null);
+  assert.match(result.reason, /not uniform/);
 });

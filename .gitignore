@@ -44,6 +44,14 @@ dist/
 vault/runtime/
 vault/.events/
 
+# Droplet-owned runtime state. The repo deliberately ships none of this
+# (see .claude/skills/deploy — both are --exclude'd from the deploy rsync),
+# but a local copy appears whenever designs are pulled down to regenerate
+# brand marks. Untracked-but-not-ignored is how ~35 binaries end up in a
+# stray `git add .`.
+/designs/
+vault/pages/skins/
+
 # Total Recall secrets projections
 .env.local
 .env.*.local

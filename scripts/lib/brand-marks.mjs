@@ -1,8 +1,11 @@
 // Brand-mark generation: an AI art-direction pass turns the design's own
 // constitution into a concrete, palette-exact identity brief; that brief drives
-// a themed brand kit (logo + favicon sketched together); then each mark is
-// extracted individually on a chroma-key background, keyed transparent, and
-// trimmed to content.
+// a themed brand kit (logo + favicon drawn together on one sheet); then each
+// mark is CUT OUT of that sheet by deterministic image processing — background
+// keyed, marks segmented by column occupancy, each trimmed to content.
+//
+// Exactly one image call per design. The sheet is the only render; nothing
+// downstream re-generates it.
 //
 // Why the art-direction call exists: the previous prompt interpolated the raw
 // theme string into a fixed template and told the image model to "EMBRACE THE
@@ -19,13 +22,22 @@
 // already shipped). Both callers MUST go through buildMark rather than a
 // bespoke generateImage call — a corrective pass that once wrote a raw
 // generated PNG straight to disk produced a small mark stranded in a huge
-// opaque canvas, because it skipped both the edge-to-edge composition
-// instruction below and the background-removal/trim pipeline.
+// opaque canvas, because it skipped the segmentation and trim entirely.
 import { readFile, writeFile, copyFile, rm } from 'node:fs/promises';
 import { generateImage } from './image-gen.mjs';
-import { buildTransparentMark } from './logo-transparency.mjs';
+import { buildTransparentMark, extractKitMarks } from './logo-transparency.mjs';
 import { extractJson } from './theme.mjs';
-import { callOpenRouter } from './openrouter.mjs';
+import { callOpenRouter, IMAGE_MODEL_LITE } from './openrouter.mjs';
+
+// Marks are extracted with the LITE model, not the default photoreal one.
+// flux-pro renders a "flat 2D vector logo" prompt as a photographed metal
+// object — bevels, gloss, its own colour grading — ignoring both the flat-
+// vector constraint and the art-directed palette (observed 2026-08-12: the
+// SELENE-1 mark came back as a chrome porthole in navy, not #1A1A1A/#F5A623).
+// Ideogram is the text-and-flat-vector model and is what draws the brand kit
+// these marks are extracted from, so extracting with it also keeps the two
+// renders stylistically consistent. Overridable for experiments.
+const MARK_MODEL = process.env.THEME_MARK_MODEL || IMAGE_MODEL_LITE;
 
 // Art direction is a creative + instruction-following task on a SMALL JSON
 // output, so it gets a strong model rather than the pipeline's bulk text model
@@ -116,7 +128,7 @@ export function buildThemeBrief(themeContext) {
   return lines.join('\n');
 }
 
-const ART_DIRECTOR_PROMPT = (brief) => `You are a world-class brand identity designer — the calibre that ships identities out of Pentagram or Collins. Design a personal brand identity for GREG ITEEN, a full-stack engineer who builds local-first, file-native AI systems where the filesystem is the database and users keep custody of their own data.
+export const ART_DIRECTOR_PROMPT = (brief) => `You are a world-class brand identity designer — the calibre that ships identities out of Pentagram or Collins. Design a personal brand identity for GREG ITEEN, a full-stack engineer who builds local-first, file-native AI systems where the filesystem is the database and users keep custody of their own data.
 
 The identity must be a bespoke expression of ONE specific design world, given below. Your output is an art-direction brief that a text-to-image model will render literally, so every instruction must be CONCRETE enough to draw without interpretation.
 
@@ -143,7 +155,11 @@ ${brief}
 • TRADEMARK SAFETY — this is absolute. The design world above may name a real company, franchise, film, or product. You are designing GREG ITEEN's identity, never theirs. NEVER name a real brand, franchise, or product anywhere in your brief: an image model that reads a brand name in a logo prompt will draw that brand's actual registered logo. Describe the FORM generically instead — "a studded interlocking plastic toy brick in orthographic plan" is correct; "a LEGO brick" is a trademark violation waiting to be rendered. Take the design world's shapes, materials, colours and mood; take none of its branding.
 
 ═══ THE TEST ═══
-Before you answer, swap this design world for an unrelated one. Would your emblem still make sense? If yes, it is too generic — throw it out and design the specific thing.`;
+Before you answer, swap this design world for an unrelated one. Would your emblem still make sense? If yes, it is too generic — throw it out and design the specific thing.
+
+═══ OUTPUT ═══
+Do not write a prose brief, headings, tables, or markdown of any kind.
+OUTPUT: exactly one JSON object: { "emblem_concept": "…", "emblem_construction": "…", "wordmark_typography": "…", "favicon_concept": "…", "palette": [{ "hex": "#RRGGBB", "role": "…" }], "composition": "…", "avoid": ["…"] }`;
 
 /**
  * Run the art-direction pass. Returns a validated direction object, or null if
@@ -199,6 +215,8 @@ COMPOSITION: ${direction.composition} Both marks drawn large and clearly separat
 
 RENDERING: strictly 2D flat vector artwork. Crisp geometry, clean hard edges, solid flat fills. Precise, intentional, premium — the work of a world-class identity studio. Both marks must stay fully legible at 32 pixels.
 
+TEXT — COUNT THE WORDS. The sheet contains exactly two pieces of text: "GREG ITEEN" (in the logo) and "GI" (in the favicon). Nothing else. NO tagline, NO subtitle, NO descriptor line, NO company-type line, NO est./date line, NO address, NO decorative lettering. Do not invent a second line under the wordmark. Spell "GREG ITEEN" with a normal space between the two words and never substitute a dot, star, or symbol for a letter — every letter must be a real letter. If you are tempted to add words to fill space, add empty space instead.
+
 DO NOT DRAW: ${avoid}. No 3D effects, bevels, embossing, drop shadows, gloss, gradient meshes, photographic texture, product mockups, physical objects, or clip-art. ${TRADEMARK_GUARD}. The background must be perfectly solid #FFFFFF white, edge to edge.`;
 }
 
@@ -221,23 +239,60 @@ export async function generateBrandKit(themeContext, outputPath, model) {
 }
 
 /**
- * Renders one mark (white/black pair when matting is enabled), mattes/keys it
- * transparent, trims it to content, and writes the result. Every step is
- * awaited — a floating write-back previously let the opaque original race the
- * transparent version to disk.
+ * Cut one mark out of the generated brand-kit sheet and write it.
+ *
+ * This is a CROP, not a render. The sheet already holds the correct marks —
+ * flat vector, art-directed palette, legible wordmark — because the vector
+ * image model drew them from the art director's brief. Handing that sheet back
+ * to an image model as an image-to-image "extraction" does not extract, it
+ * re-generates, and the re-generation discards the constraints the sheet
+ * already satisfied (measured 2026-08-12 on SELENE-1: a clean two-colour hatch
+ * emblem came back as a chrome-and-navy photoreal porthole). Cropping is
+ * deterministic, free, and preserves exactly what was drawn.
+ *
+ * Falls back to the verified asset whenever the sheet cannot be split
+ * confidently, so a bad sheet degrades to "unchanged", never "broken".
  *
  * @param {string} targetPath final asset path, e.g. designs/<slug>/assets/logo.png
- * @param {string} sourceFallback verified asset to fall back to if generation/matting fails
- * @param {string} basePath   image-to-image base: the brand kit on success, a verified fallback otherwise
- * @param {string} concept    one-line restatement of the art-directed mark, if any
+ * @param {string} subject    LOGO_SUBJECT or FAVICON_SUBJECT — selects which mark to cut
+ * @param {string} sourceFallback verified asset to fall back to if the split fails
+ * @param {string} basePath   the brand-kit sheet to cut from
  */
 export async function buildMark(targetPath, subject, size, extraction, sourceFallback, basePath, concept = '') {
+  const base = basePath || sourceFallback;
+  const label = targetPath.split('/').pop();
+  const wantLogo = subject === LOGO_SUBJECT;
+  try {
+    const sharp = (await import('sharp')).default;
+    const marks = await extractKitMarks(await readFile(base), sharp);
+    const cut = wantLogo ? marks.logo : marks.favicon;
+    if (!cut) {
+      console.warn(`  ⚠ ${label}: could not split the brand kit (${marks.reason}); keeping the verified brand asset.`);
+      if (sourceFallback) await copyFile(sourceFallback, targetPath).catch(() => {});
+      return false;
+    }
+    await writeFile(targetPath, cut);
+    console.log(`  → ${label}: cut from brand kit (${Math.round(cut.length / 1024)}KB)`);
+    return true;
+  } catch (error) {
+    console.warn(`  ⚠ ${label}: extraction failed (${error.message}); keeping the verified brand asset.`);
+    if (sourceFallback) await copyFile(sourceFallback, targetPath).catch(() => {});
+    return false;
+  }
+}
+
+/**
+ * Legacy image-to-image mark render. Superseded by the deterministic crop in
+ * buildMark and kept only behind THEME_MARK_REDRAW=1 for A/B experiments —
+ * see the comment above for why it is not the default.
+ */
+export async function redrawMark(targetPath, subject, size, extraction, sourceFallback, basePath, concept = '') {
   const whitePath = `${targetPath}.white.png`;
   const blackPath = `${targetPath}.black.png`;
   const base = basePath || sourceFallback;
   const label = targetPath.split('/').pop();
   try {
-    await generateImage(markPrompt(subject, size, extraction, KEY_BACKGROUND, concept), whitePath, base);
+    await generateImage(markPrompt(subject, size, extraction, KEY_BACKGROUND, concept), whitePath, base, MARK_MODEL);
     // Second render only when matting is explicitly enabled: the image model
     // redraws the mark at a different position/scale between runs, so the
     // pair usually cannot be subtracted (measured: a double-exposure ghost).
@@ -246,7 +301,7 @@ export async function buildMark(targetPath, subject, size, extraction, sourceFal
     let blackOk = false;
     if (process.env.THEME_MARK_MATTE === '1') {
       try {
-        await generateImage(markPrompt(subject, size, extraction, '#000000 black', concept), blackPath, base);
+        await generateImage(markPrompt(subject, size, extraction, '#000000 black', concept), blackPath, base, MARK_MODEL);
         blackOk = true;
       } catch (error) {
         console.warn(`  ⚠ ${label}: black-background render failed (${error.message}); keying instead.`);

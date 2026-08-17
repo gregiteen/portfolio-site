@@ -23,6 +23,7 @@ tar -czf "$BACKUP_DIR/portfolio-$STAMP.tar.gz" \
   -C "$SITE" \
   $( [ -d "$SITE/designs" ] && echo designs ) \
   $( [ -d "$SITE/vault/pages/skins" ] && echo vault/pages/skins ) \
+  $( [ -d "$SITE/vault/pages/designs" ] && echo vault/pages/designs ) \
   $( [ -d "$SITE/vault/runtime" ] && echo vault/runtime ) \
   2>/dev/null || true
 ls -1t "$BACKUP_DIR"/portfolio-*.tar.gz 2>/dev/null | tail -n +31 | xargs -r rm -f
@@ -42,6 +43,9 @@ rm -rf "$REPO_DIR/droplet-backup"
 mkdir -p "$REPO_DIR/droplet-backup"
 [ -d "$SITE/designs" ] && cp -r "$SITE/designs" "$REPO_DIR/droplet-backup/designs"
 [ -d "$SITE/vault/pages/skins" ] && cp -r "$SITE/vault/pages/skins" "$REPO_DIR/droplet-backup/skins"
+# Promoted designs are written on the droplet by promote-theme.mjs and are not
+# in the repo, so they die with the droplet unless captured here.
+[ -d "$SITE/vault/pages/designs" ] && cp -r "$SITE/vault/pages/designs" "$REPO_DIR/droplet-backup/promoted"
 [ -d "$SITE/vault/runtime" ] && cp -r "$SITE/vault/runtime" "$REPO_DIR/droplet-backup/runtime"
 
 cd "$REPO_DIR"

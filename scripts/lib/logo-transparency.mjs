@@ -370,3 +370,250 @@ export async function buildTransparentMark(whiteBuffer, blackBuffer, sharpImpl, 
   const keyed = await makeLogoTransparent(whiteBuffer, sharp, { trim, minOpaqueRatio });
   return { ...keyed, method: keyed.buffer ? 'colour-key' : 'none' };
 }
+
+/**
+ * Locate the separate marks on a two-up brand-kit sheet.
+ *
+ * Operates on RGBA that has ALREADY been keyed (alpha 0 = background), and is
+ * pure so it can be tested without sharp.
+ *
+ * The sheet is "logo lockup on the left, favicon on the right, on a solid
+ * ground". Marks are found by column occupancy: a column is occupied if any
+ * pixel in it is opaque. Runs of occupied columns are clusters; clusters
+ * separated by less than `mergeGapRatio` of the width are merged, which fuses
+ * letter- and word-spacing inside the wordmark back into one lockup while
+ * leaving the much larger gap before the favicon intact. On a measured sheet
+ * the inter-mark gap was ~13% of width against ~1-2% between glyphs.
+ *
+ * @returns {{boxes: Array<{x0:number,x1:number,y0:number,y1:number}>, reason: string|null}}
+ */
+export function segmentMarkBoxes(data, width, height, {
+  alphaThreshold = 8,
+  mergeGapRatio = 0.03,
+  minAreaRatio = 0.0005,
+  minLineFillRatio = 0.005,
+  axis = 'x',
+} = {}) {
+  // Segment along `axis`; the cross axis is measured per cluster afterwards.
+  // The image model does not reliably honour "logo left, favicon right" — it
+  // stacks them vertically often enough (observed on mad-max and
+  // paris-in-spring) that both orientations have to be supported.
+  const along = axis === 'x' ? width : height;
+  const across = axis === 'x' ? height : width;
+  const alphaAt = (a, b) => (axis === 'x'
+    ? data[(b * width + a) * 4 + 3]
+    : data[(a * width + b) * 4 + 3]);
+
+  // A line counts as occupied only if ENOUGH of it is opaque. Testing for a
+  // single opaque pixel makes every line occupied on a real sheet: keying
+  // leaves faint residue (edge gradients, compression noise) scattered across
+  // the canvas, which merged mad-max's two stacked marks into one cluster even
+  // though a 75px gap separated them.
+  const minFill = Math.max(1, Math.round(across * minLineFillRatio));
+  const occupied = new Uint8Array(along);
+  for (let a = 0; a < along; a++) {
+    let hits = 0;
+    for (let b = 0; b < across; b++) {
+      if (alphaAt(a, b) > alphaThreshold && ++hits >= minFill) { occupied[a] = 1; break; }
+    }
+  }
+
+  const runs = [];
+  let start = -1;
+  for (let a = 0; a < along; a++) {
+    if (occupied[a] && start === -1) start = a;
+    if ((!occupied[a] || a === along - 1) && start !== -1) {
+      runs.push({ a0: start, a1: occupied[a] ? a : a - 1 });
+      start = -1;
+    }
+  }
+  if (!runs.length) return { boxes: [], reason: 'sheet is empty after keying' };
+
+  // Merge runs separated by intra-mark spacing (letter and word gaps).
+  const mergeGap = Math.max(1, Math.round(along * mergeGapRatio));
+  const merged = [runs[0]];
+  for (let i = 1; i < runs.length; i++) {
+    const prev = merged[merged.length - 1];
+    if (runs[i].a0 - prev.a1 <= mergeGap) prev.a1 = runs[i].a1;
+    else merged.push(runs[i]);
+  }
+
+  // Cross-axis bounds per cluster, and drop specks.
+  const boxes = [];
+  for (const run of merged) {
+    let b0 = across; let b1 = -1;
+    for (let b = 0; b < across; b++) {
+      for (let a = run.a0; a <= run.a1; a++) {
+        if (alphaAt(a, b) > alphaThreshold) {
+          if (b < b0) b0 = b;
+          if (b > b1) b1 = b;
+          break;
+        }
+      }
+    }
+    if (b1 < b0) continue;
+    const area = (run.a1 - run.a0 + 1) * (b1 - b0 + 1);
+    if (area < width * height * minAreaRatio) continue;
+    boxes.push(axis === 'x'
+      ? { x0: run.a0, x1: run.a1, y0: b0, y1: b1 }
+      : { x0: b0, x1: b1, y0: run.a0, y1: run.a1 });
+  }
+
+  return { boxes, reason: boxes.length ? null : 'no cluster survived the size floor' };
+}
+
+/**
+ * Split a generated brand-kit sheet into its logo and favicon, WITHOUT asking
+ * an image model to redraw them.
+ *
+ * The sheet already contains correct, on-palette, flat-vector marks — it is
+ * drawn by the text-and-vector image model from an art-directed prompt. The
+ * previous approach fed the sheet back to a photoreal image model as an
+ * image-to-image "extraction", which does not extract: it re-generates. In a
+ * measured run (2026-08-12, SELENE-1) the sheet held a clean two-colour hatch
+ * emblem and the redraw returned a chrome-and-navy photograph of a porthole,
+ * discarding both the flat-vector constraint and the art-directed palette.
+ * Cropping the sheet is deterministic, free, instant, and preserves exactly
+ * what was drawn.
+ *
+ * Fail-closed: anything other than a confident two-mark split returns nulls so
+ * the caller keeps the existing verified asset.
+ *
+ * @returns {{logo: Buffer|null, favicon: Buffer|null, reason: string|null}}
+ */
+/**
+ * Shrink a logo box that swallowed a detached decorative rule.
+ *
+ * A divider drawn under the wordmark occupies the SAME columns as the wordmark,
+ * so column segmentation cannot separate them — it lands inside the logo's own
+ * cluster and stretches the box downward (paris-in-spring: 136px of artwork in
+ * a 254px box, the extra being empty space and a hairline). Row bands inside
+ * the box that are both thin and clearly detached from the main body of the
+ * mark are decoration, not part of it.
+ *
+ * Exported for testing; safe to call on any box (returns it unchanged when
+ * nothing qualifies).
+ */
+export function trimDetachedRules(data, imageWidth, box, {
+  alphaThreshold = 8,
+  thinRatio = 0.06,
+  gapRatio = 0.04,
+} = {}) {
+  const height = box.y1 - box.y0 + 1;
+  const rowHas = [];
+  for (let y = box.y0; y <= box.y1; y++) {
+    let hit = false;
+    for (let x = box.x0; x <= box.x1; x++) {
+      if (data[(y * imageWidth + x) * 4 + 3] > alphaThreshold) { hit = true; break; }
+    }
+    rowHas.push(hit);
+  }
+
+  // Row bands within the box.
+  const bands = [];
+  let start = -1;
+  for (let i = 0; i < rowHas.length; i++) {
+    if (rowHas[i] && start === -1) start = i;
+    if ((!rowHas[i] || i === rowHas.length - 1) && start !== -1) {
+      bands.push({ i0: start, i1: rowHas[i] ? i : i - 1 });
+      start = -1;
+    }
+  }
+  if (bands.length < 2) return box;
+
+  const tallest = bands.reduce((a, b) => ((b.i1 - b.i0) > (a.i1 - a.i0) ? b : a));
+  const thin = Math.max(2, Math.round(height * thinRatio));
+  const minGap = Math.max(2, Math.round(height * gapRatio));
+  const keep = bands.filter((b) => {
+    if (b === tallest) return true;
+    const isThin = (b.i1 - b.i0 + 1) <= thin;
+    const gap = b.i0 > tallest.i1 ? b.i0 - tallest.i1 : tallest.i0 - b.i1;
+    return !(isThin && gap >= minGap);
+  });
+
+  return {
+    x0: box.x0,
+    x1: box.x1,
+    y0: box.y0 + Math.min(...keep.map((b) => b.i0)),
+    y1: box.y0 + Math.max(...keep.map((b) => b.i1)),
+  };
+}
+
+export async function extractKitMarks(kitBuffer, sharpImpl, {
+  tolerance = 20,
+  feather = 24,
+  padRatio = 0.02,
+} = {}) {
+  const sharp = sharpImpl;
+  const { data, info } = await sharp(kitBuffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+
+  const keyResult = keyOutBackground(data, info.width, info.height, { tolerance, feather });
+  if (!keyResult.keyed) return { logo: null, favicon: null, reason: 'brand kit background is not uniform' };
+
+  // Count opaque pixels inside a box — its "mass". Used to tell real marks
+  // from decoration: the sheet often carries a divider rule between the two
+  // marks, which is a legitimate cluster but a negligible fraction of the ink.
+  const massOf = (box) => {
+    let n = 0;
+    for (let y = box.y0; y <= box.y1; y++) {
+      for (let x = box.x0; x <= box.x1; x++) if (data[(y * info.width + x) * 4 + 3] > 8) n++;
+    }
+    return n;
+  };
+
+  // The sheet is "logo lockup, then favicon" — side by side or stacked,
+  // depending on what the image model felt like doing. The lockup is NOT
+  // reliably one cluster: when the emblem sits well clear of the wordmark it
+  // segments separately (olde-time-country: emblem | wordmark | GI tile). So
+  // the rule is positional, not count-based — the favicon is the trailing
+  // square tile, and the logo is everything before it, merged.
+  const union = (list) => list.reduce((acc, b) => ({
+    x0: Math.min(acc.x0, b.x0), x1: Math.max(acc.x1, b.x1),
+    y0: Math.min(acc.y0, b.y0), y1: Math.max(acc.y1, b.y1),
+  }));
+  const aspect = (b) => (b.x1 - b.x0 + 1) / (b.y1 - b.y0 + 1);
+
+  let split = null;
+  for (const axis of ['x', 'y']) {
+    const { boxes } = segmentMarkBoxes(data, info.width, info.height, { axis });
+    if (boxes.length < 2) continue;
+    const ordered = [...boxes].sort((a, b) => (axis === 'x' ? a.x0 - b.x0 : a.y0 - b.y0));
+    const faviconBox = ordered[ordered.length - 1];
+    // The trailing cluster must actually look like a favicon tile, or we are
+    // about to crop the tail of a lockup and call it an icon.
+    const ratio = aspect(faviconBox);
+    if (ratio < 0.6 || ratio > 1.7) continue;
+    // Only real lockup parts join the union. Sheets often carry a hairline
+    // divider between the marks; unioning that in drags the logo's bounding
+    // box down to enclose a stray rule (measured on paris-in-spring: 494x136
+    // of artwork became a 501x254 box with a floating line under it).
+    const parts = ordered.slice(0, -1).map((b) => ({ ...b, mass: massOf(b) }));
+    const heaviest = Math.max(...parts.map((b) => b.mass));
+    const lockup = parts.filter((b) => b.mass >= heaviest * 0.03);
+    const logoBox = trimDetachedRules(data, info.width, union(lockup));
+    // A lockup is wider than its own favicon; if it is not, the split is wrong.
+    if ((logoBox.x1 - logoBox.x0) <= (faviconBox.x1 - faviconBox.x0)) continue;
+    if (!massOf(logoBox) || !massOf(faviconBox)) continue;
+    split = { logoBox, faviconBox };
+    break;
+  }
+
+  if (!split) {
+    return { logo: null, favicon: null, reason: 'sheet does not separate into a logo lockup and a favicon tile' };
+  }
+  const { logoBox, faviconBox } = split;
+
+  const cut = async (box) => {
+    const pad = Math.round(Math.min(info.width, info.height) * padRatio);
+    const left = Math.max(0, box.x0 - pad);
+    const top = Math.max(0, box.y0 - pad);
+    const width = Math.min(info.width - left, box.x1 - box.x0 + 1 + pad * 2);
+    const height = Math.min(info.height - top, box.y1 - box.y0 + 1 + pad * 2);
+    return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })
+      .extract({ left, top, width, height })
+      .png()
+      .toBuffer();
+  };
+
+  return { logo: await cut(logoBox), favicon: await cut(faviconBox), reason: null };
+}

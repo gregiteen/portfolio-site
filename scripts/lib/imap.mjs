@@ -26,8 +26,14 @@ export async function getImapClient() {
   if (client) return client;
   const { user, pass } = imapCredentials();
   if (!user || !pass) throw new Error('IMAP credentials not configured');
-  
-  client = new ImapFlow({
+
+  // Connect on a local handle and only publish it to the module-level cache
+  // once the connection actually succeeds. Assigning `client` first means a
+  // failed connect (bad password, DNS blip) leaves a dead, never-connected
+  // ImapFlow cached forever — every later call short-circuits on `if (client)`
+  // and returns it, so the poller and /api/admin/webmail/* stay broken until
+  // the process restarts. That is the "Connection not available" failure mode.
+  const pending = new ImapFlow({
     host: IMAP_HOST,
     port: IMAP_PORT,
     secure: true,
@@ -37,8 +43,9 @@ export async function getImapClient() {
     },
     logger: false // Suppress verbose logs
   });
-  
-  await client.connect();
+
+  await pending.connect();
+  client = pending;
   return client;
 }
 
@@ -117,6 +124,27 @@ export async function fetchInbox() {
   }
 }
 
+const RECONNECT_DELAY_MS = 10000;
+let reconnectTimer = null;
+
+/**
+ * Retry the poller after the connection drops or a reconnect attempt fails.
+ * Single-flight: one pending timer at a time, so overlapping 'close' events
+ * (or a failure that fires while a retry is already queued) can't fan out
+ * into a growing pile of concurrent reconnect attempts.
+ */
+function scheduleReconnect(smtpTransport) {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    startImapPoller(smtpTransport).catch((e) => {
+      console.error('[IMAP] Reconnect failed, retrying:', e.message);
+      scheduleReconnect(smtpTransport);
+    });
+  }, RECONNECT_DELAY_MS);
+  reconnectTimer.unref?.(); // never hold the process open on this timer alone
+}
+
 export async function startImapPoller(smtpTransport) {
   const { user, pass } = imapCredentials();
   if (!user || !pass) {
@@ -169,9 +197,15 @@ export async function startImapPoller(smtpTransport) {
     }
   });
 
-  // Re-lock if lost
+  // Re-lock if lost. Two things this must get right:
+  //  - Swallow the reconnect's own failure. An unhandled rejection here exits
+  //    the process (Node's default), turning one IMAP blip into a PM2 restart.
+  //  - Re-arm itself on failure. A failed reconnect never reaches the line
+  //    that registers this handler, so there is no future 'close' event to
+  //    retry from — without rescheduling here the poller stays dead until the
+  //    process restarts.
   c.on('close', () => {
     client = null;
-    setTimeout(() => startImapPoller(smtpTransport), 10000); // Reconnect
+    scheduleReconnect(smtpTransport);
   });
 }

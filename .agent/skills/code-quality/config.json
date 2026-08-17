@@ -1,0 +1,43 @@
+{
+  "version": 3,
+  "toolchain": "javascript",
+  "repoDescription": "portfolio-site — Node ESM, no TypeScript and no ESLint. Its real quality gate is SSSS: the vault must pass `ssss conformance --engine` against vault-registry/. Plus the node:test suite and a syntax sweep.",
+  "globalLock": true,
+  "memory": { "maxOldSpaceMb": 2048 },
+  "lock": { "staleAfterMinutes": 30 },
+  "sourceExtensions": [".mjs", ".js"],
+  "checks": [
+    {
+      "id": "ssss-conformance",
+      "tier": "fast",
+      "description": "Canonical gate for this repo — the vault must satisfy the SSSS engine contract. Wired as `npm run validate`.",
+      "cmd": ["npm", "run", "validate"],
+      "parser": "generic",
+      "timeoutSeconds": 600
+    },
+    {
+      "id": "syntax",
+      "tier": "fast",
+      "description": "There is no linter here, so parse every tracked .mjs as the floor gate.",
+      "cmd": ["sh", "-c", "git ls-files '*.mjs' | grep -v '^node_modules/' | xargs -n1 node --check"],
+      "parser": "generic",
+      "timeoutSeconds": 300
+    },
+    {
+      "id": "test",
+      "tier": "fast",
+      "description": "node:test suite — light enough to stay in the default tier.",
+      "cmd": ["npm", "test"],
+      "parser": "generic",
+      "timeoutSeconds": 600
+    },
+    {
+      "id": "bundle-export",
+      "tier": "full",
+      "description": "Vault must still package into a valid .ucw bundle (SSSS spec §16).",
+      "cmd": ["npm", "run", "export"],
+      "parser": "generic",
+      "timeoutSeconds": 900
+    }
+  ]
+}

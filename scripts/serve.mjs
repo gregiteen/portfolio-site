@@ -3373,6 +3373,10 @@ OUTPUT JSON: { "company_name": "...", "industry": "...", "estimated_size": "..."
         await rm(join(__dirname, '..', 'designs', slug), { recursive: true, force: true });
         // Also remove vault skin if present
         await rm(join(__dirname, '..', 'vault', 'pages', 'skins', `${slug}.md`), { force: true }).catch(() => {});
+        // …and the promoted portfolio entry, if this design was ever promoted.
+        // Without this the design disappears from the CRM but survives on the
+        // public Designs index, linking to output we just deleted (404).
+        await rm(join(__dirname, '..', 'vault', 'pages', 'designs', `${slug}.md`), { force: true }).catch(() => {});
         rebuild('admin: deleted theme');
         return sendJson(res, 200, { success: true });
       } catch (/** @type {any} */ e) {
@@ -3430,7 +3434,7 @@ OUTPUT JSON: { "company_name": "...", "industry": "...", "estimated_size": "..."
       try {
         const { spawn } = await import('node:child_process');
         res.writeHead(200, { 'content-type': 'application/gzip', 'content-disposition': 'attachment; filename="assets.tar.gz"' });
-        const child = spawn('tar', ['-czf', '-', 'designs', 'vault/pages/skins'], { cwd: join(__dirname, '..'), stdio: ['ignore', 'pipe', 'pipe'] });
+        const child = spawn('tar', ['-czf', '-', 'designs', 'vault/pages/skins', 'vault/pages/designs'], { cwd: join(__dirname, '..'), stdio: ['ignore', 'pipe', 'pipe'] });
         let stderr = '';
         child.stderr.on('data', (c) => stderr += String(c));
         child.stdout.pipe(res);
@@ -3508,14 +3512,31 @@ OUTPUT JSON: { "company_name": "...", "industry": "...", "estimated_size": "..."
           await run('git', ['config', '--global', '--add', 'safe.directory', '/opt/portfolio-site']).catch(() => {});
           const hasGit = existsSync('/opt/portfolio-site/.git');
           if (!hasGit) {
+            // Re-attach VCS WITHOUT destroying the working directory.
+            //
+            // This branch used to be `rm -rf /opt/portfolio-site && git clone`.
+            // On 2026-08-11T23:06Z it fired and deleted every untracked runtime
+            // directory on the droplet — all 7 generated designs/ and their
+            // vault/pages/skins/ registry docs. None of that lives in any git
+            // repo, so the clone could not bring it back; it was only
+            // recoverable because a stale backup happened to still exist.
+            // Never delete the worktree here: clone into a scratch dir, move
+            // just the .git metadata across, then reset the tracked files.
             const token = process.env.GITHUB_TOKEN || process.env.github_token || '';
             const url = token ? `https://x-access-token:${token}@github.com/gregiteen/portfolio-site.git` : 'https://github.com/gregiteen/portfolio-site.git';
-            await run('rm', ['-rf', '/opt/portfolio-site'], '/opt');
-            await run('git', ['clone', url, '/opt/portfolio-site'], '/opt');
-          } else {
-            await run('git', ['fetch', '--all']);
-            await run('git', ['reset', '--hard', 'origin/main']);
+            if (!existsSync('/opt/portfolio-site')) {
+              // No worktree at all — nothing to preserve, a plain clone is safe.
+              await run('git', ['clone', url, '/opt/portfolio-site'], '/opt');
+            } else {
+              const scratch = '/opt/.portfolio-git-reattach';
+              await run('rm', ['-rf', scratch], '/opt');
+              await run('git', ['clone', '--no-checkout', url, scratch], '/opt');
+              await run('mv', [`${scratch}/.git`, '/opt/portfolio-site/.git'], '/opt');
+              await run('rm', ['-rf', scratch], '/opt');
+            }
           }
+          await run('git', ['fetch', '--all']);
+          await run('git', ['reset', '--hard', 'origin/main']);
           await run('npm', ['ci', '--include=dev', '--no-audit', '--no-fund']);
           await run('npm', ['run', 'build']);
           await run('pm2', ['reload', 'portfolio']);
