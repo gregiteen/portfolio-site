@@ -39,6 +39,15 @@ Run `node .agent/skills/webmail/scripts/check-webmail-env.mjs` to see what's con
 7. `GET /crm` → serves `crm-app.html` with an injected nav bar. Its client-side JS calls `/api/admin/*` on the *main* router (excluded from the webmail router by the `/api/` prefix), gated by `isAdmin()` — accepts the `gi_webmail` cookie if the session email is the mail owner/admin/`sales@gregiteen.xyz`.
 8. From `/crm`, "Open signing workspace" hits the Documenso SSO flow — see the `documenso` skill for that handoff.
 
+## Inbox rules, HTML display, signature and tracking
+
+- **Inbox rules:** `scripts/lib/mail-rules.mjs` is the one rule list. `node scripts/mail-filter.mjs` (on the droplet) installs it as the mailbox's Mailcow Sieve prefilter via the API; `--sweep` files existing inbox mail by the same rules; `--dry-run` prints the script and plan. DMARC reports, bounces, signing notices and self-sent mail go to folders; the site's `Project brief:` and `[PROPOSAL]` notices are kept in the inbox. Real spam is rspamd's (global Sieve moves it to Junk). Edit the rule list and rerun; never edit the Sieve script in Mailcow by hand.
+- **Folders:** the UI serves `MAIL_FOLDERS` under `/f/<Folder>/...`; the inbox keeps the bare paths.
+- **HTML mail:** `scripts/lib/email-html.mjs` writes a CSP into the sandboxed iframe (no remote loads until `?images=1`), strips tracking pixels always, resolves `cid:` images.
+- **Outgoing:** `sendMessage` adds the signature (`scripts/lib/mail-signature.mjs`) and an open pixel at `/api/track/open/<id>.gif`, saves a copy to Sent, and writes a `sent_message` document under `vault/runtime/sent/`. Webmail SMTP is `WEBMAIL_SMTP_HOST`/`WEBMAIL_SMTP_PORT` (default 587) only; never `SMTP_*`, which is the transactional relay.
+- **Delivery status** (`scripts/lib/mail-tracking.mjs`) is refreshed when the Sent folder is viewed: Postfix log via `docker compose logs postfix-mailcow` (relayed / deferred / bounced by the Brevo relay) plus bounce notices in `Bounces`. Confirmed delivery needs a Brevo API key, which is not configured.
+- Tests: `test/mail-rules.test.mjs`, `test/mail-tracking.test.mjs` (pure helpers only; no IMAP/SMTP).
+
 ## Mailcow password sync
 
 Two systems hold the same mailbox password independently: Dovecot/Mailcow's own DB row, and this app's `.env` (`IMAP_PASS`) plus any live in-memory `webmailSessions`. `POST /api/reset-password` is the single writer that keeps all of it consistent, in this order:
@@ -51,7 +60,7 @@ Skip step 1 and the old password still works over IMAP after a "reset." Skip ste
 
 ## Testing
 
-`npm test` covers `mailcow-password.mjs` fully (mocked, no real Docker/mysql). **There are no tests at all** for `webmail.mjs`, `webmail-ui.mjs`, or `imap.mjs` — changes to login, inbox rendering, send, or the OOO poller have no automated regression net. Say so explicitly; don't imply coverage that doesn't exist.
+`npm test` covers `mailcow-password.mjs` fully (mocked, no real Docker/mysql). **There are no tests** for the IMAP/SMTP paths in `webmail.mjs`, `webmail-ui.mjs`, or `imap.mjs` (the mail rules, HTML preparation, signature and tracking parsers are covered) — changes to login, inbox rendering, send, or the OOO poller have no automated regression net. Say so explicitly; don't imply coverage that doesn't exist.
 
 ## Gotchas
 
