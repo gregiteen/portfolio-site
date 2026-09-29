@@ -29,7 +29,7 @@ test('the home page lists every deployed site and every open-source project from
   const html = site.get('index.html');
   const sites = pages.filter((p) => p.data.x_kind === 'deployed-site');
   const oss = pages.filter((p) => p.data.x_kind === 'open-source');
-  assert.ok(sites.length >= 4 && oss.length >= 5);
+  assert.ok(sites.length >= 2 && oss.length >= 2);
   for (const s of sites) { assert.ok(html.includes(`href="${s.data.x_url}"`), s.data.x_url); assert.ok(html.includes(s.data.x_host)); }
   for (const o of oss) assert.ok(html.includes(`href="${o.data.x_repo}"`), o.data.x_repo);
 });

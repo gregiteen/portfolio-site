@@ -14,22 +14,18 @@ x_tech:
   - "Plugin manifests"
   - "SSSS"
   - "node:test"
-x_link: "https://github.com/gregiteen/tr-plugin-code-quality"
-x_repo: "https://github.com/gregiteen/tr-plugin-code-quality"
+x_link: "https://github.com/gregiteen/total-recall"
+x_repo: "https://github.com/gregiteen/total-recall"
 x_featured: true
 ---
 
 ## A deliberately small core
 
-Total Recall's core is limited to three things: SSSS documents, the vector index derived from them, and files. Every other capability is a plugin with a manifest, its own repository, its own SSSS vault and its own test suite that replays the conformance fixtures. The roster includes domains (search, purchase, DNS and certificates through provider APIs), telephony (numbers, routing, voicemail and carrier compliance), messaging (SMS and MMS with signed webhooks and opt-out handling), document signing, design synthesis from DESIGN.md tokens, typed decisions, code quality and the composable CLI itself. Each is white-label: an application that installs one supplies its own name and branding, and nothing in the plugin refers to a particular product.
+Total Recall's core is limited to three things: SSSS documents, the vector index derived from them, and files. Every other capability is a plugin with a manifest, its own repository, its own SSSS vault and its own test suite that replays the conformance fixtures. The roster includes domains (search, purchase, DNS and certificates through provider APIs), telephony (numbers, routing, voicemail and carrier compliance), messaging (SMS and MMS with signed webhooks and opt-out handling), document signing, design synthesis from DESIGN.md tokens, typed decisions and the composable CLI itself. Each is white-label: an application that installs one supplies its own name and branding, and nothing in the plugin refers to a particular product.
 
 ## Installing a capability
 
 A plugin can be installed into a brain or deployed into an application. Deployment computes a read-only plan first: every file the capability would create or modify, conflicts with existing files, the access grants and resources it requires, and a SHA-256 hash of the plan itself, so that what is approved is exactly what is applied. Lockfiles, environment files and other protected files are never written. After application, verification checks file digests and SSSS conformance, and an upgrade follows the same plan-then-apply path.
-
-## Code quality that fails closed
-
-The code-quality plugin, the first to be published, runs each repository's own gate list once as a background job and writes a report. Gates may be commands with a parser for their tool's output, or forbidden-pattern checks that turn a written invariant into a failing test. The runner is strict about false confidence: a gate that scans zero files, or a tool that exits without parseable output, is never reported as clean, and every report records the git revision and the freshness of the sources it examined. A machine-wide lock ensures that only one check runs per host, and heavy tiers can be routed to a designated machine.
 
 ## The composable command line
 
