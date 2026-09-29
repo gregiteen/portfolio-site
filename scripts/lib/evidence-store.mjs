@@ -57,7 +57,7 @@ function serializeDocument(frontmatter, body = '') {
 }
 
 async function writeVaultDocument(relPath, content) {
-  const result = engine.processOperation({
+  const result = await engine.processOperation({
     type: 'operation',
     idempotency_key: createHash('sha256').update(relPath + '\n' + content).digest('hex'),
     workspace_id: 'portfolio-evidence',

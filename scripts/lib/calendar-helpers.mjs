@@ -26,6 +26,6 @@ opportunity_id: "${opportunity_id||''}"
 
 Opportunity ${opportunity_id||''}
 `;
-  const res = engine.processOperation({ type:'operation', idempotency_key: createHash('sha256').update(rel+'\n'+content).digest('hex'), workspace_id:'portfolio-runtime', path: rel, content, actor:{role:'system'} }, vaultRoot);
+  const res = await engine.processOperation({ type:'operation', idempotency_key: createHash('sha256').update(rel+'\n'+content).digest('hex'), workspace_id:'portfolio-runtime', path: rel, content, actor:{role:'system'} }, vaultRoot);
   if (!res.success) throw new Error(res.validation?.errors?.join(';'));
 }

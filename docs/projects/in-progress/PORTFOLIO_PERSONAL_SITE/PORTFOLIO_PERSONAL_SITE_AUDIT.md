@@ -129,6 +129,8 @@ None of the credentials are in the repo (`.env` ignored; the stray `.env.bak-mai
 - **Consequence:** `deploy.sh` step 3 runs `npm ci --include=dev` on the droplet and aborts with "CRITICAL: Production dependency install or build failed" (A-001). The web deploy hook runs the same `npm ci` and would also fail.
 - **Coverage gaps:** no test imports `serve.mjs` (it has import-time side effects), so routes, auth gating, `isPublicPath` and every redirect are untested. Lint/type: no linter configured beyond `.agent/skills/code-quality`, not run here.
 
+- **Late finding (A-019), same audit, clean-checkout boot on the Mac mini:** after the baseline, booting the server from the clean export failed with `SSSS write failed for runtime/config/banner-offers.md: unknown error`. Cause: `processOperation()` became async in SSSS 0.10.1 (the repo's commit `e6b1170` awaited it only in the conformance test). On the droplet this is masked only if no write path runs, which is unlikely; production write behaviour was not verified from here.
+
 ## 9. Debt and dead code
 
 - `serve.mjs` is a 3,765-line monolith with import-time side effects (A-012).
@@ -172,6 +174,7 @@ None of the credentials are in the repo (`.env` ignored; the stray `.env.bak-mai
 | A-015 | P1-high | Whole site is behind an email-verification wall | `isPublicPath` (`serve.mjs` 1270) | visitors cannot see the portfolio; a site about Greg must be public | public mode when generation is off (done, uncommitted) | fix in this project |
 | A-016 | P1-high | Generation is woven through the visitor flow (splash → verify → generate, flipper and generator scripts injected by `build-site.mjs`, skin redirects) | `serve.mjs` 1360-1430, `verify.html`, `build-site.mjs` ~780-840 | disabling only the endpoints leaves broken redirects and dead UI | flag-gate server (done, uncommitted), verify/splash (done), and remove flipper/generator injection when off | fix in this project |
 | A-017 | P3-low | 584 MB worktree and 423 MB `dist/` in the working tree | `du` | disk only | clean the stale worktree | defer |
+| A-019 | P0-critical | `engine.processOperation()` is async in SSSS 0.10.1 but six call sites use it synchronously, so every SSSS write returns a Promise and reports `unknown error` | `runtime-store.mjs:252`, `lib/crm-store.mjs:74`, `lib/evidence-store.mjs:60`, `lib/calendar-helpers.mjs:29`, `lib/task-helpers.mjs:34`, `backfill-rescued-evidence.mjs:30`; boot on a clean checkout dies at `ensureBannerOffersSeeded` (`serve.mjs:545`) | visitor profiles, proposals, CRM, evidence, calendar and tasks cannot be written; a fresh machine cannot start the server. Found late: the audit's clean-checkout boot test on the Mac mini (a step after the baseline) | `await` all six calls; add a static regression test | fix in this project (done, commit pending) |
 | A-018 | P2-medium | Mailcow-based webmail and mail stack is production infrastructure | `lib/webmail*`, `set-mailcow-pass.sh` | Greg has said he does not want Mailcow for JSN; unclear for the site | see decision D-3 | decision |
 
 ## 13. Impact on the requested change

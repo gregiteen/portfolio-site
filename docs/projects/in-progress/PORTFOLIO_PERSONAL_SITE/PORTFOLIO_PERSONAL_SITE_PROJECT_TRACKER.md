@@ -19,6 +19,7 @@
 - [/] A-002 suite: 124/125 on the mini before the smoke-test env fix; rerun for green
 - [x] A-015 site public when generation is off (flag, `site-mode.mjs`)
 - [x] A-016 generation fully off: routes, redirects, splash/verify, build-time injection (flipper, lead-gen banner, start-a-project links, cookie notice, visitor beacon)
+- [x] A-019 all six `engine.processOperation()` calls awaited; regression test `test/ssss-async-engine.test.mjs`; server boots on a clean checkout (verify on the mini)
 - [x] A-003 Gemini removed from active code (proposal enrichment no longer grounded, visitor research returns 501, runtime key setter and `geminiCall` removed, 18 `gen-*.mjs` deleted, `improve-theme.mjs` refuses to start until ported); web-grounded research on OpenRouter is deferred
 - [x] Tests: `test/personal-site.test.mjs` (unit tests plus a spawn smoke test with dummy SMTP env)
 
