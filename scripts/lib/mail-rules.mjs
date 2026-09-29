@@ -8,10 +8,18 @@
 
 export const FILTER_DESC = 'portfolio-site inbox rules';
 
-// Order matters: the first rule that matches files the message.
+// Order matters: the first rule that matches decides. folder null means keep
+// in the inbox and stop, which protects the site's own notifications (briefs and
+// proposals are sent from @gregiteen.xyz) from the System rule below.
 // mode 'any': a from OR a subject match is enough.
 // mode 'all': needs a from match AND a subject match.
 export const MAIL_RULES = [
+  {
+    folder: null,
+    mode: 'all',
+    from: ['@gregiteen.xyz'],
+    subject: ['Project brief:', '[PROPOSAL]'],
+  },
   {
     folder: 'Reports',
     mode: 'any',
@@ -39,7 +47,7 @@ export const MAIL_RULES = [
 ];
 
 /** Folders the webmail shows, in navigation order. */
-export const MAIL_FOLDERS = ['INBOX', ...MAIL_RULES.map((r) => r.folder), 'Junk'];
+export const MAIL_FOLDERS = ['INBOX', 'Sent', ...MAIL_RULES.filter((r) => r.folder).map((r) => r.folder), 'Junk'];
 
 const has = (haystack, needles) => {
   const h = String(haystack || '').toLowerCase();
@@ -66,7 +74,8 @@ export function toSieve(rules = MAIL_RULES) {
     if (rule.from.length) tests.push(`address :contains "from" ${list(rule.from)}`);
     if (rule.subject.length) tests.push(`header :contains "subject" ${list(rule.subject)}`);
     const test = tests.length === 1 ? tests[0] : `${rule.mode === 'all' ? 'allof' : 'anyof'}(${tests.join(', ')})`;
-    return `if ${test} {\n  fileinto :create ${quote(rule.folder)};\n  stop;\n}`;
+    const action = rule.folder ? `fileinto :create ${quote(rule.folder)};` : 'keep;';
+    return `if ${test} {\n  ${action}\n  stop;\n}`;
   });
   return `# ${FILTER_DESC}: generated from scripts/lib/mail-rules.mjs. Edit there, not here.\nrequire ["fileinto", "mailbox"];\n\n${blocks.join('\n\n')}\n`;
 }

@@ -80,7 +80,7 @@ async function sweepInbox() {
       lock.release();
     }
     if (!dryRun) {
-      for (const { folder } of MAIL_RULES) {
+      for (const { folder } of MAIL_RULES.filter((r) => r.folder)) {
         if (!present.has(folder) && !plan.has(folder)) await client.mailboxCreate(folder);
         await client.mailboxSubscribe(folder).catch(() => {});
       }
