@@ -12,10 +12,7 @@ x_nav_order: 3
 
 ## Get in touch
 
-![Greg Iteen](/assets/greg-portrait.jpg)
-
 - **Email** — [me@gregiteen.xyz](mailto:me@gregiteen.xyz)
 - **GitHub** — [github.com/gregiteen](https://github.com/gregiteen)
 
-I'm open to collaborations on local-first tooling, AI memory systems, and
-open standards work.
+I read every message. Collaboration on local-first tooling, agent memory and open standards is welcome.

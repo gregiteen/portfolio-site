@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { parseDocument } from '@ssss/cli/frontmatter';
 import { extractSections, fillTemplate, hoistCssImports, INTERACTION_CSS } from './lib/theme.mjs';
 import { createWaitingProfile } from './lib/waiting-profile.mjs';
+import { buildPersonal } from './build-personal.mjs';
 import { execSync } from 'child_process';
 
 let targetDesign = null;
@@ -1712,6 +1713,10 @@ try {
     await cp(join(staticDir, f), join(outDir, f), { force: true });
   }
 } catch {}
+if (PERSONAL && !targetDesign) {
+  const written = await buildPersonal({ pages, outDir });
+  console.log(`Personal site: ${written.length} pages`);
+}
 if (!targetDesign) {
   await writeFile(
     join(outDir, 'waiting-profile.json'),

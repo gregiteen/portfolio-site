@@ -2,6 +2,28 @@
 name: "Greg Iteen — Brand"
 accent: "#ff6a00"
 style: "Stamped wordmark, black & white, one accent color"
+site:
+  name: "Cyanotype specimen sheet"
+  colors:
+    ink: "#061f3a"
+    ink-2: "#0a2c50"
+    line: "rgba(156,199,232,0.22)"
+    paper: "#eaf3fa"
+    dim: "#8fb0cb"
+    signal: "#ff6a00"
+  typography:
+    display: "Anybody (variable width 50-150, weight 100-900)"
+    body: "Hanken Grotesk 400/500/600"
+    mono: "Martian Mono 300-600, uppercase labels"
+  spacing:
+    gutter: "clamp(20px, 5vw, 72px)"
+    max-width: "1320px"
+  motion:
+    hero: "Per-glyph width sweep on load; glyph width answers the pointer afterwards"
+    field: "Registration crosses displaced by the pointer, spring home, and leave orange traces while displaced"
+    reveal: "Diagrams draw their strokes on scroll; sections rise once"
+    reduced: "prefers-reduced-motion removes all of it; the page is complete without it"
+
 ---
 
 # Brand Design System
@@ -108,3 +130,20 @@ was an early default skin's auto-generated design spec that got left at
 the repo root and then copied by hand into a few pages (`consult.html`,
 the sign wrapper, webmail) without checking it against the real logo
 files. Rewritten to match the actual authored brand mark.
+
+## Personal site (2026-09)
+
+The public site at gregiteen.xyz is a set of specimen sheets on cyanotype paper. The reference is engineering documentation, chosen because the work is specifications and file formats: deep prussian ground, pale drafting linework, registration crosses in a grid.
+
+**Why this and not the usual answers.** A dark page with one acid accent and a warm cream serif page are the two defaults. This uses a single ink colour and the brand's own orange dot (from the `greg.iteen` wordmark) as the only signal: it marks live sites, the traces the pointer leaves, and the ends of the diagrams. Orange never appears as decoration.
+
+**Type.** Anybody is a variable-width grotesque. Width is the design's instrument: the headline is set letter by letter and each glyph widens as the pointer approaches, then relaxes. Hanken Grotesk carries the body; Martian Mono sets the labels and every fact that is a date, status or command.
+
+**Motion, one idea.** The background field is memory made visible: marks are pushed off their positions and always return to them. That is what the projects do with data. Everything else is quiet: hairline rules, diagrams that draw once, an image of each deployed site that follows the pointer over its row.
+
+**Structure is information.** No numbered markers, because nothing here is a sequence. Rows carry facts: host, HTTP status and the date it was checked, year, role, stack.
+
+**Copy.** Dry, exact, unhyped. No emoji, no product-marketing verbs, no claims that were not checked. Licences and metrics appear only where they are true and dated.
+
+**Rules for changes.** Mobile-first CSS with `min-width` queries only; 44px minimum targets; every animation has a `prefers-reduced-motion` fallback; content comes from vault documents (`x_kind`: `idea`, `deployed-site`, `open-source`, `project`, `section`); tests in `test/personal-render.test.mjs` enforce the copy and link rules.
+

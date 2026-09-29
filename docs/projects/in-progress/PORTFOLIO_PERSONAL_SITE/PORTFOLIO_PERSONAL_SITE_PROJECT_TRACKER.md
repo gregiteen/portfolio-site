@@ -40,12 +40,12 @@
 
 ## ⏳ Phase 4: Copy and deploy
 
-- [ ] A-020 personal-site renderer (`scripts/build-personal.mjs`) wired into personal mode
-- [ ] A-021 vault kinds `deployed-site` and `open-source` with documents for the verified entries
-- [ ] Redesign: hero with motion graphics, innovation story, deployed sites, open-source projects, project pages, About with LinkedIn, contact
-- [ ] A-022 every fact dated and verified; no unverified licence or metric
-- [ ] A-023 reduced-motion fallback and performance checked in the browser pane
-- [ ] Greg reviews the redesign in the browser pane
+- [x] A-020 personal-site renderer (`scripts/build-personal.mjs`, `scripts/lib/personal/`) wired into personal mode
+- [x] A-021 vault kinds `idea`, `deployed-site`, `open-source` with documents for the verified entries (4 sites, 6 repositories, 3 ideas)
+- [x] Redesign: cyanotype specimen sheet with per-glyph width hero, pointer field, drawn diagrams, site previews, project pages, About with LinkedIn, contact (seen in the browser pane, desktop and phone width)
+- [x] A-022 every fact dated and verified; no licence or metric claims (enforced by test)
+- [/] A-023 reduced-motion fallback in CSS and JS (tested by contract); performance check on the deployed site pending
+- [ ] Greg reviews the redesign (dev server: http://localhost:4590 while running)
 - [ ] Gates on the Mac mini; PM2 env set; deploy via the deploy skill
 
 ## ⏳ Phase 5: Testing and verification
