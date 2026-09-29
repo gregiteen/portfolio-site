@@ -77,7 +77,7 @@ test('every internal link resolves to a generated page or a shipped asset', () =
 test('accessibility and motion contract', () => {
   const html = site.get('index.html');
   const css = readFileSync('assets/personal/site.css', 'utf8');
-  assert.match(html, /<h1[^>]+aria-label="Software that remembers whom it belongs to\."/);
+  assert.match(html, /<h1[^>]+aria-label="Software that remembers to whom it belongs\."/);
   assert.match(html, /class="skip"/);
   assert.match(html, /<html lang="en">/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);

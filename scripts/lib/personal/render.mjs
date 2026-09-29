@@ -18,13 +18,19 @@ const kind = (pages, k) => pages.filter((p) => p.data.x_kind === k);
 const list = (v) => (Array.isArray(v) ? v : v ? [v] : []);
 const isoDate = (v) => String(v ?? '').slice(0, 10);
 
-/** Headline split into words and characters so each glyph can animate its own width. */
+/**
+ * Headline split into words and characters so each glyph can animate its own
+ * width. `*word*` marks the emphasised word (kept from the vault's own markup).
+ */
+const plain = (text) => String(text).replaceAll('*', '');
 function splitHeadline(text) {
   let i = 0;
-  return text.split(' ').map((word) => {
+  return String(text).split(' ').map((token) => {
+    const emphasised = /^\*.*\*[^\w]*$/.test(token) || /^\*[^*]+\*/.test(token);
+    const word = plain(token);
     const chars = [...word].map((c) => `<span class="ch" style="--i:${i++}" aria-hidden="true">${esc(c)}</span>`).join('');
     i += 1;
-    return `<span class="w">${chars}</span>`;
+    return `<span class="w${emphasised ? ' em' : ''}">${chars}</span>`;
   }).join(' ');
 }
 
@@ -144,7 +150,7 @@ function home(pages) {
   const headline = h.data.x_headline;
   const body = `<section class="hero" aria-labelledby="hero-title">
   <p class="eyebrow mono">Greg Iteen &middot; software</p>
-  <h1 id="hero-title" aria-label="${esc(headline)}">${splitHeadline(headline)}</h1>
+  <h1 id="hero-title" aria-label="${esc(plain(headline))}">${splitHeadline(headline)}</h1>
   <p class="tagline">${esc(h.data.x_tagline)}</p>
   <div class="intro">${h.html}</div>
   <a class="scroll" href="#ideas" aria-label="Scroll to ideas"><span></span></a>

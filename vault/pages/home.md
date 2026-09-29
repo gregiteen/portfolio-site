@@ -1,15 +1,21 @@
 ---
 type: page
 slug: "home"
-title: "Greg Iteen — Software that remembers whom it belongs to"
-description: "Greg Iteen builds local-first software: open specs, agent memory, and deployed products where the user owns the data."
+title: "Greg Iteen — Builder of Local Software"
+description: "Portfolio home page: intro and featured work."
 timestamp: 2026-07-03T20:00:00Z
 name: "Home"
 sandbox_entry: "index.html"
 x_kind: "section"
 x_nav_order: 1
-x_headline: "Software that remembers whom it belongs to."
-x_tagline: "Files are the database. Markdown is the schema. The user keeps the copy."
+x_headline: "Software that *remembers* to whom it belongs."
+x_tagline: "I build AI systems that own their own memory."
 ---
 
-I build local-first software. The systems below share one idea: state should live in plain, inspectable files that the person it belongs to can read, move and keep. Some of it is deployed and running today; the rest is open source.
+I'm **Greg Iteen** — a full-stack engineer building AI-native tools where the
+filesystem is the database, Markdown is the schema, and users keep localty
+over their own data.
+
+Recent obsessions: local-first memory systems, deterministic operation
+contracts for AI-generated writes, and making agents that remember you
+tomorrow what you taught them today.

@@ -34,7 +34,12 @@ test('engine implements the canonical Operation Contract (spec §6)', async () =
 });
 
 test('this vault exports, validates, and round-trips as a sale bundle (spec §16/§17)', async () => {
-  const bundle = exportBundle(VAULT, { profile: 'sale', name: 'starter', registryDir: REGISTRY });
+  // Runtime state (vault/runtime, .events, generated skins) is machine-local and gitignored;
+  // a developer's running server writes documents there that are not part of the sellable vault.
+  const authored = fs.mkdtempSync(path.join(os.tmpdir(), 'ssss-vault-'));
+  fs.cpSync(VAULT, authored, { recursive: true, filter: (src) => !/[\\/](runtime|\.events|skins)([\\/]|$)/.test(src) });
+  const bundle = exportBundle(authored, { profile: 'sale', name: 'starter', registryDir: REGISTRY });
+  fs.rmSync(authored, { recursive: true, force: true });
   const { valid, errors } = validateBundle(bundle, { registryDir: REGISTRY });
   assert.ok(valid, 'bundle invalid: ' + errors.join('; '));
   assert.ok(!bundle.files.some((f) => f.path.startsWith('tasks/')), 'tenant_private leaked into sale export');

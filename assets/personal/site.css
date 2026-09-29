@@ -71,6 +71,9 @@ h1 .w { display: inline-block; white-space: nowrap; }
   60% { opacity: 1; }
   to { font-variation-settings: "wdth" 100, "wght" 720; opacity: 1; transform: none; }
 }
+h1 .w.em { position: relative; }
+h1 .w.em::after { content: ""; position: absolute; left: 0.04em; right: 0.04em; bottom: 0.02em; height: 0.05em; background: var(--signal); transform: scaleX(0); transform-origin: 0 50%; animation: underline 1s var(--ease) 1.5s forwards; }
+@keyframes underline { to { transform: scaleX(1); } }
 h1.pt { font-size: clamp(2.6rem, 10vw, 8rem); }
 .tagline { max-width: 34ch; margin: 28px 0 0; font: 500 clamp(1.15rem, 2.4vw, 1.6rem)/1.35 var(--body); color: var(--paper); opacity: 0; animation: fadeUp 0.9s var(--ease) 1.5s both; }
 .intro { max-width: 58ch; margin-top: 22px; color: var(--dim); opacity: 0; animation: fadeUp 0.9s var(--ease) 1.7s both; }
@@ -208,6 +211,7 @@ a:hover > .arrow, a:hover .arrow, a:focus-visible .arrow { transform: translateX
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .ch, .tagline, .intro { animation: none !important; opacity: 1; }
+  h1 .w.em::after { animation: none; transform: scaleX(1); }
   .js [data-reveal] { opacity: 1; transform: none; transition: none; }
   .dg path, .dg circle { stroke-dashoffset: 0; transition: none; }
   .scroll span::after, .live::after { animation: none; }
