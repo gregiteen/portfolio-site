@@ -5,6 +5,7 @@
 // IMAP/SMTP calls this renders around.
 import { randomBytes } from 'node:crypto';
 import { verifyLogin, listMessages, getMessage, sendMessage } from './webmail.mjs';
+import { MAIL_FOLDERS } from './mail-rules.mjs';
 
 // token -> { email, password, createdAt }. Deliberately in-memory only —
 // mailbox passwords never touch disk. A server restart just means everyone
@@ -112,6 +113,10 @@ button:hover,.btn:hover{background:var(--accent-2);border-color:var(--accent-2);
 .attachments{margin-top:18px;font-family:'IBM Plex Mono',monospace;font-size:.8rem}
 .attachments a{color:var(--accent);text-decoration:none}
 .attachments a:hover{text-decoration:underline}
+.folders{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:22px;font-family:'IBM Plex Mono',monospace;font-size:.7rem;letter-spacing:.08em;text-transform:uppercase}
+.folders a{color:var(--gray);text-decoration:none;border:1px solid var(--line);padding:7px 11px;transition:all .15s}
+.folders a:hover{color:var(--white);border-color:var(--line-strong)}
+.folders a[aria-current=page]{color:var(--black);background:var(--white);border-color:var(--white)}
 .empty{color:var(--gray);font-family:'IBM Plex Mono',monospace;font-size:.82rem;padding:56px 24px;text-align:center;line-height:1.6}
 .empty strong{color:var(--white);font-family:'Archivo Black',sans-serif;font-size:1rem;display:block;margin-bottom:8px;letter-spacing:-.01em}
 @media(max-width:640px){.row{grid-template-columns:1fr auto}.row .from{grid-column:1/-1;font-size:.74rem}.toolbar{flex-direction:column;align-items:stretch}}
@@ -175,31 +180,46 @@ function formatDate(d) {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: sameYear ? undefined : 'numeric' });
 }
 
-function inboxPage(messages) {
+/** URL prefix for a folder; the inbox keeps the bare paths. */
+function folderBase(folder) {
+  return folder === 'INBOX' ? '' : `/f/${encodeURIComponent(folder)}`;
+}
+
+function folderLabel(folder) {
+  return folder === 'INBOX' ? 'Inbox' : folder;
+}
+
+function folderNav(current) {
+  return `<nav class="folders">${MAIL_FOLDERS.map((f) =>
+    `<a href="${folderBase(f) || '/'}"${f === current ? ' aria-current="page"' : ''}>${escapeHtml(folderLabel(f))}</a>`).join('')}</nav>`;
+}
+
+function inboxPage(messages, folder = 'INBOX') {
   const unread = messages.filter(m=> !m.seen).length;
+  const label = folderLabel(folder);
   const rows = messages.length
-    ? messages.map((m) => `<a class="row${m.seen ? '' : ' unseen'}" href="/message/${m.uid}">
+    ? messages.map((m) => `<a class="row${m.seen ? '' : ' unseen'}" href="${folderBase(folder)}/message/${m.uid}">
         <span class="from">${!m.seen ? '<span class="dot"></span>' : ''}${escapeHtml(m.fromName || m.from)}</span>
         <span class="subject">${escapeHtml(m.subject)}</span>
         <span class="date">${escapeHtml(formatDate(m.date))}</span>
       </a>`).join('\n')
-    : `<div class="empty"><strong>Inbox is empty</strong>New messages to this mailbox will appear here.</div>`;
+    : `<div class="empty"><strong>${escapeHtml(label)} is empty</strong>${folder === 'INBOX' ? 'New correspondence will appear here. Automated mail is filed into the other folders.' : 'Nothing has been filed here yet.'}</div>`;
   return shell({
-    title: 'Inbox',
-    body: `<h1>Inbox</h1>
+    title: label,
+    body: `${folderNav(folder)}<h1>${escapeHtml(label)}</h1>
 <div class="subhead">${messages.length} messages ${unread ? `· ${unread} unread` : ''}</div>
 <div class="toolbar"><span class="count">${messages.length ? 'Newest first' : 'Live IMAP — no mocks'}</span><a class="btn" href="/compose">Compose</a></div>
 <div class="list">${rows}</div>`,
   });
 }
 
-function messagePage(msg) {
+function messagePage(msg, folder = 'INBOX') {
   const bodyHtml = msg.html
     ? `<iframe class="body-frame" sandbox="" srcdoc="${escapeHtml(msg.html)}"></iframe>`
     : `<div class="body-text">${escapeHtml(msg.text || '(empty message)')}</div>`;
   const attachments = msg.attachments.length
     ? `<div class="attachments"><strong>Attachments:</strong><br>${msg.attachments
-        .map((a) => `<a href="/message/${msg.uid}/attachment/${a.index}">${escapeHtml(a.filename)}</a> (${Math.round(a.size / 1024)} KB)`)
+        .map((a) => `<a href="${folderBase(folder)}/message/${msg.uid}/attachment/${a.index}">${escapeHtml(a.filename)}</a> (${Math.round(a.size / 1024)} KB)`)
         .join('<br>')}</div>`
     : '';
   return shell({
@@ -258,8 +278,10 @@ export async function handleWebmail(req, res, urlPath) {
     const email = webmailMailbox();
     try {
       await verifyLogin(email, password);
-    } catch {
-      return sendHtml(res, 401, loginPage('Wrong password.'));
+    } catch (e) {
+      // imapflow marks a rejected login; anything else means the server was not reached.
+      if (e?.authenticationFailed) return sendHtml(res, 401, loginPage('Wrong password.'));
+      return sendHtml(res, 502, loginPage(`Could not reach the mail server: ${e?.message || 'unknown error'}`));
     }
     const token = randomBytes(24).toString('hex');
     webmailSessions.set(token, { email, password, createdAt: Date.now() });
@@ -280,10 +302,23 @@ export async function handleWebmail(req, res, urlPath) {
     return res.end();
   }
 
-  if (urlPath === '/' && req.method === 'GET') {
+  // Filed folders live under /f/<Folder>/...; the inbox keeps the bare paths.
+  let folder = 'INBOX';
+  let route = urlPath;
+  const folderMatch = urlPath.match(/^\/f\/([^/]+)(\/.*)?$/);
+  if (folderMatch) {
+    folder = decodeURIComponent(folderMatch[1]);
+    route = folderMatch[2] || '/';
+    if (folder === 'INBOX' || !MAIL_FOLDERS.includes(folder)) {
+      res.writeHead(404, { 'content-type': 'text/plain' });
+      return res.end('Not found');
+    }
+  }
+
+  if (route === '/' && req.method === 'GET') {
     try {
-      const messages = await listMessages(session.email, session.password, { limit: 50 });
-      return sendHtml(res, 200, inboxPage(messages));
+      const messages = await listMessages(session.email, session.password, { limit: 50, folder });
+      return sendHtml(res, 200, inboxPage(messages, folder));
     } catch (e) {
       return sendHtml(res, 502, shell({ title: 'Error', body: `<h1>Couldn't reach the mail server</h1><p class="meta">${escapeHtml(e.message)}</p>` }));
     }
@@ -319,20 +354,20 @@ export async function handleWebmail(req, res, urlPath) {
     }
   }
 
-  const msgMatch = urlPath.match(/^\/message\/(\d+)$/);
+  const msgMatch = route.match(/^\/message\/(\d+)$/);
   if (msgMatch && req.method === 'GET') {
     try {
-      const msg = await getMessage(session.email, session.password, msgMatch[1]);
-      return sendHtml(res, 200, messagePage(msg));
+      const msg = await getMessage(session.email, session.password, msgMatch[1], folder);
+      return sendHtml(res, 200, messagePage(msg, folder));
     } catch (e) {
       return sendHtml(res, 502, shell({ title: 'Error', body: `<h1>Couldn't load message</h1><p class="meta">${escapeHtml(e.message)}</p>` }));
     }
   }
 
-  const attMatch = urlPath.match(/^\/message\/(\d+)\/attachment\/(\d+)$/);
+  const attMatch = route.match(/^\/message\/(\d+)\/attachment\/(\d+)$/);
   if (attMatch && req.method === 'GET') {
     try {
-      const msg = await getMessage(session.email, session.password, attMatch[1]);
+      const msg = await getMessage(session.email, session.password, attMatch[1], folder);
       const att = msg._rawAttachments[Number(attMatch[2])];
       if (!att) { res.writeHead(404); return res.end('Not found'); }
       res.writeHead(200, {

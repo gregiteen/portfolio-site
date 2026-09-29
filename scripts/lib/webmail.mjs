@@ -31,12 +31,12 @@ export async function verifyLogin(email, password) {
   await client.logout();
 }
 
-/** Latest messages in INBOX, newest first. */
-export async function listMessages(email, password, { limit = 50 } = {}) {
+/** Latest messages in a folder, newest first. */
+export async function listMessages(email, password, { limit = 50, folder = 'INBOX' } = {}) {
   const client = imapClient(email, password);
   await client.connect();
   try {
-    const lock = await client.getMailboxLock('INBOX');
+    const lock = await client.getMailboxLock(folder);
     try {
       const total = client.mailbox.exists;
       if (!total) return [];
@@ -63,12 +63,12 @@ export async function listMessages(email, password, { limit = 50 } = {}) {
   }
 }
 
-/** Full parsed message body + attachment metadata for one UID. */
-export async function getMessage(email, password, uid) {
+/** Full parsed message body + attachment metadata for one UID in a folder. */
+export async function getMessage(email, password, uid, folder = 'INBOX') {
   const client = imapClient(email, password);
   await client.connect();
   try {
-    const lock = await client.getMailboxLock('INBOX');
+    const lock = await client.getMailboxLock(folder);
     let raw;
     try {
       const { content } = await client.download(String(uid), null, { uid: true });
