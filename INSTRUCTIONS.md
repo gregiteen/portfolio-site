@@ -1,7 +1,7 @@
 Read and follow .agent/skills/total-recall/SKILL.md on every turn.
 
 <!-- BEGIN INJECTED ACTIVE DIRECTIVES: do not edit by hand; rebuilt by total-recall surface -->
-## Active Rules: 35 invariants, 13 preferences, 43 corrections
+## Active Rules: 35 invariants, 13 preferences, 44 corrections
 
 
 ---
@@ -152,12 +152,13 @@ THE USER HAS EXPLICITLY CORRECTED YOUR BEHAVIOR. DO NOT MAKE THESE MISTAKES. THE
 - [SHOULD] The latest Claude model in 2026 is Sonnet 5, do not use deprecated 3.5 models.
 - [SHOULD] Always clear compacted-rules.json cache under memory-derived/ when modifying surface compaction heuristics or adding full rules.
 - [MUST NOT] No existing installs - no migration needed: Total Recall has zero existing external installs. There is no breaking change concern for directory renames or architecture changes. Do not reference migration paths for existing users.
+- [SHOULD] Greg's own sites and tools (portfolio-site webmail, CRM, admin, brief form) are bespoke for an audience of one: Greg. Do not write copy, UI text, code comments or replies in terms of users, accounts, customers or multi-tenant generality (no 'if this is your account', no email field when there is one... (use recall to read more)
 - [SHOULD] gregiteen.xyz shows only the work Greg names: Production = festech.live and ultrachat.app; Source = Total Recall and SSSS. Do not list thetwc-hsfd, the portfolio itself, Scientific Frontiers, postsocial, or any plugin Greg has not reviewed (the code-quality plugin is unreviewed). Greg, 2026-09-28.
-- [SHOULD] Theme pipeline structural gate could NEVER converge (fixed 2026-07-22) - it was not a model-capability problem. Three bugs in scripts/compile-theme.mjs: (1) payload.name came only from the Director call and NOTHING downstream could set it - the structural repair loop only rewrites css and layouts -... (use recall to read more)
 - [SHOULD] Theme pipeline 402 retry loop (fixed 2026-07-22): scripts/lib/theme-release.mjs NON_RETRYABLE_GENERATION_FAILURES omitted 402, and serve.mjs called generationRetryDecision with no maxAttempts (default Infinity). (use recall to read more)
 - [MUST NOT] Codex is a full app not just CLI: OpenAI Codex is a full app, not just a CLI tool. Do not refer to it as only a CLI.
 
-_11 more, one line each (read one in full with `npx total-recall recall "<slug>"`):_
+_12 more, one line each (read one in full with `npx total-recall recall "<slug>"`):_
+- Theme pipeline structural gate could NEVER converge (fixed 2026-07-22) - it was not a... (`anti-patterns-79ff9886`)
 - Mesh secrets sync and latency peer probes need ≥10s timeout on WAN Tailscale (laptop↔cloud). (`anti-patterns-1c2925ae`)
 - When the user asks a question, immediately stop everything and answer in the chat without... (`anti-patterns-dd2af8ce`)
 - Always check local .env files for cloud provider API tokens (like DIGITALOCEAN_API_TOKEN) before... (`anti-patterns-bfdf56ac`)

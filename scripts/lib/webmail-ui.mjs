@@ -130,42 +130,37 @@ ${body}
 </html>`;
 }
 
+function webmailMailbox() {
+  return (process.env.PORTFOLIO_WEBMAIL_EMAIL || process.env.IMAP_USER || '').trim().toLowerCase();
+}
+
 function loginPage(flash) {
   return shell({
     title: 'Sign in',
     flash,
     body: `<h1>Sign in</h1>
 <form method="POST" action="/login">
-  <label>Email</label>
-  <input type="email" id="login-email" name="email" required autofocus placeholder="sales@gregiteen.xyz">
-  <p class="meta" style="margin-top:8px;">Sign in with sales@gregiteen.xyz. Your other addresses deliver to this inbox.</p>
+  <p class="meta">${escapeHtml(webmailMailbox())}</p>
   <label style="display:flex; justify-content:space-between; align-items:baseline;">
     <span>Password</span>
     <a href="#" onclick="requestPasswordReset(event)" style="font-size:0.85em; color:var(--gray); text-decoration:none;">Forgot password?</a>
   </label>
-  <input type="password" name="password" required>
+  <input type="password" name="password" required autofocus autocomplete="current-password">
   <button type="submit">Sign in</button>
 </form>
 <div id="reset-status" class="flash" role="status" hidden></div>
 <script>
   async function requestPasswordReset(e) {
     e.preventDefault();
-    const email = document.getElementById('login-email').value;
     const status = document.getElementById('reset-status');
     status.hidden = false;
-    if (!email) { status.textContent = 'Enter your webmail address first.'; return; }
-    status.textContent = 'Sending a reset link to your recovery email…';
+    status.textContent = 'Sending a reset link to your Gmail…';
     try {
-      const res = await fetch('/api/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      const data = await res.json();
-      if (res.ok) status.textContent = 'If this is your webmail account, a reset link has been sent to your recovery email.';
-      else status.textContent = data.error || 'Could not send the reset link.';
+      const res = await fetch('/api/forgot-password', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      status.textContent = res.ok ? 'Reset link sent to your Gmail. It expires in 15 minutes.' : (data.error || 'Could not send the reset link.');
     } catch (err) {
-      status.textContent = 'Could not send the reset link. Please try again.';
+      status.textContent = 'Could not send the reset link.';
     }
   }
 </script>`,
@@ -259,11 +254,12 @@ export async function handleWebmail(req, res, urlPath) {
   }
 
   if (urlPath === '/login' && req.method === 'POST') {
-    const { email, password } = await readBody(req);
+    const { password } = await readBody(req);
+    const email = webmailMailbox();
     try {
       await verifyLogin(email, password);
     } catch {
-      return sendHtml(res, 401, loginPage('Invalid email or password.'));
+      return sendHtml(res, 401, loginPage('Wrong password.'));
     }
     const token = randomBytes(24).toString('hex');
     webmailSessions.set(token, { email, password, createdAt: Date.now() });

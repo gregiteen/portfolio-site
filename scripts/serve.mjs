@@ -1866,14 +1866,11 @@ createServer(async (req, res) => {
   // ── API: Webmail Forgot Password ──
   if (urlPath === '/api/forgot-password' && req.method === 'POST') {
     try {
-      const { email } = await readBody(req);
-      const requestedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+      // One mailbox, one owner: the reset always targets the real Mailcow
+      // mailbox and the link always goes to the configured recovery address.
       const mailbox = (process.env.PORTFOLIO_WEBMAIL_EMAIL || process.env.IMAP_USER || '').trim().toLowerCase();
-      const aliases = [mailbox, process.env.MAIL_OWNER, process.env.ADMIN_EMAIL]
-        .filter(Boolean).map(address => address.trim().toLowerCase());
-      // A reset always changes the real Mailcow mailbox, never a delivery alias.
-      if (!mailbox || !aliases.includes(requestedEmail)) {
-        return sendJson(res, 200, { success: true });
+      if (!mailbox) {
+        return sendJson(res, 503, { success: false, error: 'Webmail mailbox is not configured.' });
       }
 
       const recoveryEmail = (process.env.WEBMAIL_RECOVERY_EMAIL || '').trim().toLowerCase();
@@ -1886,7 +1883,7 @@ createServer(async (req, res) => {
       const limit = webmailResetRequests.get(mailbox) || { count: 0, resetAt: now + 60 * 60 * 1000 };
       if (now >= limit.resetAt) { limit.count = 0; limit.resetAt = now + 60 * 60 * 1000; }
       if (limit.count >= 3) {
-        return sendJson(res, 429, { success: false, error: 'Too many reset requests. Please try again later.' });
+        return sendJson(res, 429, { success: false, error: 'Three reset links already sent this hour. Use the latest one.' });
       }
 
       const resetToken = randomBytes(32).toString('hex');
@@ -1897,13 +1894,13 @@ createServer(async (req, res) => {
         await originalSendMail({
           from: mailFrom,
           to: recoveryEmail,
-          subject: 'Password Reset Request for Webmail',
-          text: `A password reset was requested for ${mailbox}.\n\nClick the link below to securely reset the password (expires in 15 minutes):\n${resetUrl}\n\nIf this wasn't you, ignore this email.`,
+          subject: 'Webmail password reset',
+          text: `Reset the password for ${mailbox} (expires in 15 minutes):\n${resetUrl}\n\nIf you did not ask for this, ignore it; the password stays as it is.`,
           html: `<div style="font-family:sans-serif;color:#111;">
-            <h2>Webmail Password Reset</h2>
-            <p>A password reset was requested for <strong>${mailbox}</strong>.</p>
+            <h2>Webmail password reset</h2>
+            <p>Reset the password for <strong>${mailbox}</strong>.</p>
             <p><a href="${resetUrl}" style="background:#0a0a0a;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;margin-top:10px;">Reset Password</a></p>
-            <p style="margin-top:20px;font-size:0.85em;color:#666;">This link expires in 15 minutes.</p>
+            <p style="margin-top:20px;font-size:0.85em;color:#666;">The link expires in 15 minutes. If you did not ask for this, ignore it; the password stays as it is.</p>
           </div>`
         });
       } catch (error) {
