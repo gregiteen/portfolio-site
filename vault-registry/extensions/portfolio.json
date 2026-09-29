@@ -145,6 +145,13 @@
       "portability": "tenant_private",
       "required_fields": ["type", "inbox_id", "message_id", "received_at"]
     },
+    "sent_message": {
+      "family": "ops",
+      "canonical_path": "runtime/sent/<id>.md",
+      "append_only": false,
+      "portability": "tenant_private",
+      "required_fields": ["type", "sent_id", "message_id", "sent_at"]
+    },
     "revenue_snapshot": {
       "family": "ops",
       "canonical_path": "runtime/snapshots/<date>.md",

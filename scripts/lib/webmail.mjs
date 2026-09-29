@@ -7,6 +7,10 @@
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { createTransport } from 'nodemailer';
+import MailComposer from 'nodemailer/lib/mail-composer/index.js';
+import { randomBytes } from 'node:crypto';
+import { composeOutgoing } from './mail-signature.mjs';
+import { upsertSentMessage } from './crm-store.mjs';
 
 // Read lazily (not as module-level consts) — static imports run before the
 // importing file's own process.loadEnvFile() call, so a top-level read here
@@ -48,6 +52,8 @@ export async function listMessages(email, password, { limit = 50, folder = 'INBO
           subject: msg.envelope?.subject || '(no subject)',
           from: msg.envelope?.from?.[0]?.address || msg.envelope?.from?.[0]?.name || 'unknown',
           fromName: msg.envelope?.from?.[0]?.name || '',
+          to: msg.envelope?.to?.[0]?.address || '',
+          messageId: msg.envelope?.messageId || '',
           date: msg.envelope?.date || null,
           seen: msg.flags?.has('\\Seen') || false,
           size: msg.size || 0,
@@ -94,6 +100,7 @@ export async function getMessage(email, password, uid, folder = 'INBOX') {
         contentType: a.contentType,
         size: a.size,
       })),
+      messageId: parsed.messageId || '',
       _rawAttachments: parsed.attachments || [],
     };
   } finally {
@@ -101,6 +108,43 @@ export async function getMessage(email, password, uid, folder = 'INBOX') {
   }
 }
 
+/** Raw sources of messages in a folder received in the last `days` days. */
+export async function listRecentSources(email, password, folder, { days = 14 } = {}) {
+  const client = imapClient(email, password);
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(folder);
+    try {
+      const uids = await client.search({ since: new Date(Date.now() - days * 86400000) }, { uid: true });
+      if (!uids?.length) return [];
+      const out = [];
+      for await (const msg of client.fetch(uids.join(','), { source: true }, { uid: true })) out.push(msg.source.toString('utf8'));
+      return out;
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout().catch(() => {});
+  }
+}
+
+/** Files a sent message's MIME source into the Sent folder, marked read. */
+async function saveToSent(email, password, raw) {
+  const client = imapClient(email, password);
+  await client.connect();
+  try {
+    const boxes = await client.list();
+    const sent = boxes.find((b) => b.specialUse === '\\Sent')?.path || 'Sent';
+    await client.append(sent, raw, ['\\Seen']);
+  } finally {
+    await client.logout().catch(() => {});
+  }
+}
+
+/**
+ * Sends with the signature and an open-tracking pixel, keeps a copy in Sent and
+ * records the message for delivery and open tracking.
+ */
 export async function sendMessage(email, password, { to, subject, text, inReplyTo }) {
   const smtpHost = process.env.WEBMAIL_SMTP_HOST || process.env.SMTP_HOST || 'mail.gregiteen.xyz';
   const isLoopback = smtpHost === '127.0.0.1' || smtpHost === 'localhost';
@@ -112,11 +156,27 @@ export async function sendMessage(email, password, { to, subject, text, inReplyT
     tls: { rejectUnauthorized: isLoopback ? false : true },
     auth: { user: email, pass: password },
   });
-  await transport.sendMail({
-    from: email,
+  const sentId = randomBytes(12).toString('hex');
+  const messageId = `<${sentId}@${email.split('@')[1] || 'gregiteen.xyz'}>`;
+  const base = (process.env.BASE_URL || 'https://gregiteen.xyz').replace(/\/$/, '');
+  const body = composeOutgoing({ text, pixelUrl: `${base}/api/track/open/${sentId}.gif` });
+  const mail = {
+    from: { name: 'Greg Iteen', address: email },
     to,
     subject,
-    text,
+    text: body.text,
+    html: body.html,
+    messageId,
     inReplyTo: inReplyTo || undefined,
-  });
+    references: inReplyTo || undefined,
+  };
+  await transport.sendMail(mail);
+  const sentAt = new Date().toISOString();
+  // Tracking and the Sent copy are bookkeeping: the message is already out, so
+  // a failure here is logged rather than reported as a failed send.
+  await upsertSentMessage(sentId, { message_id: messageId, to, subject: subject || '(no subject)', sent_at: sentAt, delivery_status: 'queued' })
+    .catch((err) => console.error('[webmail] tracking record failed:', err.message));
+  const raw = await new MailComposer(mail).compile().build();
+  await saveToSent(email, password, raw).catch((err) => console.error('[webmail] Sent copy failed:', err.message));
+  return { sentId, messageId };
 }

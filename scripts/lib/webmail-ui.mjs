@@ -4,8 +4,11 @@
 // routing table doesn't balloon. See scripts/lib/webmail.mjs for the
 // IMAP/SMTP calls this renders around.
 import { randomBytes } from 'node:crypto';
-import { verifyLogin, listMessages, getMessage, sendMessage } from './webmail.mjs';
+import { verifyLogin, listMessages, getMessage, sendMessage, listRecentSources } from './webmail.mjs';
 import { MAIL_FOLDERS } from './mail-rules.mjs';
+import { prepareEmailHtml } from './email-html.mjs';
+import { listSentMessages, upsertSentMessage } from './crm-store.mjs';
+import { parsePostfixDelivery, readPostfixLog, findBouncedMessageIds } from './mail-tracking.mjs';
 
 // token -> { email, password, createdAt }. Deliberately in-memory only —
 // mailbox passwords never touch disk. A server restart just means everyone
@@ -108,7 +111,14 @@ button:hover,.btn:hover{background:var(--accent-2);border-color:var(--accent-2);
 .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;margin-right:8px;vertical-align:middle}
 .meta{font-family:'IBM Plex Mono',monospace;font-size:.8rem;color:var(--gray);margin-bottom:18px;line-height:1.8}
 .meta strong{color:var(--white)}
-.body-frame{border:1px solid var(--line);width:100%;min-height:420px;background:#fff;border-radius:2px}
+.body-frame{border:1px solid var(--line);width:100%;height:75vh;min-height:420px;background:#fff;border-radius:2px}
+.privacy{font-family:'IBM Plex Mono',monospace;font-size:.72rem;letter-spacing:.04em;color:var(--gray);border:1px solid var(--line);padding:10px 14px;margin-bottom:12px}
+.privacy a{color:var(--accent);text-decoration:none}
+.badge{display:inline-block;margin-left:8px;padding:2px 7px;border:1px solid var(--line-strong);font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:var(--gray);vertical-align:middle}
+.badge-relayed{color:var(--white)}
+.badge-open{color:#0a0a0a;background:var(--accent);border-color:var(--accent)}
+.badge-deferred{color:var(--accent-2);border-color:rgba(255,138,61,.5)}
+.badge-bounced{color:#ff4d4d;border-color:rgba(255,77,77,.55)}
 .body-text{white-space:pre-wrap;font-family:'IBM Plex Mono',monospace;font-size:.85rem;line-height:1.65;border:1px solid var(--line);padding:20px;background:rgba(17,17,19,.4)}
 .attachments{margin-top:18px;font-family:'IBM Plex Mono',monospace;font-size:.8rem}
 .attachments a{color:var(--accent);text-decoration:none}
@@ -194,13 +204,23 @@ function folderNav(current) {
     `<a href="${folderBase(f) || '/'}"${f === current ? ' aria-current="page"' : ''}>${escapeHtml(folderLabel(f))}</a>`).join('')}</nav>`;
 }
 
+const DELIVERY_LABEL = { queued: 'Queued', relayed: 'Relayed', deferred: 'Deferred', bounced: 'Bounced' };
+
+function trackingBadges(t) {
+  const badges = [];
+  if (t.delivery_status) badges.push(`<span class="badge badge-${escapeHtml(t.delivery_status)}" title="${escapeHtml(t.delivery_detail || '')}">${escapeHtml(DELIVERY_LABEL[t.delivery_status] || t.delivery_status)}</span>`);
+  if (t.open_count) badges.push(`<span class="badge badge-open" title="Last opened ${escapeHtml(t.last_opened_at || '')}">Opened${t.open_count > 1 ? ` ${t.open_count}×` : ''}</span>`);
+  else if (t.proxy_open_count) badges.push('<span class="badge" title="Loaded by a mail provider\'s image proxy; this may not mean the message was read">Proxy load</span>');
+  return badges.join('');
+}
+
 function inboxPage(messages, folder = 'INBOX') {
   const unread = messages.filter(m=> !m.seen).length;
   const label = folderLabel(folder);
   const rows = messages.length
     ? messages.map((m) => `<a class="row${m.seen ? '' : ' unseen'}" href="${folderBase(folder)}/message/${m.uid}">
-        <span class="from">${!m.seen ? '<span class="dot"></span>' : ''}${escapeHtml(m.fromName || m.from)}</span>
-        <span class="subject">${escapeHtml(m.subject)}</span>
+        <span class="from">${!m.seen ? '<span class="dot"></span>' : ''}${escapeHtml(folder === 'Sent' ? `To ${m.to || ''}` : (m.fromName || m.from))}</span>
+        <span class="subject">${escapeHtml(m.subject)}${m.tracking ? trackingBadges(m.tracking) : ''}</span>
         <span class="date">${escapeHtml(formatDate(m.date))}</span>
       </a>`).join('\n')
     : `<div class="empty"><strong>${escapeHtml(label)} is empty</strong>${folder === 'INBOX' ? 'New correspondence will appear here. Automated mail is filed into the other folders.' : 'Nothing has been filed here yet.'}</div>`;
@@ -213,10 +233,22 @@ function inboxPage(messages, folder = 'INBOX') {
   });
 }
 
-function messagePage(msg, folder = 'INBOX') {
-  const bodyHtml = msg.html
-    ? `<iframe class="body-frame" sandbox="" srcdoc="${escapeHtml(msg.html)}"></iframe>`
-    : `<div class="body-text">${escapeHtml(msg.text || '(empty message)')}</div>`;
+function messagePage(msg, folder = 'INBOX', { showRemote = false } = {}) {
+  let bodyHtml;
+  let notice = '';
+  if (msg.html) {
+    const prepared = prepareEmailHtml(msg.html, { showRemote, attachments: msg._rawAttachments });
+    const parts = [];
+    if (prepared.pixelCount) parts.push(`${prepared.pixelCount} tracking pixel${prepared.pixelCount > 1 ? 's' : ''} removed`);
+    if (prepared.remoteCount && !showRemote) parts.push(`${prepared.remoteCount} remote image${prepared.remoteCount > 1 ? 's' : ''} blocked · <a href="${folderBase(folder)}/message/${msg.uid}?images=1">Show images</a>`);
+    if (showRemote) parts.push(`Remote images shown · <a href="${folderBase(folder)}/message/${msg.uid}">Block again</a>`);
+    notice = parts.length ? `<div class="privacy">${parts.join(' &nbsp;/&nbsp; ')}</div>` : '';
+    // No allow-scripts and no allow-same-origin: the message cannot run code or
+    // reach this app. Popups are allowed so links open in a new tab.
+    bodyHtml = `<iframe class="body-frame" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" srcdoc="${escapeHtml(prepared.html)}"></iframe>`;
+  } else {
+    bodyHtml = `<div class="body-text">${escapeHtml(msg.text || '(empty message)')}</div>`;
+  }
   const attachments = msg.attachments.length
     ? `<div class="attachments"><strong>Attachments:</strong><br>${msg.attachments
         .map((a) => `<a href="${folderBase(folder)}/message/${msg.uid}/attachment/${a.index}">${escapeHtml(a.filename)}</a> (${Math.round(a.size / 1024)} KB)`)
@@ -230,6 +262,7 @@ function messagePage(msg, folder = 'INBOX') {
   <strong>To:</strong> ${escapeHtml(msg.to)}<br>
   <strong>Date:</strong> ${escapeHtml(msg.date ? new Date(msg.date).toLocaleString('en-US') : '')}
 </div>
+${notice}
 ${bodyHtml}
 ${attachments}
 <a class="btn" href="/compose?to=${encodeURIComponent(msg.from)}&subject=${encodeURIComponent(`Re: ${msg.subject}`)}">Reply</a>`,
@@ -264,6 +297,38 @@ function clearCookie(res) {
 function sendHtml(res, status, html) {
   res.writeHead(status, { 'content-type': 'text/html; charset=utf-8' });
   res.end(html);
+}
+
+/**
+ * Brings delivery status up to date for recent sent mail (Postfix log plus bounce
+ * notices in the Bounces folder) and attaches tracking to the Sent list rows.
+ */
+async function attachTracking(session, messages) {
+  const records = await listSentMessages().catch(() => []);
+  if (!records.length) return;
+  const cutoff = Date.now() - 14 * 86400000;
+  const open = records.filter((r) => r.delivery_status !== 'bounced' && Date.parse(r.sent_at) > cutoff);
+  if (open.length) {
+    const [log, bounces] = await Promise.all([
+      readPostfixLog({ since: '336h' }).catch((err) => { console.error('[webmail] postfix log:', err.message); return ''; }),
+      listRecentSources(session.email, session.password, 'Bounces').catch(() => []),
+    ]);
+    const bounced = new Set(bounces.flatMap((src) => findBouncedMessageIds(src, open.map((r) => r.message_id))));
+    for (const r of open) {
+      let { status, detail } = log ? parsePostfixDelivery(log, r.message_id) : { status: r.delivery_status, detail: r.delivery_detail };
+      if (bounced.has(r.message_id)) { status = 'bounced'; detail = 'A bounce notice came back for this message.'; }
+      if (status === 'queued' && r.delivery_status !== 'queued') continue; // rotated out of the log; keep what we knew
+      if (status !== r.delivery_status || detail !== r.delivery_detail) {
+        const next = await upsertSentMessage(r.sent_id, { delivery_status: status, delivery_detail: detail, delivery_checked_at: new Date().toISOString() }).catch(() => null);
+        if (next) Object.assign(r, next);
+      }
+    }
+  }
+  const byId = new Map(records.map((r) => [String(r.message_id).replace(/^<|>$/g, ''), r]));
+  for (const m of messages) {
+    const t = byId.get(String(m.messageId || '').replace(/^<|>$/g, ''));
+    if (t) m.tracking = t;
+  }
 }
 
 export async function handleWebmail(req, res, urlPath) {
@@ -318,6 +383,7 @@ export async function handleWebmail(req, res, urlPath) {
   if (route === '/' && req.method === 'GET') {
     try {
       const messages = await listMessages(session.email, session.password, { limit: 50, folder });
+      if (folder === 'Sent') await attachTracking(session, messages);
       return sendHtml(res, 200, inboxPage(messages, folder));
     } catch (e) {
       return sendHtml(res, 502, shell({ title: 'Error', body: `<h1>Couldn't reach the mail server</h1><p class="meta">${escapeHtml(e.message)}</p>` }));
@@ -358,7 +424,8 @@ export async function handleWebmail(req, res, urlPath) {
   if (msgMatch && req.method === 'GET') {
     try {
       const msg = await getMessage(session.email, session.password, msgMatch[1], folder);
-      return sendHtml(res, 200, messagePage(msg, folder));
+      const showRemote = new URL(req.url, 'http://x').searchParams.get('images') === '1';
+      return sendHtml(res, 200, messagePage(msg, folder, { showRemote }));
     } catch (e) {
       return sendHtml(res, 502, shell({ title: 'Error', body: `<h1>Couldn't load message</h1><p class="meta">${escapeHtml(e.message)}</p>` }));
     }
@@ -390,7 +457,7 @@ export async function handleWebmail(req, res, urlPath) {
     const { to, subject, text } = await readBody(req);
     try {
       await sendMessage(session.email, session.password, { to, subject, text });
-      res.writeHead(302, { Location: '/' });
+      res.writeHead(302, { Location: '/f/Sent' });
       return res.end();
     } catch (e) {
       return sendHtml(res, 502, composePage({ to, subject, flash: `Send failed: ${e.message}` }));

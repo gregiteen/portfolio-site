@@ -167,6 +167,7 @@ export const crmDirs = {
   gigListings: join(vaultRoot, 'runtime', 'gig-listings'),
   pipelineEvents: join(vaultRoot, 'runtime', 'pipeline-events'),
   inbox: join(vaultRoot, 'runtime', 'inbox'),
+  sent: join(vaultRoot, 'runtime', 'sent'),
   snapshots: join(vaultRoot, 'runtime', 'snapshots'),
 };
 
@@ -589,6 +590,71 @@ export async function upsertInboxMessage(id, patch) {
 export async function listInboxMessages() {
   const docs = await loadDocs(crmDirs.inbox);
   return docs.filter((d)=> d.data?.type === 'inbox_message').map((d)=> d.data).sort((a,b)=> String(b.received_at).localeCompare(String(a.received_at)));
+}
+
+// ── SENT MESSAGE (webmail delivery and open tracking) ────────────────────────
+
+const SENT_SCALARS = ['message_id', 'to', 'subject', 'sent_at', 'delivery_status', 'delivery_detail', 'delivery_checked_at', 'open_count', 'proxy_open_count', 'first_opened_at', 'last_opened_at'];
+let sentChain = Promise.resolve();
+
+function readDetailJson(raw) {
+  const m = String(raw || '').match(/```json\n([\s\S]*?)\n```/);
+  try { return m ? JSON.parse(m[1]) : null; } catch { return null; }
+}
+
+export async function getSentMessage(id) {
+  const rel = `runtime/sent/${safeId(id)}.md`;
+  try {
+    const raw = await readFile(join(vaultRoot, rel), 'utf8');
+    const { data } = parseDocument(raw);
+    if (data?.type !== 'sent_message') return null;
+    return { ...data, opens: readDetailJson(raw)?.opens || [] };
+  } catch { return null; }
+}
+
+/**
+ * Merges a patch into a sent message and writes it through the engine. Calls are
+ * serialized so two opens landing together cannot overwrite each other.
+ * patch.open appends one open event; everything else replaces scalars.
+ */
+export function upsertSentMessage(id, patch) {
+  const run = sentChain.then(async () => {
+    const sent_id = safeId(id);
+    const rel = `runtime/sent/${sent_id}.md`;
+    const prior = await getSentMessage(sent_id);
+    const now = nowIso();
+    const opens = [...(prior?.opens || [])];
+    const next = {
+      type: 'sent_message',
+      title: `Sent: ${patch.subject ?? prior?.subject ?? sent_id}`,
+      description: `Outgoing message ${sent_id} with delivery and open tracking.`,
+      timestamp: now,
+      sent_id,
+      created_at: prior?.created_at || now,
+      updated_at: now,
+    };
+    for (const key of SENT_SCALARS) next[key] = patch[key] !== undefined ? patch[key] : (prior?.[key] ?? null);
+    next.open_count = Number(next.open_count || 0);
+    next.proxy_open_count = Number(next.proxy_open_count || 0);
+    if (patch.open) {
+      opens.push(patch.open);
+      if (opens.length > 50) opens.splice(0, opens.length - 50);
+      if (patch.open.proxy) next.proxy_open_count += 1; else next.open_count += 1;
+      next.first_opened_at = next.first_opened_at || patch.open.at;
+      next.last_opened_at = patch.open.at;
+    }
+    if (!next.message_id || !next.sent_at) throw new Error('Sent message missing message_id/sent_at');
+    await mkdir(crmDirs.sent, { recursive: true });
+    await writeDocument(rel, serializeRuntimeDocument(next, ['# Sent message', '', '## Detail JSON', jsonBlock({ opens }), ''].join('\n')));
+    return { ...next, opens };
+  });
+  sentChain = run.catch(() => {});
+  return run;
+}
+
+export async function listSentMessages() {
+  const docs = await loadDocs(crmDirs.sent);
+  return docs.filter((d) => d.data?.type === 'sent_message').map((d) => d.data).sort((a, b) => String(b.sent_at).localeCompare(String(a.sent_at)));
 }
 
 // ── REVENUE SNAPSHOT ─────────────────────────────────────────────────────────
