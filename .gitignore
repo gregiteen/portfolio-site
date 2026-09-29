@@ -55,3 +55,6 @@ vault/pages/skins/
 # Total Recall secrets projections
 .env.local
 .env.*.local
+
+# env backups may contain secrets
+.env.bak*
