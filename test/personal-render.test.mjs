@@ -77,10 +77,20 @@ test('every internal link resolves to a generated page or a shipped asset', () =
 test('accessibility and motion contract', () => {
   const html = site.get('index.html');
   const css = readFileSync('assets/personal/site.css', 'utf8');
-  assert.match(html, /<h1[^>]+aria-label="Software that remembers to whom it belongs\."/);
+  assert.match(html, /<h1[^>]+aria-label="Legible state for autonomous software\."/);
   assert.match(html, /class="skip"/);
   assert.match(html, /<html lang="en">/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   assert.doesNotMatch(css, /@media \(max-width/, 'layout is mobile first: min-width queries only');
   assert.match(html, /\.js|classList\.add\('js'\)/);
+});
+
+test('contact renders the brief as a working form with every declared question', () => {
+  const html = site.get('contact.html');
+  const c = pages.find((p) => p.data.slug === 'contact').data;
+  assert.match(html, /<form class="tf" action="\/api\/lead" method="post"/);
+  assert.match(html, /src="\/assets\/personal\/brief\.js"/);
+  for (const q of c.x_brief) assert.ok(html.includes(q.prompt.replace(/'/g, '&#39;')) || html.includes(q.prompt), q.id);
+  assert.match(html, /name="fax"/);
+  for (const [file, h] of site) assert.match(h, /href="\/contact\.html#brief"/, `${file} links the brief`);
 });

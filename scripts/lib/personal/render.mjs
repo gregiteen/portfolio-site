@@ -34,7 +34,7 @@ function splitHeadline(text) {
   }).join(' ');
 }
 
-function shell({ title, description, path, page, body, nav }) {
+function shell({ title, description, path, page, body, nav, scripts = [] }) {
   const canonical = `${SITE}${path === '/index.html' ? '/' : path}`;
   return `<!doctype html>
 <html lang="en">
@@ -68,19 +68,20 @@ function shell({ title, description, path, page, body, nav }) {
 ${body}
 </main>
 <footer class="foot">
-  <p class="mono">Built from a Markdown vault and validated by the SSSS engine. <a href="https://github.com/gregiteen/portfolio-site">Source</a></p>
+  <p class="mono">Compiled from a Markdown vault and validated by the SSSS engine. <a href="https://github.com/gregiteen/portfolio-site">Source</a></p>
   <p class="mono">&copy; Greg Iteen</p>
 </footer>
 <div class="cursor" aria-hidden="true"></div>
-<script src="/assets/personal/site.js" defer></script>
+<script src="/assets/personal/site.js" defer></script>${scripts.map((s) => `\n<script src="${esc(s)}" defer></script>`).join('')}
 </body>
 </html>
 `;
 }
 
 function navHtml(active) {
-  const items = [['/#ideas', 'Ideas', 'home'], ['/#deployed', 'Deployed', 'home'], ['/#open-source', 'Open source', 'home'], ['/about.html', 'About', 'about'], ['/contact.html', 'Contact', 'contact']];
-  return items.map(([href, label, key]) => `<a href="${href}"${active === key && !href.includes('#') ? ' aria-current="page"' : ''}>${label}</a>`).join('');
+  const items = [['/#ideas', 'Principles', 'home'], ['/#deployed', 'Production', 'home'], ['/#open-source', 'Source', 'home'], ['/#projects', 'Write-ups', 'home'], ['/about.html', 'About', 'about']];
+  const links = items.map(([href, label, key]) => `<a href="${href}"${active === key && !href.includes('#') ? ' aria-current="page"' : ''}>${label}</a>`).join('');
+  return `${links}<a class="nav-cta" href="/contact.html#brief"${active === 'contact' ? ' aria-current="page"' : ''}>Start a brief</a>`;
 }
 
 const arrow = '<svg class="arrow" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"/></svg>';
@@ -88,7 +89,7 @@ const arrow = '<svg class="arrow" viewBox="0 0 24 24" width="20" height="20" ari
 function ideaPlate(p) {
   const d = p.data;
   const diagram = DIAGRAMS[d.x_diagram] || '';
-  const more = d.x_project ? `<a class="more" href="/projects/${esc(d.x_project)}.html">Read the project ${arrow}</a>` : '';
+  const more = d.x_project ? `<a class="more" href="/projects/${esc(d.x_project)}.html">Read the write-up ${arrow}</a>` : '';
   return `<article class="plate" data-reveal>
   <div class="diagram" data-diagram>${diagram}</div>
   <div class="plate-text">
@@ -149,37 +150,40 @@ function home(pages) {
   const projects = kind(pages, 'project').sort((a, b) => (b.data.x_year ?? 0) - (a.data.x_year ?? 0) || String(a.data.name).localeCompare(a.data.name));
   const headline = h.data.x_headline;
   const body = `<section class="hero" aria-labelledby="hero-title">
-  <p class="eyebrow mono">Greg Iteen &middot; software</p>
+  <p class="eyebrow mono">Greg Iteen &middot; systems engineering</p>
   <h1 id="hero-title" aria-label="${esc(plain(headline))}">${splitHeadline(headline)}</h1>
   <p class="tagline">${esc(h.data.x_tagline)}</p>
   <div class="intro">${h.html}</div>
-  <a class="scroll" href="#ideas" aria-label="Scroll to ideas"><span></span></a>
+  <p class="hero-actions"><a class="cta" href="/contact.html#brief" data-magnet>Start a brief ${arrow}</a><a class="more" href="#projects">Read the write-ups ${arrow}</a></p>
+  <a class="scroll" href="#ideas" aria-label="Scroll to the principles"><span></span></a>
 </section>
 
 <section id="ideas" class="block" aria-labelledby="ideas-title">
-  <header class="block-head" data-reveal><p class="eyebrow mono">Ideas</p><h2 id="ideas-title">Three claims the software makes</h2></header>
+  <header class="block-head" data-reveal><p class="eyebrow mono">Principles</p><h2 id="ideas-title">Principles the software enforces</h2><p class="lede">Each principle below is implemented in running code and specified in writing, so it can be verified rather than taken on trust.</p></header>
   <div class="plates">${ideas.map(ideaPlate).join('\n')}</div>
 </section>
 
 <section id="deployed" class="block" aria-labelledby="deployed-title">
-  <header class="block-head" data-reveal><p class="eyebrow mono">Deployed</p><h2 id="deployed-title">Running now</h2><p class="lede">Each status below comes from a live request made on the date shown.</p></header>
+  <header class="block-head" data-reveal><p class="eyebrow mono">Production</p><h2 id="deployed-title">Systems in production</h2><p class="lede">Each status below records a live request made on the date shown.</p></header>
   <ul class="sites">${sites.map(siteRow).join('\n')}</ul>
 </section>
 
 <section id="open-source" class="block" aria-labelledby="oss-title">
-  <header class="block-head" data-reveal><p class="eyebrow mono">Open source</p><h2 id="oss-title">Published and public</h2><p class="lede">Repositories I wrote, public on GitHub. Forks of other people's projects are not listed.</p></header>
+  <header class="block-head" data-reveal><p class="eyebrow mono">Source</p><h2 id="oss-title">Published source</h2><p class="lede">Repositories I authored that are public on GitHub. Forks are excluded; private work is described in the write-ups.</p></header>
   <ul class="osslist">${oss.map(ossRow).join('\n')}</ul>
 </section>
 
 <section id="projects" class="block" aria-labelledby="projects-title">
-  <header class="block-head" data-reveal><p class="eyebrow mono">Write-ups</p><h2 id="projects-title">How the larger systems are built</h2></header>
+  <header class="block-head" data-reveal><p class="eyebrow mono">Write-ups</p><h2 id="projects-title">Architecture, explained</h2><p class="lede">Long-form accounts of the problem each system addresses, the model it adopts and the mechanisms that enforce it.</p></header>
   <ul class="projects">${projects.map(projectRow).join('\n')}</ul>
 </section>
 
 <section class="close block" aria-labelledby="close-title">
-  <p class="eyebrow mono" data-reveal>Contact</p>
-  <h2 id="close-title" class="visually-hidden">Email</h2>
-  <a class="big-mail" href="mailto:me@gregiteen.xyz" data-magnet>me@gregiteen.xyz</a>
+  <p class="eyebrow mono" data-reveal>Engagements</p>
+  <h2 id="close-title" data-reveal>Describe the system you intend to build.</h2>
+  <p class="lede" data-reveal>Seven questions, about two minutes. Every brief receives a personal reply.</p>
+  <a class="big-mail" href="/contact.html#brief" data-magnet>Start a brief</a>
+  <p class="mono dim close-alt" data-reveal>Or write to <a href="mailto:me@gregiteen.xyz">me@gregiteen.xyz</a></p>
 </section>`;
   return shell({ title: h.data.title, description: h.data.description, path: '/index.html', page: 'home', body, nav: navHtml('home') });
 }
@@ -226,14 +230,72 @@ function about(pages) {
   return shell({ title: d.title, description: d.description, path: '/about.html', page: 'about', body, nav: navHtml('about') });
 }
 
+/**
+ * The project brief: one question per screen when scripting is available
+ * (assets/personal/brief.js), a plain form that posts to /api/lead otherwise.
+ * Questions come from `x_brief` on the contact document.
+ */
+const KEYS = 'ABCDEFGHIJ';
+function briefStep(q, n, total) {
+  const num = `<span class="tf-n mono" aria-hidden="true">${String(n).padStart(2, '0')}</span>`;
+  const help = q.help ? `<p class="tf-help" id="h-${esc(q.id)}">${esc(q.help)}</p>` : '';
+  const described = q.help ? ` aria-describedby="h-${esc(q.id)}"` : '';
+  let control = '';
+  if (q.kind === 'choice') {
+    control = `<div class="tf-choices">${(q.options || []).map((o, i) => `<label class="tf-choice"><input type="radio" name="${esc(q.id)}" value="${esc(o.value)}" required><span class="tf-key mono" aria-hidden="true">${KEYS[i]}</span><span class="tf-label">${esc(o.label)}</span></label>`).join('')}</div>`;
+    return `<fieldset class="tf-step" data-step="${n}" data-kind="choice"${described}><legend>${num}${esc(q.prompt)}</legend>${help}${control}</fieldset>`;
+  }
+  if (q.kind === 'long') {
+    control = `<textarea id="f-${esc(q.id)}" name="${esc(q.id)}" rows="5" minlength="${esc(q.min || 0)}" maxlength="${esc(q.max || 2000)}" placeholder="${esc(q.placeholder || '')}" required${described}></textarea>`;
+    return `<div class="tf-step" data-step="${n}" data-kind="long" role="group" aria-labelledby="l-${esc(q.id)}"><label class="tf-q" id="l-${esc(q.id)}" for="f-${esc(q.id)}">${num}${esc(q.prompt)}</label>${help}${control}</div>`;
+  }
+  control = (q.fields || []).map((f) => f.type === 'checkbox'
+    ? `<label class="tf-check"><input type="checkbox" name="${esc(f.name)}"${f.required ? ' required' : ''}><span>${esc(f.label)}</span></label>`
+    : `<label class="tf-field"><span class="tf-flabel mono">${esc(f.label)}</span><input type="${esc(f.type || 'text')}" name="${esc(f.name)}" autocomplete="${esc(f.autocomplete || 'off')}" maxlength="${esc(f.max || 200)}"${f.required ? ' required' : ''}></label>`).join('');
+  return `<fieldset class="tf-step" data-step="${n}" data-kind="fields"${described}><legend>${num}${esc(q.prompt)}</legend>${help}${control}</fieldset>`;
+}
+
+function briefForm(d) {
+  const qs = list(d.x_brief);
+  const total = qs.length;
+  return `<section id="brief" class="brief" aria-labelledby="brief-title">
+  <header class="brief-head">
+    <p class="eyebrow mono">Brief</p>
+    <h2 id="brief-title">${esc(d.x_form_title)}</h2>
+    <p class="lede">${esc(d.x_form_lede)}</p>
+  </header>
+  <p id="brief-sent" class="tf-sent" tabindex="-1"><strong>${esc(d.x_form_done_title)}</strong> ${esc(d.x_form_done)}</p>
+  <form class="tf" action="/api/lead" method="post" data-brief data-total="${total}" data-error="${esc(d.x_form_error)}">
+    <div class="tf-bar" aria-hidden="true"><span></span></div>
+    <p class="tf-count mono" aria-live="polite"><span data-count>01</span> / ${String(total).padStart(2, '0')}</p>
+    <div class="tf-steps">
+${qs.map((q, i) => briefStep(q, i + 1, total)).join('\n')}
+    </div>
+    <label class="tf-hp" aria-hidden="true">Leave this field empty <input type="text" name="fax" tabindex="-1" autocomplete="off"></label>
+    <p class="tf-error" role="alert" data-error-slot></p>
+    <div class="tf-nav">
+      <button type="button" class="tf-back" data-prev>Back</button>
+      <button type="button" class="tf-next" data-next>Continue <span class="mono" aria-hidden="true">Enter</span></button>
+      <button type="submit" class="tf-submit">${esc(d.x_form_submit)} ${arrow}</button>
+    </div>
+    <div class="tf-done" role="status" tabindex="-1" hidden>
+      <p class="eyebrow mono">Received</p>
+      <h3>${esc(d.x_form_done_title)}</h3>
+      <p>${esc(d.x_form_done)}</p>
+    </div>
+  </form>
+</section>`;
+}
+
 function contact(pages) {
   const c = pages.find((p) => p.data.slug === 'contact');
-  const body = `<article class="about">
+  const body = `<article class="about contact">
   <p class="eyebrow mono">Contact</p>
-  <h1 class="pt" aria-label="Contact">${splitHeadline('Contact')}</h1>
+  <h1 class="pt" aria-label="Start a project">${splitHeadline('Start a project')}</h1>
   <div class="prose" data-reveal>${c.html}</div>
+  ${briefForm(c.data)}
 </article>`;
-  return shell({ title: c.data.title, description: c.data.description, path: '/contact.html', page: 'contact', body, nav: navHtml('contact') });
+  return shell({ title: c.data.title, description: c.data.description, path: '/contact.html', page: 'contact', body, nav: navHtml('contact'), scripts: ['/assets/personal/brief.js'] });
 }
 
 export function renderPersonalSite(pages) {

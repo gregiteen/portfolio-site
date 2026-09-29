@@ -110,6 +110,8 @@ import { callOpenRouter } from './lib/openrouter.mjs';
 import { parseUserAgent, renderVisitorEnrichmentHtml } from './lib/email-rows.mjs';
 import { assembleDigest, renderDigestHtml } from './lib/delivery.mjs';
 import { listEvidenceForSlug, listEvidenceSlugs } from './lib/evidence-store.mjs';
+import { parseDocument } from '@ssss/cli/frontmatter';
+import { validateBrief, briefSummary } from './lib/brief.mjs';
 import {
   upsertLead, getLead, listLeads,
   upsertOpportunity, getOpportunity, listOpportunities, transitionOpportunity,
@@ -504,6 +506,9 @@ const visitorProfiles = new Map();
 
 /** ip → { count, resetAt } — rate limiting for /api/send-code */
 const ipRateLimit = new Map();
+
+/** ip → { count, resetAt } — rate limiting for /api/lead */
+const leadRateLimit = new Map();
 
 // ── Persistence: .data/sessions.json (gitignored — contains tokens) ──
 const dataDir = join(__dirname, '..', '.data');
@@ -2193,6 +2198,74 @@ createServer(async (req, res) => {
         sendJson(res, 200, { ok: true });
       } catch {
         sendJson(res, 400, { ok: false });
+      }
+    });
+    return;
+  }
+
+  // ── API: Project brief (the lead form on /contact.html) ──
+  // Questions are read from vault/pages/contact.md (x_brief); only declared
+  // values are accepted. Stored through crm-store (runtime/leads, Operation
+  // Contract), then the owner is emailed. Works with fetch (JSON) and with a
+  // plain form post when scripting is unavailable (303 back to the page).
+  if (urlPath === '/api/lead' && req.method === 'POST') {
+    const html = !String(req.headers['content-type'] || '').includes('application/json');
+    const reply = (code, obj) => {
+      if (!html) return sendJson(res, code, obj);
+      res.writeHead(303, { location: obj.ok ? '/contact.html?sent=1#brief-sent' : '/contact.html?error=1#brief' }).end();
+    };
+    const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
+    const now = Date.now();
+    const rl = leadRateLimit.get(ip) || { count: 0, resetAt: now + 3_600_000 };
+    if (now > rl.resetAt) { rl.count = 0; rl.resetAt = now + 3_600_000; }
+    if (rl.count >= 5) return reply(429, { ok: false, error: 'Too many submissions. Please email me@gregiteen.xyz directly.' });
+    rl.count++;
+    leadRateLimit.set(ip, rl);
+
+    let raw = '';
+    req.on('data', (chunk) => { raw += chunk; if (raw.length > 12_000) req.destroy(); });
+    req.on('end', async () => {
+      try {
+        const input = html ? Object.fromEntries(new URLSearchParams(raw)) : JSON.parse(raw || '{}');
+        if (input.fax) return reply(200, { ok: true }); // honeypot: bots fill every field
+        const contact = parseDocument(await readFile(join(vaultDir, 'pages', 'contact.md'), 'utf8')).data;
+        const questions = contact.x_brief || [];
+        const { ok, errors, answers } = validateBrief(questions, input);
+        if (!ok) return reply(400, { ok: false, errors });
+
+        const prior = await getLead(answers.email);
+        const submittedAt = new Date().toISOString();
+        const rows = briefSummary(questions, answers);
+        const notes = rows.map(([q, a]) => `**${q}**\n\n${a}`).join('\n\n');
+        await upsertLead(answers.email, {
+          display_name: answers.name,
+          email: answers.email,
+          company: answers.company || prior?.company || null,
+          source: prior?.source || 'site-brief',
+          status: prior?.status || 'new',
+          description: `Project brief from ${answers.name} (${answers.engagement}).`,
+          enrichment: { ...(prior?.enrichment || {}), brief: { ...answers, submitted_at: submittedAt } },
+          consent: { contact: true, at: submittedAt, source: '/contact.html' },
+          notes,
+        });
+        await flushCrmStore();
+        reply(200, { ok: true });
+
+        smtpTransport.sendMail({
+          from: mailFrom,
+          to: mailOwner,
+          replyTo: answers.email,
+          subject: `Project brief: ${answers.name}${answers.company ? ` (${answers.company})` : ''}`,
+          text: rows.map(([q, a]) => `${q}\n${a}`).join('\n\n'),
+          html: emailShell({
+            eyebrow: 'Greg Iteen — Portfolio · Project brief',
+            headline: 'New<br>brief.',
+            bodyHtml: rows.map(([q, a]) => `<p style="font-family:'Courier New',Courier,monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8a8a88;margin:0 0 6px;">${escapeHtml(q)}</p><p style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#f5f5f3;margin:0 0 22px;white-space:pre-wrap;">${escapeHtml(a)}</p>`).join(''),
+          }),
+        }).catch((err) => console.error('[Brief] owner email failed:', err instanceof Error ? err.message : err));
+      } catch (err) {
+        console.error('[Brief] submission failed:', err instanceof Error ? err.message : err);
+        if (!res.headersSent) reply(500, { ok: false, error: 'The brief could not be stored.' });
       }
     });
     return;
