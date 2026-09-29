@@ -2,7 +2,7 @@
 type: page
 slug: "site-ultrachat"
 title: "UltraChat"
-description: "AI workspace where assistants handle email, calls, CRM and scheduling."
+description: "Multi-tenant AI workspace in which assistants operate email, telephony, CRM and scheduling."
 timestamp: 2026-09-28T00:00:00Z
 name: "UltraChat"
 sandbox_entry: "index.html"
@@ -23,4 +23,4 @@ x_status: 200
 x_order: 1
 ---
 
-A multi-tenant AI workspace. Assistants handle email, calls, CRM and scheduling, and every tenant's state is a set of SSSS documents rather than rows in a shared database.
+Workspaces are generated from a specification, stored as SSSS documents and exported as .ucw bundles that a marketplace can list, sell and provision without carrying the seller's private data.

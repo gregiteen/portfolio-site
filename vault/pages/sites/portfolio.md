@@ -2,7 +2,7 @@
 type: page
 slug: "site-portfolio"
 title: "gregiteen.xyz"
-description: "This site: a static build rendered from a Markdown vault."
+description: "This site: static HTML compiled from a validated Markdown vault."
 timestamp: 2026-09-28T00:00:00Z
 name: "gregiteen.xyz"
 sandbox_entry: "index.html"
@@ -22,4 +22,4 @@ x_status: 200
 x_order: 4
 ---
 
-The page you are reading. Every word comes from a Markdown document with typed frontmatter; the build validates them with the SSSS engine and writes static HTML.
+Every word on this page is a Markdown document with typed frontmatter. The build validates each document with the SSSS engine, refuses to publish an invalid one and writes static HTML; enquiries submitted here are stored as SSSS lead documents.

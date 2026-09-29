@@ -2,7 +2,7 @@
 type: page
 slug: "oss-total-recall"
 title: "Total Recall"
-description: "Portable memory for AI agents: a validated Markdown vault, local semantic search, and rules compiled into each agent's instruction files."
+description: "Portable memory for AI agents: a validated Markdown vault, local semantic search, and binding rules compiled into each agent's instruction files."
 timestamp: 2026-09-28T00:00:00Z
 name: "Total Recall"
 sandbox_entry: "index.html"
@@ -22,4 +22,4 @@ x_verified: "2026-09-28"
 x_order: 1
 ---
 
-Every rule, correction and fact an agent learns is a Markdown node in a local vault. There is no database. A compiler writes the active rules into the instruction file each agent reads.
+Corrections become typed memory nodes in a local vault with no database. A compiler writes the binding rules into CLAUDE.md, AGENTS.md and GEMINI.md, and a separate encrypted store keeps credentials out of both.

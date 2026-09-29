@@ -1,15 +1,15 @@
 ---
 type: page
 slug: "idea-bundle"
-title: "A business is one file"
-description: "A whole workspace exports as a single portable bundle and provisions cleanly elsewhere."
-timestamp: 2026-09-28T00:00:00Z
-name: "A business is one file"
+title: "A business is a portable artifact"
+description: "A workspace exports as a single .ucw bundle that carries its structure, withholds private data and provisions deterministically."
+timestamp: 2026-09-28T20:00:00Z
+name: "A business is a portable artifact"
 sandbox_entry: "index.html"
 x_kind: "idea"
 x_diagram: "bundle"
 x_project: "ssss"
-x_order: 2
+x_order: 4
 ---
 
-Because the state is documents, the whole workspace collapses into one .ucw bundle. Structural documents ship; tenant-private ones never do. Importing is idempotent, so the same bundle can be provisioned twice and change nothing the second time.
+Every document type carries a portability class. Structural documents (workflows, rules, pages, assistants) constitute the model and ship; resource-bound documents (a domain, a phone number) ship as parameters to be bound at install; tenant-private documents (customers, transcripts, tasks) never leave. A workspace therefore exports as one .ucw bundle that can be inspected, validated, sold and provisioned into a new tenant. Import replays through the same operation contract, so provisioning the same bundle twice commits nothing the second time.

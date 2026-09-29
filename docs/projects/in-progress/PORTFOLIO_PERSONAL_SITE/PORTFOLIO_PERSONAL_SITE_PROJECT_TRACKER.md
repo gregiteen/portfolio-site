@@ -45,6 +45,8 @@
 - [x] Redesign: cyanotype specimen sheet with per-glyph width hero, pointer field, drawn diagrams, site previews, project pages, About with LinkedIn, contact (seen in the browser pane, desktop and phone width)
 - [x] A-022 every fact dated and verified; no licence or metric claims (enforced by test)
 - [/] A-023 reduced-motion fallback in CSS and JS (tested by contract); performance check on the deployed site pending
+- [x] Copy rewrite (Greg, 2026-09-28): all page copy rewritten in a formal, technical register after studying total-recall, the tr-plugin-* repositories, ssss, festech.live and ultrachat-ai-powered; four principles (new: composable verbs, with diagram), deeper write-ups, new write-up `projects/plugins.html`
+- [x] Lead form (Greg, 2026-09-28): one-question-per-screen brief on /contact.html; questions live in `x_brief` on `vault/pages/contact.md`; `POST /api/lead` validates against them (`scripts/lib/brief.mjs`), rate-limits per IP, has a honeypot, stores via crm-store `runtime/leads`, emails the owner; plain form post works without scripting. Tested end to end in the browser pane; test lead removed
 - [ ] Greg reviews the redesign (dev server: http://localhost:4590 while running)
 - [ ] Gates on the Mac mini; PM2 env set; deploy via the deploy skill
 

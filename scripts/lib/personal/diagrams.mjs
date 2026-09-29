@@ -1,5 +1,5 @@
 /**
- * Inline SVG diagrams for the three ideas. Strokes use pathLength="1" so the
+ * Inline SVG diagrams for the ideas. Strokes use pathLength="1" so the
  * page script can draw them on scroll with a single dash animation. Labels are
  * the real artifacts the systems produce (file names, extensions), not decoration.
  */
@@ -34,6 +34,21 @@ export const DIAGRAMS = {
     <path pathLength="1" d="M230 92h94M230 106h94M230 120h60" opacity=".6"/>
   </g>
   ${T(277, 172, '.ucw', 'middle')}${T(20, 208, 'documents')}
+</svg>`,
+
+  // A repeated multi-step procedure becomes one named verb, listed in the instructions.
+  verbs: `<svg viewBox="0 0 360 220" role="img" aria-label="A repeated procedure of several steps becomes one named command, which the instruction files list">
+  <g class="dg" fill="none" stroke="currentColor" stroke-width="1.4">
+    <path pathLength="1" d="M20 40h84v22H20z"/><path pathLength="1" d="M20 84h84v22H20z" opacity=".75"/><path pathLength="1" d="M20 128h84v22H20z" opacity=".5"/>
+    <path pathLength="1" d="M62 62v22M62 106v22" opacity=".55"/>
+    <path pathLength="1" d="M114 40c14 0 14 55 28 55M114 150c14 0 14-55 28-55"/>
+    <path pathLength="1" d="M148 76h84v38h-84z" stroke="#ff6a00"/>
+    <path pathLength="1" d="M240 95h26"/><path pathLength="1" d="M260 89l6 6-6 6"/>
+    <path pathLength="1" d="M274 40h66v110h-66z"/>
+    <path pathLength="1" d="M284 58h46M284 72h46M284 86h30" opacity=".55"/>
+    <path pathLength="1" d="M284 104h46" stroke="#ff6a00"/>
+  </g>
+  ${T(20, 174, 'procedure')}${T(190, 132, 'verb', 'middle')}${T(274, 174, 'instructions')}
 </svg>`,
 
   // One vault compiles into each agent's instruction file.

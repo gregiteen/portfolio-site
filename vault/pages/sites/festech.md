@@ -2,7 +2,7 @@
 type: page
 slug: "site-festech"
 title: "festech.live"
-description: "Operating system for talent organizations: logistics, mapping and communications for live events."
+description: "Multi-tenant operating system for artist collectives: CRM, events, ticketing, commerce, telephony and messaging on SSSS state."
 timestamp: 2026-09-28T00:00:00Z
 name: "festech.live"
 sandbox_entry: "index.html"
@@ -23,4 +23,4 @@ x_status: 200
 x_order: 2
 ---
 
-A TypeScript monorepo with web, mobile and communications apps on shared packages for auth, data and a real-time comms engine. It also serves as the reference app for reusable Total Recall and SSSS capabilities.
+A Turborepo monorepo with Next.js, Expo and Asterisk applications on shared packages. Every consequential write passes through the SSSS kernel, and PostgreSQL is maintained as a projection of the document vault.

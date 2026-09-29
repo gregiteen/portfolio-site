@@ -2,7 +2,7 @@
 type: page
 slug: "oss-ssss"
 title: "SSSS"
-description: "A database-free, Markdown-first schema and mutation contract for AI-agent state."
+description: "An open specification and zero-dependency engine for agent state: typed Markdown documents, a validated mutation contract and portable bundles."
 timestamp: 2026-09-28T00:00:00Z
 name: "SSSS"
 sandbox_entry: "index.html"
@@ -22,4 +22,4 @@ x_verified: "2026-09-28"
 x_order: 2
 ---
 
-Documents with typed frontmatter are the primitives; every write is a validated operation envelope; a running business exports as one portable .ucw file.
+Documents with typed frontmatter are the primitives, every write passes a thirteen-stage operation pipeline, and a running business exports as one .ucw bundle that withholds private data by construction.

@@ -22,4 +22,4 @@ x_status: 200
 x_order: 3
 ---
 
-A single-page event site for a competitive team-building field day, designed and built for Sessions by Slim and The Workshop Collective.
+A single-page site for a competitive team-building field day, designed and built for Sessions by Slim and The Workshop Collective.

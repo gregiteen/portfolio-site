@@ -2,7 +2,7 @@
 type: page
 slug: "oss-postsocial"
 title: "postsocial"
-description: "An open-source social AI chat."
+description: "An early open-source application combining social feeds with AI conversation."
 timestamp: 2026-09-28T00:00:00Z
 name: "postsocial"
 sandbox_entry: "index.html"
@@ -21,4 +21,4 @@ x_verified: "2026-09-28"
 x_order: 6
 ---
 
-An early open-source chat application that combines social feeds with an AI conversation.
+An experiment that combined social feeds and AI conversation in one interface, written in TypeScript.

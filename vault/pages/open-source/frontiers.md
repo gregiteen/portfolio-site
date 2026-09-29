@@ -2,7 +2,7 @@
 type: page
 slug: "oss-scientific-frontiers-engine"
 title: "Scientific Frontiers Engine"
-description: "A continuous scholarly-ingestion daemon, benchmark ledger and cross-disciplinary hypothesis generator."
+description: "A scholarly-ingestion daemon with a benchmark ledger and a cross-disciplinary hypothesis generator."
 timestamp: 2026-09-28T00:00:00Z
 name: "Scientific Frontiers Engine"
 sandbox_entry: "index.html"
@@ -21,4 +21,4 @@ x_verified: "2026-09-28"
 x_order: 4
 ---
 
-Ingests scholarly sources on a schedule, keeps a ledger of state-of-the-art benchmark results, and proposes hypotheses that connect fields.
+Ingests research on a schedule, maintains a ledger of state-of-the-art benchmark results and proposes hypotheses that connect separate fields.
