@@ -13,5 +13,5 @@
 3. **Housekeeping fixes:** `vault/visitors.md` untracked (A-014); `/api/test/logout` gated (A-006); `Secure` cookie (A-007); `me@gregiteen.xyz` everywhere (A-008); delete stray root scripts and one-off generators (A-009).
 4. **No Gemini (A-003).** Port grounded enrichment to OpenRouter; remove the runtime key setter.
 5. **JSN at `/jobs`.** `sync-jobs`, the proxy, tests with a fake JSN server; JSN token secret bound to both repos; JSN on the mesh address.
-6. **Copy (A-010).** Draft home/about/contact/project framing from JSN's `PROFILE.md`; Greg approves; then deploy.
+6. **Redesign (D-5, A-020..A-023).** Vault kinds and documents for deployed sites and open-source projects; a dedicated renderer with the new design and motion system; About with LinkedIn; review in the browser pane; then deploy.
 7. **Deploy.** Gates on the Mac mini, set `JSN_URL`/`JSN_API_TOKEN`/`SITE_GENERATION_ENABLED=0` in PM2, deploy via the deploy skill, walk through logged-out and admin.

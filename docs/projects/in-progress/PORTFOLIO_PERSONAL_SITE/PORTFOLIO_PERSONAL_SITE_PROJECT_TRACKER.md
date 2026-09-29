@@ -40,7 +40,12 @@
 
 ## ⏳ Phase 4: Copy and deploy
 
-- [ ] A-010 home/about/contact/project copy drafted and approved by Greg
+- [ ] A-020 personal-site renderer (`scripts/build-personal.mjs`) wired into personal mode
+- [ ] A-021 vault kinds `deployed-site` and `open-source` with documents for the verified entries
+- [ ] Redesign: hero with motion graphics, innovation story, deployed sites, open-source projects, project pages, About with LinkedIn, contact
+- [ ] A-022 every fact dated and verified; no unverified licence or metric
+- [ ] A-023 reduced-motion fallback and performance checked in the browser pane
+- [ ] Greg reviews the redesign in the browser pane
 - [ ] Gates on the Mac mini; PM2 env set; deploy via the deploy skill
 
 ## ⏳ Phase 5: Testing and verification

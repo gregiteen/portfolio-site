@@ -166,7 +166,7 @@ None of the credentials are in the repo (`.env` ignored; the stray `.env.bak-mai
 | A-007 | P2-medium | Auth cookie lacks `Secure` | `serve.mjs` 2068 | cookie could travel over http if mis-routed | add `Secure` when `X-Forwarded-Proto=https` or `SITE_URL` is https | fix in this project |
 | A-008 | P2-medium | `sales@gregiteen.xyz` hardcoded; Greg uses `me@gregiteen.xyz` | section 7 | admin login and outgoing mail identity wrong | one `ADMIN_EMAIL`/`MAIL_FROM` source; default `me@gregiteen.xyz`; remove literals | fix in this project |
 | A-009 | P3-low | Stray root scripts and 18 one-off generators tracked | section 2 | noise, Gemini keys in scripts | delete | fix in this project |
-| A-010 | P1-high | Site copy does not match the current purpose | section 11 | the site does not support the job search | rewrite home/about/contact around sales/AE/automation/AI roles using facts from JSN's `PROFILE.md`; Greg approves the copy | fix in this project (needs Greg's approval of copy) |
+| A-010 | P1-high | Site copy does not match the current purpose | section 11 | the site does not support the job search | superseded by D-5: the site is about Greg's software projects (see addendum A-020..A-023) | superseded |
 | A-011 | P3-low | Credentials are droplet env vars, not in the Total Recall secret store | section 5 | drift, no audit trail | later | defer |
 | A-012 | P2-medium | `serve.mjs` cannot be imported by tests | 3,765 lines, import-time side effects | routing/auth changes untestable | new logic in `scripts/lib/site-mode.mjs` (done); add a spawn-based smoke test; split later | fix new code in this project; split deferred |
 | A-013 | P3-low | Docs and code were written before this audit | process note | rework risk | rewritten from this audit | done |
@@ -196,7 +196,7 @@ None of the credentials are in the repo (`.env` ignored; the stray `.env.bak-mai
 | D-2. Delete the generation pipeline code or keep it behind the flag? | Keep behind `SITE_GENERATION_ENABLED` (reversible); revisit later | pending |
 | D-3. Keep Mailcow webmail for the site, or move mail elsewhere? | Keep for now (it is live infrastructure); out of scope for this project | pending |
 | D-4. Where does JSN run so the site can reach it? | Greg's laptop over the mesh with a token; the proxy shows "not connected" when it is off | pending |
-| D-5. Positioning of the personal site (roles, tone, which projects to feature) | Sales/AE/automation/AI-solutions leading, engineering projects as proof; Greg approves the copy before it deploys | pending |
+| D-5. Positioning of the personal site (roles, tone, which projects to feature) | Sales/AE/automation/AI-solutions leading, engineering projects as proof; Greg approves the copy before it deploys | **Answered 2026-09-28 by Greg: the site is about his software projects, completely redesigned; link LinkedIn on the About page; high-end, no cookie-cutter, strong motion graphics; focus on innovation; list deployed sites and open-source projects.** A-010 is superseded (see addendum). |
 
 ## Completion checklist
 
@@ -204,3 +204,32 @@ None of the credentials are in the repo (`.env` ignored; the stray `.env.bak-mai
 - [x] Baseline tests run before any change (Mac mini, clean export of `e2c8ed3`)
 - [x] Every finding has a severity and a disposition
 - [x] `Audit Status` set to Complete and the audited commit recorded
+
+## Addendum (2026-09-28): requirement change, D-5 answered
+
+Greg's instruction: the site is about his **software projects**, **completely redesigned**, high end, "no cookie cutter", amazing motion graphics, focused on his **innovation**; **list his deployed sites and open-source projects**; link his **LinkedIn** on the About page. Nothing else in the audit changes; these facts were gathered from the code and live systems before any design work.
+
+### Facts gathered (evidence)
+
+- **Current rendering:** `scripts/build-site.mjs` (1,736 lines) renders vault pages into one default theme (nav, mono "vault → html" footer, project cards). Pages are typed by `x_kind` (`section`, `project`, `design`, `theme-skin`). Existing vault content: home, about, contact, 4 projects (festech, ssss, total-recall, ultrachat), 2 designs (High Stakes Field Day, Nostalgia). Assets: `assets/logos/*`, `assets/designs/*-preview.png`, `assets/greg-portrait.jpg`.
+- **Live deployed sites (HTTP checked 2026-09-28):** `gregiteen.xyz` 200; `ultrachat.app` 200 ("UltraChat - AI-Powered Productivity Suite"); `festech.live` 200 for browsers ("The operating system for talent organizations"; 403 to curl without a browser user agent); `thetwc-hsfd.vercel.app` 200 ("High Stakes Field Day"). `moogie.com` returns "Coming Soon" and is not listed. `dabber.app` does not resolve.
+- **Open source, Greg's own, public, non-fork (GitHub API):** `total-recall` (also on npm as `total-recall-brain`, MIT, 3.32.4), `ssss` (npm `@gregiteen/ssss-cli` 0.10.2), `tr-plugin-code-quality`, `scientific-frontiers-engine`, `portfolio-site`, `postsocial`, `ultrachat` (early open version). The other public repos are forks of third-party projects and are **not** listed as his work. None of Greg's repos declares a licence on GitHub (`licenseInfo` empty) except the npm `total-recall-brain` package (MIT): the site will say "open source" and link the repo, and will not claim a licence the repo does not declare.
+- **LinkedIn:** `https://www.linkedin.com/in/gregiteen`.
+
+### New findings
+
+| ID | Severity | Finding | Evidence | Impact | Recommendation | Disposition |
+|---|---|---|---|---|---|---|
+| A-020 | P1-high | The default theme is generic (card grid, monospace footer) and cannot deliver the requested design; the rendering is embedded in a 1,736-line builder | `build-site.mjs` | a redesign inside it would entangle two concerns and keep the generation-era markup | add a dedicated personal-site renderer (`scripts/build-personal.mjs` plus `scripts/lib/personal/`) that `build-site.mjs` calls in personal mode; content stays in the vault | fix in this project |
+| A-021 | P2-medium | No vault document types for deployed sites or open-source projects; the two lists would otherwise be hardcoded in markup | `vault/pages` kinds | content in code violates "everything is SSSS documents" | new page kinds `x_kind: deployed-site` and `open-source` with typed frontmatter; the renderer only reads them | fix in this project |
+| A-022 | P2-medium | Claims about licences, stars, versions can go stale or be false | GitHub `licenseInfo` empty; npm shows MIT | a high-end site that misstates facts damages credibility | show only facts that are verified and dated in the document (`x_verified: 2026-09-28`); no star counts; licence shown only where declared | fix in this project |
+| A-023 | P3-low | Motion must respect accessibility and performance | n/a | heavy motion can fail on low-power devices and for reduced-motion users | `prefers-reduced-motion` fallback, no layout shift, lazy canvas, `Lighthouse`-style budget checked in the browser pane | fix in this project |
+
+### Impact on the requested change (addendum)
+
+| Requested change | Blocked / shaped / affected by | Findings |
+|---|---|---|
+| Completely redesigned site about software projects | Shaped: new renderer and new page kinds; the old default theme is left for the flagged generation mode | A-020, A-021 |
+| List deployed sites and open-source projects | Shaped: only verified entries, dated | A-021, A-022 |
+| Motion graphics, high end | Shaped: accessibility and performance constraints | A-023 |
+| LinkedIn on About | Trivial: one verified link | none |
