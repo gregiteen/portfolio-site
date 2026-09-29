@@ -146,11 +146,14 @@ async function saveToSent(email, password, raw) {
  * records the message for delivery and open tracking.
  */
 export async function sendMessage(email, password, { to, subject, text, inReplyTo }) {
-  const smtpHost = process.env.WEBMAIL_SMTP_HOST || process.env.SMTP_HOST || 'mail.gregiteen.xyz';
+  // Mailbox submission only. SMTP_HOST/SMTP_PORT belong to the site's
+  // transactional relay and must not be borrowed here: falling back to them sent
+  // mailbox credentials to port 2525, where nothing listens on this host.
+  const smtpHost = process.env.WEBMAIL_SMTP_HOST || 'mail.gregiteen.xyz';
   const isLoopback = smtpHost === '127.0.0.1' || smtpHost === 'localhost';
   const transport = createTransport({
     host: smtpHost,
-    port: Number(process.env.WEBMAIL_SMTP_PORT || process.env.SMTP_PORT || 587),
+    port: Number(process.env.WEBMAIL_SMTP_PORT || 587),
     secure: false,
     requireTLS: true,
     tls: { rejectUnauthorized: isLoopback ? false : true },
