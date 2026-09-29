@@ -26,3 +26,7 @@ Before doing anything, read the current repo's overlay skill at `.agent/skills/<
 ## Tools NOT Available
 - `replace_file_content`
 - `write_to_file`
+
+
+## Audit first
+Before planning or reviewing a project, confirm `<PREFIX>_AUDIT.md` exists and is `Complete` (`node .agent/skills/project-management/scripts/check-audit.mjs`). If it does not, the first task is the audit, following `references/audit-template.md`.

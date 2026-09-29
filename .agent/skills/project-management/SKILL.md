@@ -1,6 +1,6 @@
 ---
 name: project-management
-description: "Use this skill when managing project documentation, GitHub issues, pull requests, and project tracker checklists in ANY repository. Defines the universal 4-file (PRD/ARCHITECTURE/DEVELOPMENT_PLAN/PROJECT_TRACKER) Kanban documentation system shared across all repos. Do NOT use for code implementation. MANDATORY: You MUST read the full SKILL.md file before executing."
+description: "Use this skill when managing project documentation, GitHub issues, pull requests, and project tracker checklists in ANY repository. Defines the universal 5-file Kanban documentation system shared across all repos: the AUDIT comes first and must be complete before the PRD, ARCHITECTURE, DEVELOPMENT_PLAN and PROJECT_TRACKER are written. Do NOT use for code implementation. MANDATORY: You MUST read the full SKILL.md file before executing."
 command: /project-management
 ---
 
@@ -25,7 +25,8 @@ Before doing anything else, check whether the current repo has its own overlay s
 .agent/skills/<repo-slug>-project-management/SKILL.md
 ```
 
-Examples already in use: `festech-project-management`, `total-recall-project-management`, `ultrachat-project-management`, `ssss-project-management`, `moogie-project-management`, `portfolio-project-management`.
+Repository-specific overlays may extend this generic method. Discover and read
+the overlay in the current repository; do not infer another project's tracker.
 
 - **If it exists**: read it. It defines the product/domain-specific layer — definition of done, severity/blocker test, architecture reminders, GitHub repo name and branch strategy, deployment and testing specifics, and any overrides to the prioritization order below. This global skill still governs the file mechanics (folder layout, naming, tracker syntax); the overlay never needs to redefine those.
 - **If it does not exist**: proceed using the generic defaults in this skill, and mention to the user that this repo would benefit from its own `<repo-slug>-project-management` overlay skill (see "Creating a repo-specific overlay" below).
@@ -44,9 +45,14 @@ Resolve the actual active work dynamically, in this order, every time:
 
 If sources disagree, prefer the user's latest instruction, then update whichever source is stale so the next agent doesn't repeat the mistake.
 
-## The Standard: 4-File Kanban Documentation System
+## The Standard: 5-File Kanban Documentation System
 
 All project documentation lives in `docs/projects/`, organized as a Kanban board.
+
+> **THE FIRST RULE: EVERY PROJECT STARTS WITH AN AUDIT.**
+> The first file of every project is `<PROJECT_PREFIX>_AUDIT.md`. It is an extensive, evidence-based audit of the existing code, data, infrastructure and standing rules that the project touches. **No other project document (PRD, ARCHITECTURE, DEVELOPMENT_PLAN, PROJECT_TRACKER) is created, and no code is changed, until the audit exists and is marked `Complete`.** The other four documents are written from the audit and cite its finding IDs. A project with no audit is not planned; it is a guess.
+>
+> If you catch yourself having already written a PRD or edited code first, stop, write the audit now, then revise the other documents and any code to match what it found. Say so in the audit's "Process note".
 
 ### Kanban folders
 
@@ -63,7 +69,7 @@ A repo doesn't need every folder from day one (`backlog/` and `archived/` are co
 
 ### Per-project document set
 
-Every **new project or feature** gets its own dedicated set of **4 fresh documents** in its own sub-folder. Never append to another project's documents — if you're starting new work, create new documents; if you're continuing existing work, find and use that project's existing documents.
+Every **new project or feature** gets its own dedicated set of **5 fresh documents** in its own sub-folder, created in the order below. Never append to another project's documents — if you're starting new work, create new documents; if you're continuing existing work, find and use that project's existing documents.
 
 **Folder structure mandate:**
 
@@ -71,16 +77,45 @@ Every **new project or feature** gets its own dedicated set of **4 fresh documen
 docs/projects/<kanban-state>/<PROJECT_PREFIX>/
 ```
 
-| # | Document | Path (example, in-progress) | Naming Pattern |
-|---|----------|------------------------------|-----------------|
-| 1 | **PRD** | `docs/projects/in-progress/<PROJECT_PREFIX>/<PROJECT_PREFIX>_PRD.md` | `<PROJECT_PREFIX>_PRD` |
-| 2 | **Architecture** | `docs/projects/in-progress/<PROJECT_PREFIX>/<PROJECT_PREFIX>_ARCHITECTURE.md` | `<PROJECT_PREFIX>_ARCHITECTURE` |
-| 3 | **Dev Plan** | `docs/projects/in-progress/<PROJECT_PREFIX>/<PROJECT_PREFIX>_DEVELOPMENT_PLAN.md` | `<PROJECT_PREFIX>_DEVELOPMENT_PLAN` |
-| 4 | **Tracker** | `docs/projects/in-progress/<PROJECT_PREFIX>/<PROJECT_PREFIX>_PROJECT_TRACKER.md` | `<PROJECT_PREFIX>_PROJECT_TRACKER` |
+| # | Document | Path (example, in-progress) | Naming Pattern | Written |
+|---|----------|------------------------------|-----------------|---------|
+| 1 | **AUDIT** | `docs/projects/in-progress/<PROJECT_PREFIX>/<PROJECT_PREFIX>_AUDIT.md` | `<PROJECT_PREFIX>_AUDIT` | **First. Must be `Complete` before 2–5 exist** |
+| 2 | **PRD** | `.../<PROJECT_PREFIX>_PRD.md` | `<PROJECT_PREFIX>_PRD` | From the audit |
+| 3 | **Architecture** | `.../<PROJECT_PREFIX>_ARCHITECTURE.md` | `<PROJECT_PREFIX>_ARCHITECTURE` | From the audit |
+| 4 | **Dev Plan** | `.../<PROJECT_PREFIX>_DEVELOPMENT_PLAN.md` | `<PROJECT_PREFIX>_DEVELOPMENT_PLAN` | From PRD + architecture |
+| 5 | **Tracker** | `.../<PROJECT_PREFIX>_PROJECT_TRACKER.md` | `<PROJECT_PREFIX>_PROJECT_TRACKER` | Last; every P0/P1 audit finding becomes a tracker item |
 
 Agents MUST move the entire project **folder** (not just loose files) between Kanban directories as status changes.
 
 Some repos also keep root-level **master/umbrella documents** (e.g. `<PRODUCT>_PRD.md` directly under `docs/projects/`) as a high-level reference for overall product vision — distinct from, and not a substitute for, per-project docs. Whether a repo uses this pattern is a repo-specific decision (see the overlay skill).
+
+### The audit (document 1): what "extensive" means
+
+Use [references/audit-template.md](references/audit-template.md). Copy it to `<PROJECT_PREFIX>_AUDIT.md` and fill every section; a section that does not apply says `N/A` and why. The audit is read from the **code and the running system**, not from the repo's own docs (which drift). Cite `path:line` or a command and its output for every claim.
+
+An audit is extensive when it covers all of these, at a depth matching the project's blast radius:
+
+1. **Scope and method:** what was audited, the commit hash, the date, what was deliberately left out.
+2. **Inventory:** entry points, directory map, sizes of the largest files, generated versus authored files, what is tracked in git and what should not be (binaries, backups, env files, PII).
+3. **Runtime surface:** every HTTP route or command, scheduled job, background process, and who can call it (public, visitor, admin, token). Every environment variable and where it is read.
+4. **Data and state:** where state lives, its format, who writes it, what is personal data, what is deployed or synced and what must not be.
+5. **Integrations:** every third-party service and account the code touches, the credentials it uses, and where they come from (secret store versus env versus code).
+6. **Security and privacy:** authentication and authorization paths, cookie and token handling, injection or traversal risks in the paths the project touches, secrets or PII in git.
+7. **Standing-rule conflicts:** compare the code with the user's invariants and corrections (Total Recall rules, banned providers or products, hardcoding rules, open-source rules). Every conflict is a finding.
+8. **Quality baseline:** run the repo's real test and gate commands on the sanctioned host (the Mac mini) **before any change**, and record pass/fail counts and every failure with its cause. Note lint/type status and coverage gaps around the files the project will touch.
+9. **Debt and dead code:** stray scripts, unused features, duplicated logic, TODO/FIXME, features that are half-built or over-claimed.
+10. **Deploy and operations:** how it ships, where, with what excludes, what can be destroyed by a deploy, how to roll back.
+11. **Content and product fit** (when the project has user-facing content): does the copy, data and behaviour say what the owner needs it to say today.
+12. **Findings register:** one table, every finding with an ID (`A-001`), severity `P0-critical` / `P1-high` / `P2-medium` / `P3-low`, evidence, impact, recommendation, and a disposition (`fix in this project` / `defer` / `won't fix` with reason).
+13. **Impact on the requested change:** which findings block, shape, or are affected by what the user asked for.
+14. **Decisions:** questions that only the owner can answer, each with a recommended default so work is never blocked waiting.
+
+Rules for the audit:
+- It **records; it does not change code.** Bugs found are logged with an ID. Per the standing "fix what you see" rule they are then fixed immediately as the first items of the tracker, never left broken and never silently patched during the audit.
+- Read whole files for the parts the project touches; use search for the rest. Say which is which.
+- Baseline tests run **before** edits, from a clean export of the audited commit, so failures are attributable.
+- Mark `Audit Status: Complete` only when sections 1–14 are filled and the baseline was run. Until then the other documents must not exist.
+- A small change gets a short audit (sections may be one line each), never no audit. An existing-code project (integration, rewrite, feature in a large repo) gets the full one.
 
 ### Naming the project prefix
 
@@ -109,6 +144,8 @@ Every project document starts with:
 ---
 ```
 
+The AUDIT adds two lines: `> **Audit Status**: In progress / Complete` and `> **Audited commit**: <hash>`. Every other document adds `> **Based on audit**: <PROJECT_PREFIX>_AUDIT.md (Complete, <hash>)`.
+
 A repo-specific overlay may extend this with additional frontmatter (e.g. YAML frontmatter for a schema the repo already uses) — that's an addition, not a replacement.
 
 ### Tracker convention
@@ -130,6 +167,7 @@ Goal: <one-line goal>
 ```
 
 - Use `- [x]` for complete, `- [/]` for in-progress, `- [ ]` for pending. Never plain bullets or numbered lists for tasks.
+- Every tracker's **Phase 0 is "Audit"** and is checked off only when `<PROJECT_PREFIX>_AUDIT.md` is `Complete`; its Phase 1 is the fixes for the audit's P0/P1 findings.
 - Every tracker MUST include a final phase dedicated to testing and verification. A project cannot move to `completed/` without that phase fully checked off.
 - Change the phase header emoji from `⏳` to `✅` when all items in that phase are complete.
 - Always update the tracker first when completing a task — don't ask permission to check a box; if the work is verified, check it off, then propose the next item.
@@ -138,7 +176,7 @@ Goal: <one-line goal>
 
 When completing a project, the agent MUST:
 
-1. Verify the testing phase is fully checked off — a project cannot move to `completed/` without it.
+1. Verify the testing phase is fully checked off and every audit finding has a final disposition — a project cannot move to `completed/` without it.
 2. Move the project folder from `in-progress/` to `completed/`.
 3. Extract any unchecked `- [ ]` items or future-enhancement ideas from the tracker.
 4. Append them to `DEFERRED_BACKLOG.md` under the project's section heading.
@@ -146,8 +184,9 @@ When completing a project, the agent MUST:
 
 ### The SWE Project Lifecycle
 
-1. **Discovery** (PRD & Architecture) — define *what* is being built and *how* the systems connect.
-2. **Planning** (Dev Plan & Tracker) — break the architecture into a step-by-step plan, then extract binary yes/no tasks into the tracker.
+0. **Audit** (AUDIT) — read the existing code, data, infrastructure and standing rules; run the baseline tests; register every finding. Nothing else starts before this is `Complete`.
+1. **Discovery** (PRD & Architecture) — define *what* is being built and *how* the systems connect, given what the audit found.
+2. **Planning** (Dev Plan & Tracker) — break the architecture into a step-by-step plan, then extract binary yes/no tasks into the tracker. Every P0/P1 finding has a tracker item.
 3. **Execution** — never code blindly; every PR checks off a specific tracker box. Don't let work drift into a later phase while an earlier one is incomplete.
 
 ### Architecture & documentation sync
@@ -379,6 +418,9 @@ When in doubt, choose the task that gets a real user through the product with le
 
 ## What Not To Do
 
+- Don't write a PRD, architecture, plan or tracker before the audit is `Complete`, and don't change code before it. "It is a small change" means a short audit, not none.
+- Don't audit from the repo's docs or from memory; read the code and run the baseline.
+- Don't leave audit findings unresolved: each gets a disposition, and P0/P1 findings are fixed, not just listed.
 - Don't create huge, vague tasks ("fix app", "clean up codebase").
 - Don't treat new features as more important than active blockers.
 - Don't merge untested changes casually.

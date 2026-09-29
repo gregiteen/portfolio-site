@@ -16,5 +16,23 @@
     "description": "Hook executes",
     "command": "bash .agent/skills/project-management/hooks/on-issue-update.sh",
     "expected_exit_code": 0
+  },
+  {
+    "id": "pm-eval-4",
+    "description": "Audit template exists",
+    "command": "test -f .agent/skills/project-management/references/audit-template.md",
+    "expected_exit_code": 0
+  },
+  {
+    "id": "pm-eval-5",
+    "description": "SKILL.md makes the audit first and mandatory",
+    "command": "grep -q 'EVERY PROJECT STARTS WITH AN AUDIT' .agent/skills/project-management/SKILL.md",
+    "expected_exit_code": 0
+  },
+  {
+    "id": "pm-eval-6",
+    "description": "Audit checker rejects a project with a PRD but no audit",
+    "command": "d=$(mktemp -d) && mkdir -p $d/in-progress/X_Y && echo x > $d/in-progress/X_Y/X_Y_PRD.md && ! node .agent/skills/project-management/scripts/check-audit.mjs $d",
+    "expected_exit_code": 0
   }
 ]
