@@ -1,5 +1,6 @@
 ---
 name: code-quality
+repo_scoped: true
 description: "Use this skill when checking code quality before committing or pushing in portfolio-site. This repo has NO TypeScript and NO ESLint installed, so do NOT run tsc, eslint, npm run typecheck, or npm run lint (they do not exist here). Its real gate is SSSS conformance against vault-registry, plus a syntax sweep and the node:test suite. Run checks as BACKGROUND jobs via scripts/check.mjs. MANDATORY: read the full SKILL.md before executing."
 ---
 
