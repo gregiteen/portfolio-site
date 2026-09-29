@@ -270,7 +270,7 @@ document.getElementById('splashForm').addEventListener('submit',async e=>{
   try{
     const r=await fetch('/api/send-code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,style,optIn})});
     const d=await r.json();
-    if(d.success){window.location.href='/verify.html?email='+encodeURIComponent(email)}
+    if(d.success){var nx=new URLSearchParams(location.search).get('next');window.location.href='/verify.html?email='+encodeURIComponent(email)+(nx==='/jobs'?'&next=/jobs':'')}
     else{err.textContent=d.error||'Something went wrong.';btn.disabled=false;setBtn(btn,'Generate & Enter',false)}
   }catch(ex){err.textContent='Network error. Try again.';btn.disabled=false;setBtn(btn,'Generate & Enter',false)}
 });

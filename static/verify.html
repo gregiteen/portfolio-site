@@ -238,6 +238,8 @@ function setBtn(btn,label,busy){
 
 // ── Progress polling ──
 let verified=false,themeReady=false,genFailed=false,targetUrl='/generate.html';
+const nextParam=new URLSearchParams(location.search).get('next');
+const afterLogin=nextParam==='/jobs'?'/jobs':'/';
 const phaseMap={'[1/4]':15,'[2/4]':45,'[3/4]':70,'[4/4]':90};
 
 function pollProgress(){
@@ -245,6 +247,10 @@ function pollProgress(){
     const status=document.getElementById('progressStatus');
     const bar=document.getElementById('progressBar');
     if(d.latestUrl) targetUrl=d.latestUrl;
+    if(d.status==='disabled'){
+      // Personal-site mode: no generation step. Go straight in once verified.
+      themeReady=true;targetUrl=afterLogin;bar.style.width='100%';status.textContent='Verify your code to continue.';maybeRedirect();return;
+    }
     if(d.status==='done'){
       themeReady=true;bar.style.width='100%';
       status.textContent='Design ready.';

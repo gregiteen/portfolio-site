@@ -20,6 +20,9 @@ if (designArgIdx >= 0 && designArgIdx + 1 < process.argv.length) {
   targetDesign = process.argv[designArgIdx + 1];
 }
 
+// Personal-site mode (default): no theme flipper, lead-gen banner, "start a project" links,
+// cookie notice or visitor-exit beacon. SITE_GENERATION_ENABLED=1 restores the old build.
+const PERSONAL = process.env.SITE_GENERATION_ENABLED !== '1';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const valueAfter = (flag) => {
   const index = process.argv.indexOf(flag);
@@ -1137,8 +1140,8 @@ img{max-width:100%;height:auto}
       finalHtml = `${headContent}\n<body>\n${customHtml}\n</body>\n</html>`;
     }
     finalHtml = finalHtml.includes('</body>')
-      ? finalHtml.replace('</body>', `${INJECTED_CONTENT_GUARDS}\n${CNA_BANNER_FIXED}\n${MOTION_SCRIPT}\n${TEST_LOGOUT_SCRIPT}\n</body>`)
-      : finalHtml + INJECTED_CONTENT_GUARDS + CNA_BANNER_FIXED + MOTION_SCRIPT + TEST_LOGOUT_SCRIPT;
+      ? finalHtml.replace('</body>', `${INJECTED_CONTENT_GUARDS}\n${PERSONAL ? '' : CNA_BANNER_FIXED}\n${MOTION_SCRIPT}\n${PERSONAL ? '' : TEST_LOGOUT_SCRIPT}\n</body>`)
+      : finalHtml + INJECTED_CONTENT_GUARDS + (PERSONAL ? '' : CNA_BANNER_FIXED) + MOTION_SCRIPT + (PERSONAL ? '' : TEST_LOGOUT_SCRIPT);
   } else {
     finalHtml = headContent + `<body>
 <div class="ambient-glows">
@@ -1150,10 +1153,10 @@ img{max-width:100%;height:auto}
     <nav>
       <a class="brand" href="/index.html">greg<em>.</em>iteen</a>
       ${navHtml}
-      <div class="theme-pills" role="group" aria-label="Theme switcher">
+      ${PERSONAL ? '' : `<div class="theme-pills" role="group" aria-label="Theme switcher">
         ${themePillsHtml}
       </div>
-      <a href="/consult.html" class="consult-link" title="Start a client needs assessment">start a project</a>
+      <a href="/consult.html" class="consult-link" title="Start a client needs assessment">start a project</a>`}
     </nav>
   </div>
 </header>
@@ -1162,7 +1165,7 @@ img{max-width:100%;height:auto}
 ${content}
   </div>
 </main>
-<aside class="cna-banner" id="cnaBanner">
+${PERSONAL ? '' : `<aside class="cna-banner" id="cnaBanner">
   <div class="frame">
     <a href="/consult.html" class="cna-link">
       <span class="cna-text" id="cnaText">10% off your first project — locked in when you sign within 7 days of your proposal.</span>
@@ -1179,7 +1182,7 @@ ${content}
 .cna-cta{font-family:monospace;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:rgba(139,92,246,0.8)}
 </style>
 <script>${CNA_BANNER_SCRIPT}</script>
-${TEST_LOGOUT_SCRIPT}
+${TEST_LOGOUT_SCRIPT}`}
 <footer>
   <div class="frame">
     <p>rendered from <code>${escapeHtml(sourcePath)}</code> · vault → html, no database</p>
@@ -1187,7 +1190,7 @@ ${TEST_LOGOUT_SCRIPT}
   </div>
 </footer>
 
-<div class="cookie-banner" id="cookieBanner">
+${PERSONAL ? '' : `<div class="cookie-banner" id="cookieBanner">
   <p class="cookie-text">This site uses cookies to authenticate your session and remember your design preferences. By continuing, you agree to our use of cookies.</p>
   <div class="cookie-actions">
     <button class="cookie-btn cookie-decline" id="cookieDecline">Decline</button>
@@ -1238,7 +1241,7 @@ ${TEST_LOGOUT_SCRIPT}
 .cookie-accept{background:var(--white, #fff);color:var(--black, #111);border-color:var(--white, #fff)}
 .cookie-accept:hover{background:transparent;color:var(--white, #fff)}
 .cookie-decline:hover{border-color:var(--white, #fff);color:var(--white, #fff)}
-</style>
+</style>`}
 </body>
 </html>
 `;
@@ -1330,7 +1333,7 @@ const aiDesigns = pages
   .sort((a, b) => (b.data.x_year ?? 0) - (a.data.x_year ?? 0) || a.data.name.localeCompare(b.data.name));
 
 const flipperData = aiDesigns.map(d => ({ name: d.data.name, url: d.data.x_link }));
-flipperScript = FLIPPER_SCRIPT_TEMPLATE.replace('__VALID_THEMES__', JSON.stringify(flipperData));
+flipperScript = PERSONAL ? '' : FLIPPER_SCRIPT_TEMPLATE.replace('__VALID_THEMES__', JSON.stringify(flipperData));
 themePillsHtml = ''; // No more CSS theme pills!
 
 if (!targetDesign) {

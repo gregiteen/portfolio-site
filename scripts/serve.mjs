@@ -17,6 +17,11 @@ import Stripe from 'stripe';
 // Bare JSON.parse fails on fenced output, which the models emit constantly.
 import { extractJson } from './lib/theme.mjs';
 import { generationRetryDecision } from './lib/theme-release.mjs';
+import { generationEnabled, isPrivatePath, proxyJsn } from './lib/site-mode.mjs';
+
+// gregiteen.xyz is a plain site about Greg. AI theme generation stays off unless
+// SITE_GENERATION_ENABLED=1 (see docs/projects/in-progress/PORTFOLIO_PERSONAL_SITE).
+const SITE_GENERATION_ENABLED = generationEnabled();
 import { buildLetterheadPdf, SIGNATURE_FIELD } from './lib/letterhead.mjs';
 import { createSigningRequest, signingStatusForEvent, verifyWebhookSecret, startDocumensoPoller } from './lib/documenso.mjs';
 import { advanceDripState, createUnsubscribeToken, enrollInCampaign, renderDripTemplate, verifyUnsubscribeToken } from './lib/drip.mjs';
@@ -346,6 +351,10 @@ const MAX_GENERATION_ATTEMPTS = Math.max(1, Number(process.env.THEME_MAX_ATTEMPT
 
 /** Start now if idle, otherwise queue — nothing gets silently dropped. */
 function requestGeneration(prompt, email = null, retry = null) {
+  if (!SITE_GENERATION_ENABLED) {
+    console.warn('[Generator] Ignored: site generation is disabled (SITE_GENERATION_ENABLED != 1)');
+    return;
+  }
   if (genJob.status === 'running') {
     genQueue.push({ prompt, email, retry });
     console.log(`[Generator] Queued "${prompt}" for ${email} (${genQueue.length} waiting)`);
@@ -1257,6 +1266,8 @@ function readBody(req) {
 
 /** Paths that bypass the auth check */
 function isPublicPath(urlPath) {
+  // Personal-site mode: the site is public; only admin surfaces are gated.
+  if (!SITE_GENERATION_ENABLED && !isPrivatePath(urlPath)) return true;
   if (urlPath === '/splash.html' || urlPath === '/verify.html' || urlPath === '/consult.html' || urlPath === '/forgot.html' || urlPath === '/reset.html') return true;
   if (urlPath.startsWith('/api/')) return true;
   if (urlPath.startsWith('/assets/')) return true;
@@ -1327,6 +1338,7 @@ function isAdmin(req) {
 
 // ── Resolve latest generated skin ──
 function getLatestSkinBase() {
+  if (!SITE_GENERATION_ENABLED) return null;
   try {
     const skinsDir = join(__dirname, '..', 'vault', 'pages', 'skins');
     const files = readdirSync(skinsDir).filter(f => f.endsWith('.md'));
@@ -1340,7 +1352,7 @@ function getLatestSkinBase() {
 
 createServer(async (req, res) => {
   const urlObj = new URL(req.url, 'http://x');
-  const urlPath = decodeURIComponent(urlObj.pathname);
+  let urlPath = decodeURIComponent(urlObj.pathname);
 
   // ── Standalone webmail app (mail.gregiteen.xyz) — own auth, own router.
   // Kept separate from Mailcow's own UI, which is hard-wired to a single
@@ -1351,7 +1363,7 @@ createServer(async (req, res) => {
 
   // ── Auth check for protected routes ──
   if (!isPublicPath(urlPath) && !isAuthenticated(req)) {
-    res.writeHead(302, { 'Location': '/splash.html' });
+    res.writeHead(302, { 'Location': urlPath.startsWith('/jobs') ? '/splash.html?next=/jobs' : '/splash.html' });
     res.end();
     return;
   }
@@ -1359,6 +1371,43 @@ createServer(async (req, res) => {
   // ── Returning user: splash → latest skin, or the generate flow. The
   // default-theme site is NEVER a visitor destination: no design yet means
   // you make one, not that you get the fallback look. ──
+  if (!SITE_GENERATION_ENABLED && (urlPath === '/generate.html' || urlPath === '/generating.html')) {
+    res.writeHead(302, { 'Location': '/' });
+    res.end();
+    return;
+  }
+
+  // ── Admin surfaces: JSN dashboard page and API proxy ──
+  if (urlPath === '/jobs' || urlPath === '/jobs/' || urlPath === '/jobs.html') {
+    if (!isAdmin(req)) {
+      res.writeHead(302, { 'Location': '/splash.html?next=/jobs' });
+      return res.end();
+    }
+    urlPath = '/jobs.html';
+  }
+  if (urlPath === '/jobs.js' || urlPath === '/jobs.css') {
+    if (!isAdmin(req)) return sendJson(res, 403, { error: 'Admin access required' });
+  }
+  if (urlPath.startsWith('/api/jsn/')) {
+    if (!isAdmin(req)) return sendJson(res, 403, { error: 'Admin access required' });
+    return proxyJsn({
+      req, res, urlPath, search: urlObj.search,
+      readBody: (r, max) => new Promise((resolve, reject) => {
+        let size = 0; const chunks = [];
+        r.on('data', (c) => { size += c.length; if (size > max) { resolve(null); r.destroy(); } else chunks.push(c); });
+        r.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        r.on('error', reject);
+      }),
+      send: sendJson,
+    });
+  }
+
+  if (urlPath === '/splash.html' && isAuthenticated(req) && !SITE_GENERATION_ENABLED) {
+    res.writeHead(302, { 'Location': '/' });
+    res.end();
+    return;
+  }
+
   if (urlPath === '/splash.html' && isAuthenticated(req)) {
     const skinBase = getLatestSkinBase();
     res.writeHead(302, { 'Location': skinBase ? skinBase + '/index.html' : '/generate.html' });
@@ -1369,7 +1418,7 @@ createServer(async (req, res) => {
   // ── Root-level page → redirect to latest skin version, or to generation
   // when no design exists yet. Visitors never browse the default theme. ──
   const ROOT_PAGES = ['/', '/index.html', '/about.html', '/contact.html', '/projects.html', '/designs.html'];
-  if (ROOT_PAGES.includes(urlPath) && isAuthenticated(req)) {
+  if (SITE_GENERATION_ENABLED && ROOT_PAGES.includes(urlPath) && isAuthenticated(req)) {
     const skinBase = getLatestSkinBase();
     if (skinBase) {
       const page = urlPath === '/' ? '/index.html' : urlPath;
@@ -2049,6 +2098,14 @@ createServer(async (req, res) => {
   // ── Existing endpoints ──
   if (urlPath === '/dev-status') {
     return sendJson(res, 200, { version: buildVersion });
+  }
+
+  if (urlPath === '/generate-status' && !SITE_GENERATION_ENABLED) {
+    return sendJson(res, 200, { status: 'disabled', phase: null, error: null, assets: {}, latestUrl: null });
+  }
+
+  if (urlPath === '/generate-theme' && !SITE_GENERATION_ENABLED) {
+    return sendJson(res, 410, { started: false, error: 'Site generation is disabled.' });
   }
 
   if (urlPath === '/generate-status') {
