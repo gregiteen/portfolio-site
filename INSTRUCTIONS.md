@@ -1,7 +1,7 @@
 Read and follow .agent/skills/total-recall/SKILL.md on every turn.
 
 <!-- BEGIN INJECTED ACTIVE DIRECTIVES: do not edit by hand; rebuilt by total-recall surface -->
-## Active Rules: 34 invariants, 12 preferences, 41 corrections
+## Active Rules: 34 invariants, 13 preferences, 42 corrections
 
 
 ---
@@ -106,14 +106,15 @@ _6 more, one line each (read one in full with `npx total-recall recall "<slug>"`
   2. **Maintain a Single Living Scratch Document**: Keep exactly one living document under `.agent/scratch/` and update it continuously as new findings arise. Do NOT create multiple different files or reports.
   3. **Ensure Full Searchability**: Autonomously write memory nodes to the brain and execute index compilation (`POST /api/vault/compile`) so the knowledge is fully searchable.
   4. **Operate Completely Autonomously**: Perform these steps without asking the user for review, instructions, or permission. The agent must proceed silently and automatically until the user explicitly asks for status or results.
+- [MUST] Greg's copy rule: never end a sentence with a preposition (write 'to whom it belongs', not 'whom it belongs to'). Applies to all text written for his sites and documents, and to my replies to him. Greg, 2026-09-28.
 - [MUST] Greg's portfolio site (gregiteen.xyz, this repo) is a plain site about Greg: AI site/theme generation is disabled. The Job Search Navigator dashboard frontend is built in this repo under /jobs (admin only) and talks to the JSN API, which stays in the job-search-navigator repo. Greg, 2026-09-28.
 - [MUST] When Greg says to use the API for any provider, it means the provider is fully integrated with current secrets in Total Recall: resolve credentials via ./total-recall secret (never ask Greg for keys, never fall back to the browser when an API/CLI exists). (use recall to read more)
 - [SHOULD] Route simple coding to Antigravity agy CLI: When the main chat agent is low on usage budget, route simple coding tasks to Antigravity CLI (agy / antigravity) and its subagents. User has AI Ultra plan with high limits for Antigravity. Prefer agy for straightforward code edits, small fixes, and routine implementation; reserve the main agent for planning, multi-repo architecture, security-sensitive work, and orchestration.
 - [MUST NOT] Avoid using the Gemini/Google Generative Language API (GEMINI_API_KEY/GOOGLE_API_KEY) for now — Gemini budget is exhausted and  is owed to Google. Prefer OpenRouter (OPENROUTER_API_KEY, bound to total-recall) or local/Ollama models until further notice. (use recall to read more)
 - [MUST] Agent sessions working in the same repo are one continuous stream of Greg's work. When committing, commit everything in the working tree (grouped into logical commits); never leave changes out because another session made them. Greg, 2026-09-28.
-- [SHOULD] Always check secrets.enc for 'npm_token' or 'npm_recovery_code' to publish packages without prompting the user for 2FA OTP codes.
 
-_2 more, one line each (read one in full with `npx total-recall recall "<slug>"`):_
+_3 more, one line each (read one in full with `npx total-recall recall "<slug>"`):_
+- Always check secrets.enc for 'npm_token' or 'npm_recovery_code' to publish packages without... (`always-use-npm-token-publishing`)
 - Always audit and clean up local side-effects, database writes, or mock test entries left behind... (`preferences-dcb2cf4e`)
 - Always check secrets.enc for 'npm_recovery_code' to publish packages without prompting the user... (`preferences-7212d531`)
 
@@ -129,6 +130,7 @@ THE USER HAS EXPLICITLY CORRECTED YOUR BEHAVIOR. DO NOT MAKE THESE MISTAKES. THE
 - [MUST] CLI agents (Claude Code, Gemini CLI, Codex) are standard developer CLI tools run locally, NOT custom models.
 - [MUST] Never refer to the backend LLM deployments or virtual servers for UltraChat as 'droplets'. Always refer to them as 'UltraChat custom models' or 'custom models'.
 - [MUST] LLMs in UltraChat are not BYO. We deploy user models on our branded DigitalOcean backend and deduct credit balance equal to actual droplet cost + 5% markup, at a rate of 100 credits = $0.01 ($1.00 = 10,000 credits).
+- [MUST] Never rewrite, 'improve' or re-word text the user authored (headlines, taglines, page copy, names) unless they ask. Keep existing phrases verbatim; write new copy only where none exists or it was requested, and flag typos instead of silently changing them. (use recall to read more)
 - [MUST] Every project starts with an extensive AUDIT document (<PREFIX>_AUDIT.md, references/audit-template.md in the project-management skill) that is Complete before any PRD, architecture, plan, tracker or code exists. Read the code, run the baseline tests on the Mac mini first, register findings. (use recall to read more)
 - [MUST] An app's CLI is built with Total Recall's composable CLI, not a hand-rolled script: declare it in the app's plugin.json (commands registered into .agent/commands and listed in CLAUDE.md/AGENTS.md; app_cli generated by 'total-recall app cli' from the app's HTTP API; tasks for daemon-run cron schedule... (use recall to read more)
 - [MUST] Stay inside the project Greg is working on. Never edit, install into, or 'fix' another repo (e.g. festech-modular while the Total Recall plugin/SSSS work is in progress) unless Greg names that repo for the change. (use recall to read more)
@@ -152,11 +154,11 @@ THE USER HAS EXPLICITLY CORRECTED YOUR BEHAVIOR. DO NOT MAKE THESE MISTAKES. THE
 - [SHOULD] Theme pipeline structural gate could NEVER converge (fixed 2026-07-22) - it was not a model-capability problem. Three bugs in scripts/compile-theme.mjs: (1) payload.name came only from the Director call and NOTHING downstream could set it - the structural repair loop only rewrites css and layouts -... (use recall to read more)
 - [SHOULD] Theme pipeline 402 retry loop (fixed 2026-07-22): scripts/lib/theme-release.mjs NON_RETRYABLE_GENERATION_FAILURES omitted 402, and serve.mjs called generationRetryDecision with no maxAttempts (default Infinity). (use recall to read more)
 - [SHOULD] Mesh secrets sync and latency peer probes need ≥10s timeout on WAN Tailscale (laptop↔cloud). 1.5s/3s falsely reported cloud unreachable while raw curl checksum and /health worked. Also launchd com.totalrecall.brain needs TR_SECRETS_PASSWORD from keychain for AES secrets.enc.
-- [SHOULD] When the user asks a question, immediately stop everything and answer in the chat without editing any files or running commands.
-- [SHOULD] Always check local .env files for cloud provider API tokens (like DIGITALOCEAN_API_TOKEN) before claiming you do not have access to manage infrastructure.
 - [MUST NOT] Codex is a full app not just CLI: OpenAI Codex is a full app, not just a CLI tool. Do not refer to it as only a CLI.
 
-_8 more, one line each (read one in full with `npx total-recall recall "<slug>"`):_
+_10 more, one line each (read one in full with `npx total-recall recall "<slug>"`):_
+- When the user asks a question, immediately stop everything and answer in the chat without... (`anti-patterns-dd2af8ce`)
+- Always check local .env files for cloud provider API tokens (like DIGITALOCEAN_API_TOKEN) before... (`anti-patterns-bfdf56ac`)
 - Never use the --force flag on the TypeScript or Lint checker scripts. (`anti-patterns-531295f2`)
 - Never use eslint-disable i18next/no-literal-string. (`anti-patterns-720ff22a`)
 - Never use 'url' in field names for images (e.g. (`anti-patterns-df3b9c49`)
