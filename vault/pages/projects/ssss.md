@@ -2,7 +2,7 @@
 type: page
 slug: "project-ssss"
 title: "SSSS — Structured Semantic Syntax System"
-description: "An open specification and dependency-free reference engine in which a vault of typed Markdown documents is the complete state of an application."
+description: "Structured Semantic Syntax System: an open specification and dependency-free reference engine in which a vault of typed Markdown documents is the complete state of an application."
 timestamp: 2026-09-28T20:00:00Z
 name: "SSSS"
 sandbox_entry: "projects/ssss.html"

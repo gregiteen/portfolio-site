@@ -2,7 +2,7 @@
 type: page
 slug: "oss-ssss"
 title: "SSSS"
-description: "An open specification and zero-dependency engine for agent state: typed Markdown documents, a validated mutation contract and portable bundles."
+description: "The Structured Semantic Syntax System, an open specification and zero-dependency engine for agent state: typed Markdown documents, a validated mutation contract and portable bundles."
 timestamp: 2026-09-28T00:00:00Z
 name: "SSSS"
 sandbox_entry: "index.html"
