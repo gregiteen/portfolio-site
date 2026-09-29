@@ -1,10 +1,12 @@
 #!/bin/bash
 set -e
-echo "🚀 Starting atomic deployment to production..."
+# Host: tailnet address preferred (DROPLET_IP=100.64.0.1); public IP is the default.
+HOST="${DROPLET_IP:-138.197.199.217}"
+echo "🚀 Starting atomic deployment to production (${HOST})..."
 
 # 1. Sync static frontend assets
 echo "📦 Syncing static frontend..."
-rsync -avz --delete dist/site/ root@138.197.199.217:/var/www/gregiteen.xyz/
+rsync -avz --delete dist/site/ root@${HOST}:/var/www/gregiteen.xyz/
 
 # 2. Sync backend (excluding runtime/volatile data)
 #
@@ -38,13 +40,13 @@ rsync -avz --delete \
   --exclude 'vault/visitors.md' \
   --exclude '/dist/' \
   --filter 'P /vault/pages/designs/**' \
-  ./ root@138.197.199.217:/opt/portfolio-site/
+  ./ root@${HOST}:/opt/portfolio-site/
 
 # 3. Install the exact locked dependency tree before reloading the server.
 # node_modules is intentionally excluded from rsync, so skipping this step can
 # leave production executing an older package version than package-lock.json.
 echo "📦 Installing locked production dependencies..."
-if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 root@138.197.199.217 \
+if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 root@${HOST} \
   "cd /opt/portfolio-site && npm ci --include=dev --no-audit --no-fund && npm run build"; then
   echo "❌ CRITICAL: Production dependency install or build failed!"
   exit 1
@@ -57,7 +59,7 @@ fi
 # server's boot-time stale-run sweep requeues it under the same run_id.
 MAXWAIT="${DEPLOY_GENERATION_WAIT:-900}"
 WAITED=0
-while ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 root@138.197.199.217 \
+while ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 root@${HOST} \
   "pgrep -f 'scripts/compile-theme[.]mjs' >/dev/null" 2>/dev/null; do
   if [ "$WAITED" -ge "$MAXWAIT" ]; then
     echo "⚠️ Generation still running after ${MAXWAIT}s — reloading anyway; boot requeue will recover it."
@@ -70,7 +72,7 @@ done
 
 # 5. Reload PM2 with a strict timeout (zero downtime)
 echo "🔄 Reloading PM2 on droplet (timeout 10s)..."
-if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@138.197.199.217 "pm2 reload portfolio"; then
+if ! ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@${HOST} "pm2 reload portfolio"; then
   echo "❌ CRITICAL: SSH or PM2 reload failed or timed out!"
   echo "⚠️ The frontend might be out of sync with the backend."
   exit 1

@@ -62,6 +62,8 @@
 
 ## Verification Log
 
+- 2026-09-28: copy rewrite + brief form — push preflight on the Mac mini (syntax, SSSS validate, tests 139 pass / 0 fail, build) green; deployed over the tailnet (`DROPLET_IP=100.64.0.1`, backup `/root/pre-deploy-backup-2026-09-29.tar.gz`); live check: new headline, `/contact.html` form, `/api/lead` rejects an undeclared choice with 400
+
 - 2026-09-28: clean checkout on the Mac mini after A-019 — `npm ci` exit 0; tests 126 pass / 0 fail
 - 2026-09-28: after fixes, clean checkout on the Mac mini — `npm ci` exit 0; tests 124 pass / 1 fail (smoke test needed dummy SMTP env; fixed)
 - 2026-09-28: baseline on the Mac mini, `e2c8ed3` — `npm ci` failed at postinstall; tests 119 pass / 1 fail
