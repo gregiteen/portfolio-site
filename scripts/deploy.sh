@@ -27,7 +27,7 @@ echo "📦 Syncing backend codebase..."
 rsync -avz --delete \
   --exclude 'node_modules' \
   --exclude '.git' \
-  --exclude '.env' \
+  --exclude '.env*' \
   --exclude '.agent' \
   --exclude '.claude' \
   --exclude '.remember' \

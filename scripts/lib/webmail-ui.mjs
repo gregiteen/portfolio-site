@@ -137,7 +137,8 @@ function loginPage(flash) {
     body: `<h1>Sign in</h1>
 <form method="POST" action="/login">
   <label>Email</label>
-  <input type="email" id="login-email" name="email" required autofocus placeholder="me@gregiteen.xyz">
+  <input type="email" id="login-email" name="email" required autofocus placeholder="sales@gregiteen.xyz">
+  <p class="meta" style="margin-top:8px;">Sign in with sales@gregiteen.xyz. Your other addresses deliver to this inbox.</p>
   <label style="display:flex; justify-content:space-between; align-items:baseline;">
     <span>Password</span>
     <a href="#" onclick="requestPasswordReset(event)" style="font-size:0.85em; color:var(--gray); text-decoration:none;">Forgot password?</a>
@@ -145,11 +146,15 @@ function loginPage(flash) {
   <input type="password" name="password" required>
   <button type="submit">Sign in</button>
 </form>
+<div id="reset-status" class="flash" role="status" hidden></div>
 <script>
   async function requestPasswordReset(e) {
     e.preventDefault();
     const email = document.getElementById('login-email').value;
-    if (!email) return alert('Please enter your email address first.');
+    const status = document.getElementById('reset-status');
+    status.hidden = false;
+    if (!email) { status.textContent = 'Enter your webmail address first.'; return; }
+    status.textContent = 'Sending a reset link to your recovery email…';
     try {
       const res = await fetch('/api/forgot-password', {
         method: 'POST',
@@ -157,10 +162,10 @@ function loginPage(flash) {
         body: JSON.stringify({ email })
       });
       const data = await res.json();
-      if (res.ok) alert('Success! A reset link has been sent to the backup email.');
-      else alert('Failed: ' + (data.error || 'Unknown error'));
+      if (res.ok) status.textContent = 'If this is your webmail account, a reset link has been sent to your recovery email.';
+      else status.textContent = data.error || 'Could not send the reset link.';
     } catch (err) {
-      alert('Error: ' + err.message);
+      status.textContent = 'Could not send the reset link. Please try again.';
     }
   }
 </script>`,
@@ -183,7 +188,7 @@ function inboxPage(messages) {
         <span class="subject">${escapeHtml(m.subject)}</span>
         <span class="date">${escapeHtml(formatDate(m.date))}</span>
       </a>`).join('\n')
-    : `<div class="empty"><strong>Inbox is empty</strong>No live mail yet — real IMAP (me@gregiteen.xyz) is connected; messages appear here as they arrive. Try sending yourself a test from /compose.</div>`;
+    : `<div class="empty"><strong>Inbox is empty</strong>New messages to this mailbox will appear here.</div>`;
   return shell({
     title: 'Inbox',
     body: `<h1>Inbox</h1>

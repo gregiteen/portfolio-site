@@ -500,6 +500,7 @@ const proposalThreads = new Map();
 /** token → { email, style, issuedAt, … } — persisted so sessions survive restarts */
 const authTokens = new Map();
 const passwordResets = new Map(); // token -> { email, expires }
+const webmailResetRequests = new Map(); // mailbox -> { count, resetAt }
 
 /** email → { style, firstSeen, lastSeen, visits } — visitor memory for auto-login/welcome-back */
 const visitorProfiles = new Map();
@@ -1866,29 +1867,51 @@ createServer(async (req, res) => {
   if (urlPath === '/api/forgot-password' && req.method === 'POST') {
     try {
       const { email } = await readBody(req);
-      if (!email || email !== 'me@gregiteen.xyz') {
-        return sendJson(res, 400, { success: false, error: 'Invalid or unknown webmail address.' });
+      const requestedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+      const mailbox = (process.env.PORTFOLIO_WEBMAIL_EMAIL || process.env.IMAP_USER || '').trim().toLowerCase();
+      const aliases = [mailbox, process.env.MAIL_OWNER, process.env.ADMIN_EMAIL]
+        .filter(Boolean).map(address => address.trim().toLowerCase());
+      // A reset always changes the real Mailcow mailbox, never a delivery alias.
+      if (!mailbox || !aliases.includes(requestedEmail)) {
+        return sendJson(res, 200, { success: true });
       }
-      
+
+      const recoveryEmail = (process.env.WEBMAIL_RECOVERY_EMAIL || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recoveryEmail) ||
+          recoveryEmail.endsWith('@gregiteen.xyz')) {
+        return sendJson(res, 503, { success: false, error: 'Webmail recovery is not configured.' });
+      }
+
+      const now = Date.now();
+      const limit = webmailResetRequests.get(mailbox) || { count: 0, resetAt: now + 60 * 60 * 1000 };
+      if (now >= limit.resetAt) { limit.count = 0; limit.resetAt = now + 60 * 60 * 1000; }
+      if (limit.count >= 3) {
+        return sendJson(res, 429, { success: false, error: 'Too many reset requests. Please try again later.' });
+      }
+
       const resetToken = randomBytes(32).toString('hex');
-      passwordResets.set(resetToken, { email, expires: Date.now() + 15 * 60 * 1000 });
-      
+      passwordResets.set(resetToken, { email: mailbox, expires: now + 15 * 60 * 1000 });
       const resetUrl = `${SITE_URL}/reset.html?token=${resetToken}`;
-      const mailOwner = process.env.MAIL_OWNER;
-      
-      await smtpTransport.sendMail({
-        from: mailFrom,
-        to: mailOwner,
-        subject: 'Password Reset Request for Webmail',
-        text: `A password reset was requested for ${email}.\n\nClick the link below to securely reset the password (expires in 15 minutes):\n${resetUrl}\n\nIf this wasn't you, ignore this email.`,
-        html: `<div style="font-family:sans-serif;color:#111;">
-          <h2>Webmail Password Reset</h2>
-          <p>A password reset was requested for <strong>${email}</strong>.</p>
-          <p><a href="${resetUrl}" style="background:#0a0a0a;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;margin-top:10px;">Reset Password</a></p>
-          <p style="margin-top:20px;font-size:0.85em;color:#666;">This link expires in 15 minutes.</p>
-        </div>`
-      });
-      
+      try {
+        // Recovery links must bypass the marketing link tracker and its logs.
+        await originalSendMail({
+          from: mailFrom,
+          to: recoveryEmail,
+          subject: 'Password Reset Request for Webmail',
+          text: `A password reset was requested for ${mailbox}.\n\nClick the link below to securely reset the password (expires in 15 minutes):\n${resetUrl}\n\nIf this wasn't you, ignore this email.`,
+          html: `<div style="font-family:sans-serif;color:#111;">
+            <h2>Webmail Password Reset</h2>
+            <p>A password reset was requested for <strong>${mailbox}</strong>.</p>
+            <p><a href="${resetUrl}" style="background:#0a0a0a;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;margin-top:10px;">Reset Password</a></p>
+            <p style="margin-top:20px;font-size:0.85em;color:#666;">This link expires in 15 minutes.</p>
+          </div>`
+        });
+      } catch (error) {
+        passwordResets.delete(resetToken);
+        throw error;
+      }
+      limit.count++;
+      webmailResetRequests.set(mailbox, limit);
       return sendJson(res, 200, { success: true });
     } catch (err) {
       console.error('[Forgot Password Error]', err);

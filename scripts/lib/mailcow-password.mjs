@@ -10,6 +10,10 @@ export function validateMailboxPassword(email, password) {
   if (typeof email !== 'string' || !MAILBOX_RE.test(email) || email.length > 254) {
     throw new Error('Invalid mailbox address');
   }
+  validatePassword(password);
+}
+
+function validatePassword(password) {
   if (typeof password !== 'string' || password.length < 8 || password.length > 256) {
     throw new Error('Password must be between 8 and 256 characters');
   }
@@ -93,9 +97,12 @@ export async function setMailcowMailboxPassword({
 }
 
 export async function persistAppMailboxPassword(envPath, password) {
-  validateMailboxPassword('me@gregiteen.xyz', password);
+  validatePassword(password);
   const current = await readFile(envPath, 'utf8');
-  const next = updateEnvAssignment(current, 'IMAP_PASS', password);
+  const next = updateEnvAssignment(
+    updateEnvAssignment(current, 'IMAP_PASS', password),
+    'PORTFOLIO_WEBMAIL_PASSWORD', password,
+  );
   const tempPath = `${envPath}.tmp-${process.pid}-${Date.now()}`;
   try {
     await writeFile(tempPath, next, { encoding: 'utf8', mode: 0o600 });

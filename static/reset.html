@@ -51,7 +51,7 @@
         const data = await res.json();
         if (res.ok) {
           history.replaceState({}, document.title, '/reset.html');
-          document.getElementById('msg').innerHTML = `<span style="color:var(--green)">Password updated successfully! You can now log in to the webmail.</span>`;
+          document.getElementById('msg').innerHTML = `<span style="color:var(--green)">Password updated successfully! <a style="color:var(--green)" href="https://mail.gregiteen.xyz/login">Sign in to webmail</a>.</span>`;
         } else {
           document.getElementById('msg').innerHTML = `<span style="color:var(--red)">${data.error || 'Failed to update'}</span>`;
         }
