@@ -16,7 +16,7 @@
 ## ⏳ Phase 1: Fix P0/P1 audit findings
 
 - [x] A-001 remove the obsolete Total Recall surface patch, its postinstall call and test; `npm ci` exits 0 on the mini (verified 2026-09-28)
-- [/] A-002 suite: 124/125 on the mini before the smoke-test env fix; rerun for green
+- [x] A-002 suite green on the mini from a clean checkout: 126/126 (2026-09-28)
 - [x] A-015 site public when generation is off (flag, `site-mode.mjs`)
 - [x] A-016 generation fully off: routes, redirects, splash/verify, build-time injection (flipper, lead-gen banner, start-a-project links, cookie notice, visitor beacon)
 - [x] A-019 all six `engine.processOperation()` calls awaited; regression test `test/ssss-async-engine.test.mjs`; server boots on a clean checkout (verify on the mini)
@@ -35,7 +35,8 @@
 
 - [x] `/api/jsn/*` proxy (admin only, token server side) with tests against a fake JSN
 - [x] `/jobs` page from `npm run sync-jobs`
-- [ ] JSN token secret bound to both repos; JSN listening on the mesh address with the token
+- [x] `JSN_API_TOKEN` secret stored, bound to both repos
+- [ ] JSN listening on the mesh address with the token (`JSN_HOST`, `JSN_API_TOKEN`) and `JSN_URL`/`JSN_API_TOKEN` set in the site's PM2 environment (needs Greg: D-4)
 
 ## ⏳ Phase 4: Copy and deploy
 
@@ -54,5 +55,6 @@
 
 ## Verification Log
 
+- 2026-09-28: clean checkout on the Mac mini after A-019 — `npm ci` exit 0; tests 126 pass / 0 fail
 - 2026-09-28: after fixes, clean checkout on the Mac mini — `npm ci` exit 0; tests 124 pass / 1 fail (smoke test needed dummy SMTP env; fixed)
 - 2026-09-28: baseline on the Mac mini, `e2c8ed3` — `npm ci` failed at postinstall; tests 119 pass / 1 fail

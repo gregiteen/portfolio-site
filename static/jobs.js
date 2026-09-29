@@ -78,6 +78,18 @@ async function today() {
     h('div', { class: 'muted' }, `${n.kind === 'resume' ? 'Custom resume' : 'Cover letter'} · ${n.status.replace('_', ' ')}`),
     n.status === 'draft' ? h('div', { class: 'row' }, h('button', { class: 'primary', onclick: () => act(() => api('POST', `/api/applications/${n.application_id}/documents/${n.kind}/approve`), 'Approved') }, 'Approve'), h('a', { href: `#/app/${n.application_id}` }, 'Review first')) : null));
 
+  list('Replies waiting for you', t.replies, (r) => h('div', { class: 'card' },
+    h('h3', {}, h('a', { href: '#/inbox' }, r.subject || r.thread_id)),
+    h('div', { class: 'muted' }, `${CATEGORY_LABEL[r.category] || r.category} · reply ${r.reply_status}`),
+    r.reply_status === 'draft' ? h('div', { class: 'row' }, h('button', { class: 'primary', onclick: () => act(() => api('POST', `/api/threads/${r.thread_id}/approve`), 'Approved') }, 'Approve'), h('a', { href: '#/inbox' }, 'Review first')) : null), 'No replies waiting.');
+
+  list('Suggested stage changes', t.stage_suggestions, (r) => h('div', { class: 'card' },
+    h('h3', {}, h('a', { href: '#/inbox' }, r.subject || r.thread_id)),
+    h('div', { class: 'muted' }, `Move ${r.application_id} to ${r.suggested_stage}`),
+    h('div', { class: 'row' },
+      h('button', { class: 'primary', onclick: () => act(() => api('POST', `/api/threads/${r.thread_id}/accept-stage`), 'Moved') }, 'Accept'),
+      h('button', { onclick: () => act(() => api('POST', `/api/threads/${r.thread_id}/reject-stage`), 'Rejected') }, 'Reject'))), 'No stage changes suggested.');
+
   list('Needs a custom resume and cover letter', t.needs_documents, (n) => h('div', { class: 'card' },
     h('h3', {}, appLink(n.application_id, `${n.role} — ${n.company}`)),
     h('div', { class: 'muted' }, 'Ask Claude or Codex to run the tailor workflow for this application.')), 'Every open application has both documents.');
@@ -180,11 +192,45 @@ async function application(id) {
     h('p', { class: 'muted' }, `Created ${app.created_at} · updated ${app.updated_at}${app.applied_at ? ` · applied ${app.applied_at}` : ''}`));
 }
 
-// ---------- Inbox (threads arrive with Phase 3d) ----------
+// ---------- Inbox ----------
+const CATEGORY_LABEL = { interview: 'Interview', scheduling: 'Scheduling', rejection: 'Rejection', offer: 'Offer', recruiter_outreach: 'Recruiter', assessment: 'Assessment', info_request: 'Info request', confirmation: 'Confirmation', other: 'Other' };
+const openReply = (t) => t.needs_reply === true && !['sent', 'discarded'].includes(t.reply_status);
+
 async function inbox() {
-  const { docs } = await api('GET', '/api/docs/list', { dir: 'threads' });
+  const { threads } = await api('GET', '/api/threads');
+  const apps = (await api('GET', '/api/applications')).applications;
+  const card = (t) => {
+    const T = `/api/threads/${t.thread_id}`;
+    const draft = h('textarea', { 'aria-label': 'Reply draft' }, t.reply_draft || '');
+    draft.value = t.reply_draft || '';
+    const link = h('select', { 'aria-label': 'Linked application', onchange: (e) => e.target.value && act(() => api('POST', `${T}/relink`, { application_id: e.target.value }), 'Linked') },
+      h('option', { value: '' }, t.application_id ? 'Relink to another application' : 'Link to an application'),
+      apps.map((a) => h('option', { value: a.application_id }, `${a.role} — ${a.company}`)));
+    const statusBadge = { draft: 'warn', approved: 'ok', sent: 'ok', discarded: '' }[t.reply_status];
+    return h('div', { class: 'card' },
+      h('h3', {}, t.subject || t.title),
+      h('div', { class: 'muted' }, [t.from, t.last_message_at].filter(Boolean).join(' · ')),
+      h('div', { class: 'row' },
+        h('span', { class: 'badge' }, CATEGORY_LABEL[t.category] || t.category),
+        openReply(t) ? h('span', { class: 'badge warn' }, 'needs reply') : null,
+        t.reply_status && t.reply_status !== 'none' ? h('span', { class: `badge ${statusBadge || ''}` }, `reply ${t.reply_status}`) : null,
+        t.application_id ? appLink(t.application_id, 'Application') : h('span', { class: 'badge bad' }, 'not linked')),
+      t.suggestion_status === 'pending' ? h('div', { class: 'row' },
+        h('span', {}, `Move application to ${t.suggested_stage}?`),
+        h('button', { class: 'primary', onclick: () => act(() => api('POST', `${T}/accept-stage`), `Moved to ${t.suggested_stage}`) }, 'Accept'),
+        h('button', { onclick: () => act(() => api('POST', `${T}/reject-stage`), 'Suggestion rejected') }, 'Reject')) : null,
+      h('details', {}, h('summary', {}, 'Thread'), h('pre', { class: 'doc' }, t.body || '(no messages stored)')),
+      t.reply_status && !['none', 'discarded'].includes(t.reply_status) ? h('div', {},
+        h('h2', {}, 'Drafted reply'), draft,
+        h('div', { class: 'row' },
+          t.reply_status === 'sent' ? h('span', { class: 'muted' }, `Sent ${t.sent_at}`) : [
+            h('button', { onclick: () => act(() => api('POST', `${T}/draft`, { reply: draft.value }), 'Draft saved; approve again to send') }, 'Save edit'),
+            h('button', { class: 'primary', disabled: t.reply_status === 'approved', onclick: () => act(() => api('POST', `${T}/approve`), 'Approved. It sends on the next send run') }, t.reply_status === 'approved' ? 'Approved' : 'Approve'),
+            h('button', { class: 'danger', onclick: () => act(() => api('POST', `${T}/discard`), 'Discarded') }, 'Discard')])) : null,
+      h('div', { class: 'row' }, link));
+  };
   return h('div', {}, h('h1', {}, 'Inbox'),
-    docs.length ? h('div', { class: 'grid' }, docs.map((t) => h('div', { class: 'card' }, h('h3', {}, t.subject || t.title || t.path), h('div', { class: 'muted' }, t.category || ''))))
+    threads.length ? h('div', { class: 'grid cols' }, threads.map(card))
       : empty('No job-search email threads yet. The inbox check runs every 30 minutes once the email workflow is set up.'));
 }
 
