@@ -8,7 +8,7 @@ import { watch, readdirSync, statSync } from 'node:fs';
 import { execFile, spawn } from 'node:child_process';
 import { join, normalize, extname, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+import { randomBytes, createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { createTransport } from 'nodemailer';
 import https from 'node:https';
 import Stripe from 'stripe';
@@ -118,8 +118,9 @@ import {
   upsertApplication, getApplication, listApplications, transitionApplication,
   upsertGigListing, listGigListings,
   listPipelineEvents, queryPipeline, listInboxMessages, listRevenueSnapshots,
-  flushCrmStore,
+  flushCrmStore, getSentMessage, upsertSentMessage,
 } from './lib/crm-store.mjs';
+import { PIXEL_GIF, isProxyOpen } from './lib/mail-tracking.mjs';
 import { buildRevenueReport, writeDailySnapshot } from './lib/revenue-report.mjs';
 
 // GENERATION_DELIVERY_PIPELINE Phase 1/2 rollout flags — both off by default
@@ -613,6 +614,13 @@ startDocumensoPoller(proposalThreads, upsertProposal, async (proposalId, label) 
 const mailFrom = process.env.MAIL_FROM;   // e.g. "Greg Iteen" <me@gregiteen.xyz>
 const mailOwner = process.env.MAIL_OWNER; // where visitor notifications go
 
+// Tracked links carry an HMAC of their target so /api/track/link cannot be used
+// as an open redirect to arbitrary sites.
+const TRACK_KEY = process.env.TRACKING_SECRET || process.env.ADMIN_API_TOKEN || 'gregiteen-track';
+function trackedLinkSig(url) {
+  return createHmac('sha256', TRACK_KEY).update(String(url)).digest('hex').slice(0, 24);
+}
+
 const originalSendMail = smtpTransport.sendMail.bind(smtpTransport);
 smtpTransport.sendMail = async function(options) {
   if (options.html && typeof options.to === 'string' && options.to !== mailOwner) {
@@ -622,7 +630,7 @@ smtpTransport.sendMail = async function(options) {
     options.html = options.html.replace(/href="([^"]+)"/g, (match, url) => {
       if (url.startsWith('mailto:') || url.startsWith('tel:') || url.includes('/api/track/')) return match;
       const targetParam = encodeURIComponent(url);
-      return `href="${trackingUrl}/api/track/link?e=${emailParam}&url=${targetParam}"`;
+      return `href="${trackingUrl}/api/track/link?e=${emailParam}&url=${targetParam}&s=${trackedLinkSig(url)}"`;
     });
     
     const pixelHtml = `<img src="${trackingUrl}/api/track/pixel?e=${emailParam}" width="1" height="1" alt="" style="display:none;" />`;
@@ -2354,10 +2362,36 @@ createServer(async (req, res) => {
     return;
   }
 
+  // Opens of mail sent from the webmail (scripts/lib/webmail.mjs sendMessage).
+  const openMatch = urlPath.match(/^\/api\/track\/open\/([0-9a-f]{24})\.gif$/);
+  if (openMatch && req.method === 'GET') {
+    const ua = String(req.headers['user-agent'] || '').slice(0, 300);
+    getSentMessage(openMatch[1])
+      .then((sent) => sent && upsertSentMessage(openMatch[1], { open: { at: new Date().toISOString(), ua, proxy: isProxyOpen(ua) } }))
+      .catch((e) => console.error('[Tracking] Open record failed:', e.message));
+    res.writeHead(200, {
+      'Content-Type': 'image/gif',
+      'Content-Length': PIXEL_GIF.length,
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    });
+    res.end(PIXEL_GIF);
+    return;
+  }
+
   if (urlPath.startsWith('/api/track/link') && req.method === 'GET') {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const email = url.searchParams.get('e');
-    const targetUrl = url.searchParams.get('url');
+    let targetUrl = url.searchParams.get('url');
+    // Links mailed before signing existed have no s=; those may only lead back
+    // to this site, so an unsigned link cannot bounce anyone to another domain.
+    const sig = url.searchParams.get('s') || '';
+    const expected = targetUrl ? trackedLinkSig(targetUrl) : '';
+    const signed = sig.length === expected.length && sig.length > 0 && timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+    let ownSite = false;
+    try { ownSite = /(^|\.)gregiteen\.xyz$/i.test(new URL(targetUrl).hostname); } catch { /* not a URL */ }
+    if (!signed && !ownSite) targetUrl = null;
     if (email && targetUrl) {
       const key = String(email).trim().toLowerCase();
       const visitor = visitorProfiles.get(key);
