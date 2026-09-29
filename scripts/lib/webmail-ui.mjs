@@ -137,7 +137,7 @@ function loginPage(flash) {
     body: `<h1>Sign in</h1>
 <form method="POST" action="/login">
   <label>Email</label>
-  <input type="email" id="login-email" name="email" required autofocus placeholder="sales@gregiteen.xyz">
+  <input type="email" id="login-email" name="email" required autofocus placeholder="me@gregiteen.xyz">
   <label style="display:flex; justify-content:space-between; align-items:baseline;">
     <span>Password</span>
     <a href="#" onclick="requestPasswordReset(event)" style="font-size:0.85em; color:var(--gray); text-decoration:none;">Forgot password?</a>
@@ -183,7 +183,7 @@ function inboxPage(messages) {
         <span class="subject">${escapeHtml(m.subject)}</span>
         <span class="date">${escapeHtml(formatDate(m.date))}</span>
       </a>`).join('\n')
-    : `<div class="empty"><strong>Inbox is empty</strong>No live mail yet — real IMAP (sales@gregiteen.xyz) is connected; messages appear here as they arrive. Try sending yourself a test from /compose.</div>`;
+    : `<div class="empty"><strong>Inbox is empty</strong>No live mail yet — real IMAP (me@gregiteen.xyz) is connected; messages appear here as they arrive. Try sending yourself a test from /compose.</div>`;
   return shell({
     title: 'Inbox',
     body: `<h1>Inbox</h1>

@@ -93,7 +93,7 @@ export async function setMailcowMailboxPassword({
 }
 
 export async function persistAppMailboxPassword(envPath, password) {
-  validateMailboxPassword('sales@gregiteen.xyz', password);
+  validateMailboxPassword('me@gregiteen.xyz', password);
   const current = await readFile(envPath, 'utf8');
   const next = updateEnvAssignment(current, 'IMAP_PASS', password);
   const tempPath = `${envPath}.tmp-${process.pid}-${Date.now()}`;

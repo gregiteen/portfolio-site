@@ -53,7 +53,7 @@ function emailTextToHtml(text) {
 </td></tr>
 <tr><td style="padding:24px 32px;font-family:Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#f0f0ec;">${html}</td></tr>
 <tr><td style="padding:16px 32px 24px;border-top:1px solid rgba(255,255,255,.06);font-family:Helvetica,Arial,sans-serif;font-size:11px;color:#555555;">
-  <a href="https://gregiteen.xyz" style="color:#555555;text-decoration:none;">gregiteen.xyz</a> &nbsp;·&nbsp; sales@gregiteen.xyz &nbsp;·&nbsp; e-signatures by <img src="https://gregiteen.xyz/signedgi-logo-dark.png" alt="Signed, gi." height="14" style="height:14px;width:auto;vertical-align:-3px;">
+  <a href="https://gregiteen.xyz" style="color:#555555;text-decoration:none;">gregiteen.xyz</a> &nbsp;·&nbsp; me@gregiteen.xyz &nbsp;·&nbsp; e-signatures by <img src="https://gregiteen.xyz/signedgi-logo-dark.png" alt="Signed, gi." height="14" style="height:14px;width:auto;vertical-align:-3px;">
 </td></tr>
 </table>
 </td></tr></table>`;
@@ -604,7 +604,7 @@ startDocumensoPoller(proposalThreads, upsertProposal, async (proposalId, label) 
   });
 });
 
-const mailFrom = process.env.MAIL_FROM;   // e.g. "Greg Iteen" <sales@gregiteen.xyz>
+const mailFrom = process.env.MAIL_FROM;   // e.g. "Greg Iteen" <me@gregiteen.xyz>
 const mailOwner = process.env.MAIL_OWNER; // where visitor notifications go
 
 const originalSendMail = smtpTransport.sendMail.bind(smtpTransport);
@@ -757,7 +757,7 @@ async function sendConfirmationEmail(email, style, optIn) {
 
 async function sendGenerationCompleteEmail(email, slug, style) {
   if (!email) return;
-  const mailFrom = process.env.MAIL_FROM || 'admin@gregiteen.xyz';
+  const mailFrom = process.env.MAIL_FROM || 'me@gregiteen.xyz';
   const url = `${SITE_URL}/designs/${slug}/index.html`;
   
   const html = emailShell({
@@ -963,42 +963,6 @@ async function sendDueDripEmails() {
 
 // ─── Gemini API Helper ───────────────────────────────────────────────────────
 
-function geminiCall(apiKey, prompt, { json = true, tools = [] } = {}) {
-  return new Promise((resolve, reject) => {
-    const payload = {
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: json ? { responseMimeType: 'application/json' } : {},
-    };
-    if (tools && tools.length > 0) payload.tools = tools;
-    const body = JSON.stringify(payload);
-    const model = process.env.DEFAULT_MODEL || 'gemini-3.5-flash';
-    const url = new URL(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`);
-    const options = {
-      hostname: url.hostname,
-      path: url.pathname + url.search,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-    };
-    const req = https.request(options, (res) => {
-      let data = '';
-      res.on('data', (c) => data += c);
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          if (!text) return reject(new Error(`Empty Gemini response: ${data.slice(0, 200)}`));
-          resolve(text);
-        } catch (/** @type {any} */ e) {
-          reject(new Error(`Gemini parse error: ${e.message}`));
-        }
-      });
-    });
-    req.on('error', reject);
-    req.setTimeout(120_000, () => { req.destroy(); reject(new Error('Gemini timeout')); });
-    req.write(body);
-    req.end();
-  });
-}
 
 async function generateDelimitedProposal(prompt, { requireChanges = false } = {}) {
   const first = await callOpenRouter({ prompt, model: PROPOSAL_MODEL, reasoningEffort: 'high', maxTokens: 8192 });
@@ -1304,6 +1268,12 @@ function isAuthenticated(req) {
   return true;
 }
 
+/** Cookies are Secure whenever the site is served over https (behind the proxy or via SITE_URL). */
+function secureAttr(req) {
+  const https = req?.headers?.['x-forwarded-proto'] === 'https' || String(process.env.SITE_URL || '').startsWith('https://');
+  return https ? '; Secure' : '';
+}
+
 function isAdmin(req) {
   const cookies = parseCookies(req.headers.cookie);
   const token = cookies.gi_auth;
@@ -1317,7 +1287,7 @@ function isAdmin(req) {
   const webToken = cookies.gi_webmail;
   if (webToken) {
     const session = getWebmailSessionByToken(webToken);
-    if (session && (session.email === mailOwner || session.email === process.env.ADMIN_EMAIL || session.email === 'sales@gregiteen.xyz')) {
+    if (session && (session.email === mailOwner || session.email === process.env.ADMIN_EMAIL)) {
       return true;
     }
   }
@@ -1543,7 +1513,7 @@ createServer(async (req, res) => {
     </div>
     <div class="foot">
       <a href="https://gregiteen.xyz">gregiteen.xyz</a>
-      <span>sales@gregiteen.xyz</span>
+      <span>me@gregiteen.xyz</span>
       <a class="mark" href="https://gregiteen.xyz"><img src="/signedgi-logo-dark.png" alt="Signed, gi."></a>
     </div>
   </div>
@@ -1640,13 +1610,13 @@ createServer(async (req, res) => {
   // owner can return to the public entry flow while testing an authenticated
   // edition, without relying on a GET request that browser prefetch/back
   // navigation can accidentally execute.
-  if (urlPath === '/api/test/logout') {
+  if (urlPath === '/api/test/logout' && process.env.ENABLE_TEST_LOGOUT === '1') {
     const token = parseCookies(req.headers.cookie).gi_auth;
     if (token) {
       authTokens.delete(token);
       saveSessions();
     }
-    res.writeHead(204, { 'Set-Cookie': 'gi_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0' });
+    res.writeHead(204, { 'Set-Cookie': `gi_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secureAttr(req)}` });
     res.end();
     return;
   }
@@ -1663,7 +1633,7 @@ createServer(async (req, res) => {
     }
     res.writeHead(302, {
       'Location': '/splash.html',
-      'Set-Cookie': 'gi_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+      'Set-Cookie': `gi_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secureAttr(req)}`,
     });
     res.end();
     return;
@@ -1891,7 +1861,7 @@ createServer(async (req, res) => {
   if (urlPath === '/api/forgot-password' && req.method === 'POST') {
     try {
       const { email } = await readBody(req);
-      if (!email || email !== 'sales@gregiteen.xyz') {
+      if (!email || email !== 'me@gregiteen.xyz') {
         return sendJson(res, 400, { success: false, error: 'Invalid or unknown webmail address.' });
       }
       
@@ -2065,7 +2035,7 @@ createServer(async (req, res) => {
 
       res.writeHead(200, {
         'content-type': 'application/json',
-        'set-cookie': `gi_auth=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(TOKEN_TTL / 1000)}`,
+        'set-cookie': `gi_auth=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(TOKEN_TTL / 1000)}${secureAttr(req)}`,
       });
       res.end(JSON.stringify({ success: true, redirect: '/' }));
       return;
@@ -2632,53 +2602,12 @@ If NOT complete, respond with just:
 
       sendJson(res, 202, { success: true, proposalId, status: 'generating' });
 
-      // Kick off enrichment + proposal generation. Enrichment stays on Gemini
-      // deliberately (see GENERATION_DELIVERY_PIPELINE Phase 0) — it relies
-      // on Gemini's native googleSearch grounding, which OpenRouter does not
-      // replicate. Proposal generation itself runs on PROPOSAL_MODEL below
-      // and does not need GOOGLE_API_KEY, so a missing key only degrades
-      // enrichment, not the whole draft.
-      const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
-
-      // Step 1: Enrich client info via Gemini
+      // Kick off enrichment + proposal generation. Grounded (web-search) enrichment
+      // used Gemini, which is not used any more (PORTFOLIO_PERSONAL_SITE A-003);
+      // the proposal is drafted from the assessment and the email domain alone.
       console.log(`[Proposal ${proposalId}] Enriching client info…`);
       const emailDomain = clientEmail.includes('@') ? clientEmail.split('@')[1] : '';
-      const enrichPrompt = `You are a business intelligence analyst. Research and analyze this prospect for a proposal.
-
-Client email: ${clientEmail}
-Email domain: ${emailDomain}
-CNA Assessment:
-${assessmentText}
-
-Full conversation:
-${conversationText}
-
-Based on the email domain and all available context, provide a comprehensive client profile. Infer what you can about their business, industry, company size, and likely needs. If the domain suggests a specific company, describe what that company likely does.
-
-OUTPUT: Return exactly one JSON object:
-{
-  "company_name": "Best guess at company name or 'Individual'",
-  "industry": "Their likely industry",
-  "company_description": "What this company/person likely does",
-  "estimated_size": "Solo/Small/Medium/Enterprise",
-  "likely_budget_tier": "Based on company size and project scope",
-  "key_insights": "Anything notable that should inform the proposal",
-  "recommended_approach": "How Greg should position this engagement"
-}`;
-
-      let enrichment = {};
-      if (!GOOGLE_API_KEY) {
-        console.warn(`[Proposal ${proposalId}] No GOOGLE_API_KEY — skipping grounded enrichment`);
-        enrichment = { company_name: emailDomain || 'Unknown', industry: 'Unknown' };
-      } else {
-        try {
-          const enrichRaw = await geminiCall(GOOGLE_API_KEY, enrichPrompt, { json: true, tools: [{ googleSearch: {} }] });
-          enrichment = extractJson(enrichRaw);
-        } catch (/** @type {any} */ e) {
-          console.warn(`[Proposal ${proposalId}] Enrichment failed: ${e.message}`);
-          enrichment = { company_name: emailDomain || 'Unknown', industry: 'Unknown' };
-        }
-      }
+      const enrichment = { company_name: emailDomain || 'Unknown', industry: 'Unknown' };
 
       // Step 2: Generate proposal draft
       console.log(`[Proposal ${proposalId}] Generating proposal draft…`);
@@ -3361,18 +3290,8 @@ ${JSON.stringify({ steps: body.steps || [] }, null, 2)}
         const visitor = visitorProfiles.get(key);
         if (!visitor) return sendJson(res, 404, { error: 'Visitor not found' });
         
-        const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
-        if (!GOOGLE_API_KEY) return sendJson(res, 500, { error: 'Missing GOOGLE_API_KEY' });
-        
-        const emailDomain = key.includes('@') ? key.split('@')[1] : '';
-        const enrichPrompt = `You are a business intelligence analyst. Research this prospect: ${key} (Domain: ${emailDomain}). 
-Search the web for their company and industry. 
-OUTPUT JSON: { "company_name": "...", "industry": "...", "estimated_size": "..." }`;
-        const enrichRaw = await geminiCall(GOOGLE_API_KEY, enrichPrompt, { json: true, tools: [{ googleSearch: {} }] });
-        const enrichment = { ...(visitor.enrichment || {}), ...extractJson(enrichRaw) };
-        const updated = await updateVisitorEnrichment(key, enrichment);
-        
-        return sendJson(res, 200, { success: true, visitor: updated });
+        // Web-grounded research needs a search-capable model; the Gemini path was removed.
+        return sendJson(res, 501, { error: 'Grounded visitor research is unavailable: the Gemini path was removed and no OpenRouter replacement is wired yet.' });
       } catch (err) {
         return sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
       }
@@ -3532,8 +3451,7 @@ OUTPUT JSON: { "company_name": "...", "industry": "...", "estimated_size": "..."
     if (adminPath === '/settings' && req.method === 'GET') {
       const webmail = await getWebmailSettings();
       return sendJson(res, 200, {
-        apiKeySet: !!process.env.GOOGLE_API_KEY,
-        defaultModel: process.env.DEFAULT_MODEL || 'gemini-3.5-flash',
+        defaultModel: process.env.DEFAULT_MODEL || CNA_MODEL,
         mailOwner: mailOwner,
         mailFrom: mailFrom,
         mailDomain: process.env.MAIL_DOMAIN || '',
@@ -3546,7 +3464,6 @@ OUTPUT JSON: { "company_name": "...", "industry": "...", "estimated_size": "..."
     if (adminPath === '/settings' && req.method === 'POST') {
       try {
         const body = await readBody(req);
-        if (body.apiKey) process.env.GOOGLE_API_KEY = body.apiKey;
         if (body.defaultModel) process.env.DEFAULT_MODEL = body.defaultModel;
         if (body.cronHour !== undefined) process.env.CRON_HOUR = String(body.cronHour);
         if (body.webmail) await updateWebmailSettings(body.webmail);

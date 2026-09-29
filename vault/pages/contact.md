@@ -14,7 +14,7 @@ x_nav_order: 3
 
 ![Greg Iteen](/assets/greg-portrait.jpg)
 
-- **Email** — [sales@gregiteen.xyz](mailto:sales@gregiteen.xyz)
+- **Email** — [me@gregiteen.xyz](mailto:me@gregiteen.xyz)
 - **GitHub** — [github.com/gregiteen](https://github.com/gregiteen)
 
 I'm open to collaborations on local-first tooling, AI memory systems, and

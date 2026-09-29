@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import PDFDocument from 'pdfkit';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const CONTACT_LINE = 'sales@gregiteen.xyz   ·   gregiteen.xyz   ·   github.com/gregiteen';
+const CONTACT_LINE = 'me@gregiteen.xyz   ·   gregiteen.xyz   ·   github.com/gregiteen';
 
 // Black-on-transparent wordmark — safe on white paper. (An earlier version of
 // this file typed the wordmark in Courier because only an opaque-black-bg

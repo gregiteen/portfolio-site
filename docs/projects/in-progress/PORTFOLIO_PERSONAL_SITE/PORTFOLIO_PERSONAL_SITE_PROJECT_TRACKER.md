@@ -15,25 +15,25 @@
 
 ## ⏳ Phase 1: Fix P0/P1 audit findings
 
-- [ ] A-001 remove the obsolete Total Recall surface patch, its postinstall call and test; `npm ci` exits 0 on the mini
-- [ ] A-002 suite green on the mini
-- [ ] A-015 site public when generation is off (flag, `site-mode.mjs`)
-- [ ] A-016 generation fully off: routes, redirects, splash/verify, build-time injection
-- [ ] A-003 Gemini removed from active code (enrichment on OpenRouter, runtime key setter removed, `gen-*.mjs` deleted)
-- [ ] Tests: `site-mode.mjs` unit tests and a spawn smoke test
+- [x] A-001 remove the obsolete Total Recall surface patch, its postinstall call and test; `npm ci` exits 0 on the mini (verified 2026-09-28)
+- [/] A-002 suite: 124/125 on the mini before the smoke-test env fix; rerun for green
+- [x] A-015 site public when generation is off (flag, `site-mode.mjs`)
+- [x] A-016 generation fully off: routes, redirects, splash/verify, build-time injection (flipper, lead-gen banner, start-a-project links, cookie notice, visitor beacon)
+- [x] A-003 Gemini removed from active code (proposal enrichment no longer grounded, visitor research returns 501, runtime key setter and `geminiCall` removed, 18 `gen-*.mjs` deleted, `improve-theme.mjs` refuses to start until ported); web-grounded research on OpenRouter is deferred
+- [x] Tests: `test/personal-site.test.mjs` (unit tests plus a spawn smoke test with dummy SMTP env)
 
 ## ⏳ Phase 2: Fix P2/P3 findings that touch this change
 
-- [ ] A-014 `vault/visitors.md` untracked and ignored
-- [ ] A-006 `/api/test/logout` gated
-- [ ] A-007 `Secure` cookie
-- [ ] A-008 `me@gregiteen.xyz` single source; literals removed
-- [ ] A-009 stray root scripts deleted
+- [x] A-014 `vault/visitors.md` untracked and ignored
+- [x] A-006 `/api/test/logout` gated behind `ENABLE_TEST_LOGOUT=1`
+- [x] A-007 `Secure` cookie when served over https
+- [x] A-008 `sales@gregiteen.xyz` literals replaced by `me@gregiteen.xyz`; admin identity is `ADMIN_EMAIL`/`MAIL_OWNER` only (deploy must set both, and the mailbox must exist)
+- [x] A-009 stray root scripts deleted
 
 ## ⏳ Phase 3: JSN at /jobs
 
-- [ ] `/api/jsn/*` proxy (admin only, token server side) with tests against a fake JSN
-- [ ] `/jobs` page from `npm run sync-jobs`
+- [x] `/api/jsn/*` proxy (admin only, token server side) with tests against a fake JSN
+- [x] `/jobs` page from `npm run sync-jobs`
 - [ ] JSN token secret bound to both repos; JSN listening on the mesh address with the token
 
 ## ⏳ Phase 4: Copy and deploy
@@ -53,4 +53,5 @@
 
 ## Verification Log
 
+- 2026-09-28: after fixes, clean checkout on the Mac mini — `npm ci` exit 0; tests 124 pass / 1 fail (smoke test needed dummy SMTP env; fixed)
 - 2026-09-28: baseline on the Mac mini, `e2c8ed3` — `npm ci` failed at postinstall; tests 119 pass / 1 fail

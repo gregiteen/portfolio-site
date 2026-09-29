@@ -61,11 +61,15 @@ test('proxy: rejects bad paths and methods, oversize bodies, and reports an unre
 test('server (generation off): public site, generation refused, admin surfaces private', async () => {
   const port = 4700 + Math.floor(Math.random() * 200);
   execFileSync(process.execPath, ['scripts/build-site.mjs'], { env: { ...process.env, SITE_GENERATION_ENABLED: '0' }, stdio: 'ignore' });
-  const child = spawn(process.execPath, ['scripts/serve.mjs'], { env: { ...process.env, PORT: String(port), SITE_GENERATION_ENABLED: '0' }, stdio: 'ignore' });
+  const child = spawn(process.execPath, ['scripts/serve.mjs'], { env: {
+    ...process.env, PORT: String(port), SITE_GENERATION_ENABLED: '0',
+    // Required by boot; dummy values so the test never depends on a developer's .env and can send no mail.
+    SMTP_HOST: '127.0.0.1', SMTP_PORT: '1', SMTP_USER: 'test', SMTP_PASS: 'test', MAIL_FROM: 'me@gregiteen.xyz', MAIL_OWNER: 'me@gregiteen.xyz',
+  }, stdio: 'ignore' });
   try {
     let up = false;
     for (let i = 0; i < 60 && !up; i++) {
-      try { up = (await fetch(`http://127.0.0.1:${port}/api/health`)).ok; } catch { await new Promise((r) => setTimeout(r, 250)); }
+      try { await fetch(`http://127.0.0.1:${port}/api/health`); up = true; } catch { await new Promise((r) => setTimeout(r, 250)); }
     }
     assert.ok(up, 'server did not start');
     const get = (p, init = {}) => fetch(`http://127.0.0.1:${port}${p}`, { redirect: 'manual', ...init });

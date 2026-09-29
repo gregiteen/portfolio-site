@@ -26,7 +26,11 @@ const CSS_EXEMPLARS = Object.values(CSS_MECHANICS).join('\n\n');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const designsDir = join(__dirname, '..', 'designs');
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
+// The Gemini API is not used (PORTFOLIO_PERSONAL_SITE A-003). This improver must be ported to
+// OpenRouter before it can run again; until then it refuses to start.
+console.error('improve-theme is disabled: it depended on the Gemini API, which is no longer used.');
+process.exit(1);
+const GOOGLE_API_KEY = '';
 
 // Parse CLI args
 const args = process.argv.slice(2);

@@ -58,3 +58,6 @@ vault/pages/skins/
 
 # env backups may contain secrets
 .env.bak*
+
+# visitor log: emails, IPs, user agents
+vault/visitors.md
